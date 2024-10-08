@@ -1,0 +1,326 @@
+# ATaRVa
+<p align=center>
+  <img src="lib/ATaRVa_logo.png" alt="Logo of ATaRVa" width="200"/>
+</p>
+ATaRVa - Analysis of Tandem Repeat Variation (pronunced atharva) is a tool for genotyping tandem repeats from LRS whole genome sequencing datasets. The tool is designed with custom approaches for LRS datasets and also based on the sequencing platform used in long read sequencing dataset.  
+
+## Installation
+ATaRVa can be directly installed using pip with the package name `atarva`.
+
+```bash
+$ pip install atarva
+```
+
+Alternatively, it can be installed from the source code:
+
+```bash
+# Download the git repo
+$ git clone https://github.com/SowpatiLab/ATaRVa.git
+
+# Install
+$ cd ATaRVa
+$ python setup.py install
+```
+Both of the methods add a console command `ATARVA`, which can be executed from any directory. It can also be used without installation by running the `core.py` file in the `ATARVA` subfolder:
+
+```bash
+$ git clone https://github.com/SowpatiLab/ATaRVa.git
+$ cd ATaRVa/ATARVA
+$ python core.py -h # Print the help message of ATaRVa (see below)
+```
+
+## Usage
+The help message and available options can be accessed using
+
+```bash
+$ ATARVA -h
+#  or
+$ ATARVA --help
+```
+which gives the following output
+
+```
+usage: core.py [-h] -fi <FILE> --bams <FILE> [<FILE> ...] -bed <FILE> [--format <STR>] [-q <INT>] [--contigs CONTIGS [CONTIGS ...]] [--min-reads <INT>] [--max-reads <INT>] [--snp-dist <INT>] [--snp-count <INT>]
+               [--snp-qual <INT>] [--level-split <INT>] [--snp-read <FLOAT>] [--phasing-read <FLOAT>] [-o <FILE>] [--platform <STR>] [-p <INT>] [-v]
+
+Required arguments:
+  -fi <FILE>, --fasta <FILE>
+                        input reference fasta file
+  --bams <FILE> [<FILE> ...]
+                        samples alignment files. allowed formats: SAM, BAM, CRAM
+  -bed <FILE>, --regions <FILE>
+                        input regions file. the regions file should be strictly in bgzipped tabix format. If the regions input file is in bed format. First sort it using bedtools. Compress it using bgzip. Index the bgzipped
+                        file with tabix command from samtools package.
+
+Optional arguments:
+  --format <STR>        format of input alignment file. allowed options: [cram, bam, sam]. default: [bam]
+  -q <INT>, --map-qual <INT>
+                        minimum mapping quality of the reads to be considered. [default: 5]
+  --contigs CONTIGS [CONTIGS ...]
+                        contigs to get genotyped [chr1 chr12 chr22 ..]. If not mentioned every contigs in the region file will be genotyped.
+  --min-reads <INT>     minimum read coverage after quality cutoff at a locus to be genotyped. [default: 10]
+  --max-reads <INT>     maximum read coverage at a locus to be genotyped. [default: 300]
+  --snp-dist <INT>      maximum distance of the SNP from repeat region to be considered for phasing. [default: 5000]
+  --snp-count <INT>     number of SNPs to be considered for phasing (minimum value = 1). [default: 3]
+  --snp-qual <INT>      minimum basecall quality at the SNP position to be considered for phasing. [default: 13]
+  --level-split <INT>   a positive integer(0 to 2, where 0 : 30 to 70% ; 1 : 25 to 75% ; 2 : 20 to 80%) as the percentage level of read split of snps to be used for phasing. [default: 2]
+  --snp-read <FLOAT>    a positive float as the minimum fraction of snp's read contribution to be used for phasing. [default: 0.25]
+  --phasing-read <FLOAT>
+                        a positive float as the minimum fraction of total read contribution from the phased read clusters. [default: 0.4]
+  -o <FILE>, --vcf <FILE>
+                        name of the output file, output is in vcf format. [default: sys.stdout]
+  --platform <STR>      sequencing platform used for generating the data. changing this will have an affect on phasing which is happening on SNPs. allowed options: [hifi, duplex, simplex-hq, simplex]. default: [simplex]
+  -p <INT>, --processor <INT>
+                        number of processor. [default: 1]
+  -v, --version         show program's version number and exit
+```
+
+The details of each option are given below:
+
+## Reference genome
+### `-fi or --fasta`
+**Expects**: *FILE*<br>
+**Default**: *None*<br>
+The `-fi` or `--fasta` option is used to specify the input FASTA file. The corresponding index file (`.fai`) should be in the same directory. ATaRVa uses [pysam](https://github.com/pysam-developers/pysam)'s `FastaFile` parser to read the input FASTA file.
+
+## Alignment file
+### `--bams`
+**Expects**: *FILE*<br>
+**Default**: *None*<br>
+The `--bams` option is used to specify one or more input alignment files in the same format. ATaRVa accepts any of the three alignment formats: SAM, BAM, or CRAM. The format should be specified using the `--format` option. The corresponding index file (`.bai`) should be located in the same directory. An alignment file can be indexed using following command:
+
+```bash
+# to generate .bai index file
+$ samtools index -b input.bam
+```
+
+The alignment file should contain at least one of the following tags: `MD` tag, `CS` tag, or a `CIGAR` string with `=/X` operations.
+
+- The CS tag is generated using the --cs option when aligning reads with the [minimap2](https://github.com/lh3/minimap2) aligner.
+- The MD tag can be generated using the --MD option in minimap2.
+- The CIGAR string with =/X operations can be generated using the --eqx option in minimap2.
+
+If the alignment files were generated without any of these tags, you can add them by running one of the following commands to generate the `MD` tag or both the `MD` tag and the `CIGAR` string with `=/X` operations.
+
+```bash
+# input: reference genome fasta file & alignment file
+# output: an alignment file with MD tag in it
+
+# for generating MD tag
+$ samtools calmd -b aln.bam ref.fa > aln_md.bam
+
+# or
+
+# for generating both MD tag and CIGAR =/X 
+$ samtools calmd -b -e aln.bam ref.fa > aln_md_e.bam
+```
+## Region file
+### `-bed or --regions`
+**Expects**: *FILE*<br>
+**Default**: *None*<br>
+The `-bed` or `--regions` option is used to specify the input TR regions file. ATaRVa requires a sorted, bgzipped BED file of TR repeat regions, along with its corresponding tabix-indexed file. The BED file should contain the following columns:
+
+1. Chromosome name where TR is located
+2. Start position of the TR
+3. End position of the TR
+4. Repeat motif
+5. Motif length
+
+Below is an example of a repeat region BED file. **NOTE: The BED file should either have no header or a header that starts with `#` symbol. The .gz and .tbi files should be in same directory**
+
+| #CHROM | START | END | MOTIF | MOTIF_LEN |
+|--------|-------|-----|-------|-----------|
+| chr1   | 10000 | 10467 | TAACCC | 6.0    |
+| chr1   | 10481 | 10497 | GCCC | 4.0      |
+| chr2   | 10005 | 10173 | CCCACACACCACA | 13.0 |
+| chr2   | 10174 | 10604 | ACCCTA | 6.0    |
+| chr17  | 60483 | 60491 | AGA    | 3.0    |
+
+To sort, bgzip, and index the BED file, use the following commands:
+
+### Sort
+```bash
+# input: Unsorted bed file
+# output: Sorted bed file
+
+# Sorting the BED file using sort
+$ sort -k1,1 -k2,2n input.bed > sorted_output.bed
+# or using bedtools
+$ bedtools sort -i input.bed > sorted_output.bed
+```
+### Bgzip
+```bash
+# input: Sorted bed file
+# output: bgzipped bed file
+
+# To keep the original file unchanged and generate separate gz file
+$ bgzip -c sorted_output.bed > sorted_output.bed.gz
+# or to compress the original file; converts sorted_output.bed to sorted_output.bed.gz
+$ bgzip sorted_output.bed
+```
+### Index
+```bash
+# input: bgzipped bed file
+# output: tabix indexed file (.tbi)
+
+# install samtools to use tabix
+$ tabix -p bed sorted_output.bed.gz
+```
+
+### `--format`
+**Expects**: *STRING*<br>
+**Default**: *bam*<br>
+This option sets the format of the alignment file. The default format is BAM. Specify the input format as `sam` for SAM files, `cram` for CRAM files, or `bam` for BAM files.  
+
+### `-q or --map-qual`
+**Expects**: *INTEGER*<br>
+**Default**: *5*<br>
+Minimum mapping quality for the reads to be considered. All reads with a mapping quality below the specified value will not be included in the genotyping of the repeat locus.
+
+### `--contigs`
+**Expects**: *STRING*<br>
+**Default**: *None*<br>
+Specify the chromosome(s) for genotyping; repeat loci on all other chromosomes will be skipped. If no chromosomes are mentioned, repeats on all chromosomes in the BED file will be genotyped. eg: `--contigs chr1 chr12 chr22` this will genotype only the repeat loci in these mentioned chromosomes in the BED file.
+
+### `--min-reads`
+**Expects**: *INTEGER*<br>
+**Default**: *10*<br>
+Minimum number of the supporting reads required to genotype a locus. If the number of reads is less than this value, the locus will be skipped.
+
+### `--max-reads`
+**Expects**: *INTEGER*<br>
+**Default**: *300*<br>
+Maximum number of supporting reads allowed for a locus to be genotyped. If the number of reads exceeds this value, the locus will be skipped.
+
+### `--snp-dist`
+**Expects**: *INTEGER*<br>
+**Default**: *5000*<br>
+Maximum base pair (bp) distance from the flanks of the repeat locus to fetch SNPs from each read considered for phasing.
+
+### `--snp-count`
+**Expects**: *INTEGER*<br>
+**Default**: *3*<br>
+Maximum number of SNPs to be used for read clustering and phasing.
+
+### `--snp-qual`
+**Expects**: *INTEGER*<br>
+**Default**: *13*<br>
+Minimum Q value of the SNPs to be used for phasing.
+
+### `--level-split`
+**Expects**: *INTEGER*<br>
+**Default**: *2*<br>
+This option has three categories of levels:
+
+- 0: 30% to 70%
+- 1: 25% to 75%
+- 2: 20% to 80%
+
+Each of these integers is associated with a range of percentages that describe the minimum presence of SNPs in the supporting reads for a repeat locus to be used for phasing. These ranges are ordered from stringent to lenient to select the best heterozygous SNPs for phasing the reads. For example, using `--level-split 0` means that only those SNPs with a percentage of at least 30% and a maximum of 70% will be used for clustering and phasing of reads.
+
+In the default option (2), SNPs are tested across all three percentage ranges. If no SNPs are found in the 30%-70% range, they are then tested in the 25%-75% range. If no SNPs are found there, the last range (20%-80%) is applied. If no SNPs are found in any of these ranges, the reads are clustered based on their size.
+
+### `--snp-read`
+**Expects**: *FLOAT*<br>
+**Default**: *0.2*<br>
+Minimum fraction of SNPs in the supporting reads of the repeat locus allowed for phasing.
+
+### `--phasing-read`
+**Expects**: *FLOAT*<br>
+**Default**: *0.4*<br>
+Minimum fraction of reads required in both clusters relative to the total supporting reads for the repeat locus after phasing.
+
+### `-o or --vcf`
+**Expects**: *STRING (to be used as filename)*<br>
+**Default**: *Input Alignment Filename + .vcf*<br>
+If this option is not provided, the default output filename will be the same as the input alignment filename, with its extension replaced with '.vcf'. For example, if the input filename is `input.bam`, the default output filename will be `input.vcf`. If the input filename does not have any extension, .vcf will be appended to the filename.
+Each entry includes the fields specified in the [Variant Calling Format (VCF)](https://samtools.github.io/hts-specs/VCFv4.3.pdf), as described in the table below.
+|     FIELD     |           DESCRIPTION           | 
+|---------------|---------------------------------|
+| CHROM | Chromosome that contains the repeat region |
+| POS | Start position of the repeat region |
+| ID |  Region identifier (set to '.') |
+| REF | Reference sequence of the repeat region |
+| ALT | Sequence of the repeat alleles in the sample |
+| QUAL | Quality score of the genotype (set to '0') |
+| FILTER | Filter status (set to '.') |
+| INFO | Information about the TR region |
+| FORMAT | Data type of the genotype information |
+| SAMPLE | Values of the genotype information for the TR region |
+
+#### INFO fields
+The `INFO` field describes the general structure of the repeat region and includes the following details:
+|     INFO      |           DESCRIPTION           | 
+|---------------|---------------------------------|
+| AC | Total number of ALT alleles in called genotypes |
+| AN | Total number of alleles in called genotypes |
+| MOTIF | Motif of the repeat region |
+| END | End position of the repeat region |
+
+#### FORMAT fields
+The `FORMAT` fields and their values are provided in the last two columns of the VCF file, containing information about each genotype call. These columns include the following fields:  
+|     FORMAT      |           DESCRIPTION           | 
+|-----------------|---------------------------------|
+| GT | Genotype of the sample |
+| AL | Length of the alleles in base pairs |
+| SD | Number of supporting reads for each alleles |
+| PC | Number of alleles in the phased cluster for each allele |
+| DP | Number of the supporting reads for the repeat locus |
+| SN | Number of SNPs used for phasing |
+| SQ | Phred-scale qualities of the SNPs used for phasing |
+
+### `--platform`
+**Expects**: *STRING*<br>
+**Default**: *None*<br>
+This option sets the type of sequencing technology used in the input data, such as `simplex`, `simplex-hq`, `duplex`, or `hifi`. The program will apply preset optimized parameters based on the specified technology. If not specified, genotyping will proceed with default parameters.
+
+### `-p or --processor`
+**Expects**: *INTEGER*<br>
+**Default**: *1*<br>
+Number of processors to use for the process.
+
+### `-v or --version`
+Prints the version info of ATaRVa.
+
+## Examples
+The following examples assume the input reference genome is in `FASTA` format and is named ref.fa, the alignment file is in `BAM` format and is named input.bam, and the TR regions file is in `BED` format and is named regions.bed.gz.
+
+### Basic usage
+To run ATaRVa with default parameters, use the following command:
+```bash
+$ ATARVA -fi ref.fa --bams input.bam -bed regions.bed.gz
+```
+### Stringent parameter usage
+To run ATaRVa with stringent parameters, use the following command:
+```bash
+$ ATARVA -q 20 --snp-count 5 --snp-qual 25 --level-split 0 --min-reads 20 -p 32 -fi ref.fa --bams input.bam -bed regions.bed.gz
+# The above command with --level-split 0 and --snp-count 5 will use a maximum of five heterozygous SNPs fetched from the first range of percentage read splits (30-70%) to provide accurate genotypes, but only when phasing is based on SNPs and not on length.
+```
+### Genotyping TRs from specific chromosome/s
+To genotype TRs from specific chromosomes only, run ATaRVa with the following command:
+```bash
+$ ATARVA --contigs chr9 chr15 chr17 chrX -p 32 -fi ref.fa --bams input.bam -bed regions.bed.gz
+```
+### For input alignment file other than `bam`
+```bash
+# input cram file
+$ ATARVA --format cram -fi ref.fa --bams input.cram -bed regions.bed.gz
+
+# input sam file
+$ ATARVA --format sam -fi ref.fa --bams input.sam -bed regions.bed.gz
+```
+In all the above examples, the output of ATaRVa is saved to input.vcf unless -o is specified.
+
+## Citation
+If you find ATaRVa useful for your research, please cite it as follows:
+
+ATaRVa: Analysis of Tandem Repeat Variation from Long Read Sequencing data  
+*Akshay Kumar Avvaru, Divya Tej Sowpati*  
+  
+doi:
+
+## Contact
+For queries or suggestions, please contact:
+
+Divya Tej Sowpati - [tej@ccmb.res.in](tej@ccmb.res.in)  
+Akshay Kumar Avvaru - [avvaru@ccmb.res.in](avvaru@ccmb.res.in)
