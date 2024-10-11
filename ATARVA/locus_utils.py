@@ -40,6 +40,7 @@ def process_locus(locus_key, global_loci_variations, global_read_variations, glo
     reads_of_homozygous = []
     read_indices = global_loci_variations[locus_key]['reads']   # the read indices which cover the locus
     total_reads = len(read_indices)                             # total number of reads
+    max_limit=0
 
     # remove if the locus has poor coverage
     if total_reads < minR:
@@ -48,8 +49,10 @@ def process_locus(locus_key, global_loci_variations, global_read_variations, glo
         return [prev_reads, homozygous, ambiguous, homozygous_allele, reads_of_homozygous, {}, 0]
     elif total_reads > maxR:
         # coverage of the locus is high
-        prev_reads = set(read_indices)
-        return [prev_reads, homozygous, ambiguous, homozygous_allele, reads_of_homozygous, {}, 1]
+        read_indices = read_indices[:maxR]
+        max_limit=1
+        # prev_reads = set(read_indices)
+        # return [prev_reads, homozygous, ambiguous, homozygous_allele, reads_of_homozygous, {}, 1]
     
     current_reads = set(read_indices)
     old_reads = prev_reads - current_reads
@@ -78,4 +81,4 @@ def process_locus(locus_key, global_loci_variations, global_read_variations, glo
     record_snps(read_indices, old_reads, new_reads, global_read_variations, global_snp_positions, sorted_global_snp_list)
     
     prev_reads = current_reads.copy()
-    return [prev_reads, homozygous, ambiguous, homozygous_allele, reads_of_homozygous, hallele_counter, 10]
+    return [prev_reads, homozygous, ambiguous, homozygous_allele, reads_of_homozygous, hallele_counter, 10, max_limit]
