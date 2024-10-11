@@ -33,7 +33,7 @@ def parse_args():
     optional.add_argument('-q', '--map-qual', type=int, metavar='<INT>', default=5, help='minimum mapping quality of the reads to be considered. [default: 5]')
     optional.add_argument('--contigs', nargs='+', help='contigs to get genotyped [chr1 chr12 chr22 ..]. If not mentioned every contigs in the region file will be genotyped.')
     optional.add_argument('--min-reads', type=int, metavar='<INT>', default=10, help='minimum read coverage after quality cutoff at a locus to be genotyped. [default: 10]')
-    optional.add_argument('--max-reads', type=int, metavar='<INT>', default=300, help='maximum read coverage at a locus to be genotyped. [default: 300]')
+    optional.add_argument('--max-reads', type=int, metavar='<INT>', default=300, help='maximum number of reads to be used for genotyping a locus. [default: 100]')
     optional.add_argument('--snp-dist', type=int, metavar='<INT>', default=5000, help='maximum distance of the SNP from repeat region to be considered for phasing. [default: 5000]')
     optional.add_argument('--snp-count', type=int, metavar='<INT>', default=3, help='number of SNPs to be considered for phasing (minimum value = 1). [default: 3]')
     optional.add_argument('--snp-qual', type=int, metavar='<INT>', default=13, help='minimum basecall quality at the SNP position to be considered for phasing. [default: 13]')
