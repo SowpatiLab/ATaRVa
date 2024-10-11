@@ -3,7 +3,7 @@ from cstag_utils import parse_cstag
 from cigar_utils import parse_cigar_tag
 from operation_utils import update_homopolymer_coords
 from genotype_utils import analyse_genotype
-from vcf_writer import vcf_writer, vcf_homozygous_writer
+from vcf_writer import *
 
 import pysam
 import sys
@@ -22,13 +22,13 @@ def locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, 
             sorted_global_snp_list = sorted(list(global_snp_positions.keys()))
         
 
-        prev_reads, homozygous, ambiguous, homozygous_allele, reads_of_homozygous, hallele_counter, skip_point = process_locus(locus_key, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR)
+        prev_reads, homozygous, ambiguous, homozygous_allele, reads_of_homozygous, hallele_counter, skip_point, max_limit = process_locus(locus_key, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR)
 
         if homozygous:
             vcf_homozygous_writer(ref, Chrom, locus_key, global_loci_info, homozygous_allele, global_loci_variations, reads_of_homozygous, out)
             genotyped_loci += 1
         elif ambiguous:
-            state, skip_point = analyse_genotype(Chrom, locus_key, global_loci_info, global_loci_variations, global_read_variations, global_snp_positions, hallele_counter, ref, out, sorted_global_snp_list, level_split, snpQ, snpC, snpD, snpR, phasingR)
+            state, skip_point = analyse_genotype(Chrom, locus_key, global_loci_info, global_loci_variations, global_read_variations, global_snp_positions, hallele_counter, ref, out, sorted_global_snp_list, level_split, snpQ, snpC, snpD, snpR, phasingR, maxR, max_limit)
             if state: genotyped_loci += 1
             elif skip_point == 0: print('Locus skipped due to insignificant snps at the level of read split.')
             elif skip_point == 1: print('Locus skipped due to less read contribution of Significant snps.')
@@ -37,8 +37,9 @@ def locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, 
         else:
             if skip_point == 0:
                 print('Locus skipped due to minimum number of supporting reads')
-            else:
-                print('Locus skipped due to maximum number of supporting reads')
+                vcf_fail_writer(Chrom, locus_key, global_loci_info, ref, out, len(prev_reads), skip_point)
+            # else:
+            #     print('Locus skipped due to maximum number of supporting reads')
                 
         del global_loci_variations[locus_key]
         
