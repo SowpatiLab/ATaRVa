@@ -29,7 +29,7 @@ def vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, homozygous_a
     FORMAT = 'GT:AL:SD:PC:DP:SN:SQ'
     SAMPLE = str(GT) + ':' + str(homozygous_allele) + ',' + str(homozygous_allele) + ':' + str(reads_of_homozygous) + ':.:' + str(DP) + ':.:.'
 
-    print(*[contig, locus_start, '.',  ref.fetch(contig, locus_start, locus_end), '.', 0, '.', INFO, FORMAT, SAMPLE], file=out, sep='\t')
+    print(*[contig, locus_start, '.',  ref.fetch(contig, locus_start-1, locus_end), '.', 0, 'PASS', INFO, FORMAT, SAMPLE], file=out, sep='\t')
     del global_loci_info[locus_key]
 
 
@@ -85,5 +85,19 @@ def vcf_heterozygous_writer(contig, genotypes, locus_start, locus_end, allele_co
     FORMAT = 'GT:AL:SD:PC:DP:SN:SQ'
     SAMPLE = str(GT)+':'+heterozygous_allele+':' + SD + ':' + PC + ':' + str(DP) + ':' + str(snp_num) + ':' + chosen_snpQ
 
-    print(*[contig, locus_start, '.',  ref.fetch(contig, locus_start, locus_end), '.', 0, '.', INFO, FORMAT, SAMPLE], file=out, sep='\t')
+    print(*[contig, locus_start, '.',  ref.fetch(contig, locus_start-1, locus_end), '.', 0, 'PASS', INFO, FORMAT, SAMPLE], file=out, sep='\t')
+    del global_loci_info[locus_key]
+
+def vcf_fail_writer(contig, locus_key, global_loci_info, ref, out, DP, skip_point):
+
+    locus_start = int(global_loci_info[locus_key][1])
+    locus_end = int(global_loci_info[locus_key][2])
+
+    if skip_point == 0:
+        FILTER = 'LESS_READS'    
+    locus_key = f'{contig}:{locus_start}-{locus_end}'
+    INFO = 'AC=0;AN=0;MOTIF=' + str(global_loci_info[locus_key][3]) + ';END=' + str(locus_end)
+    FORMAT = 'GT:AL:SD:PC:DP:SN:SQ'
+    SAMPLE = '.:.:.:.:.:.:.'
+    print(*[contig, locus_start, '.',  ref.fetch(contig, locus_start-1, locus_end), '.', 0, FILTER, INFO, FORMAT, SAMPLE], file=out, sep='\t')
     del global_loci_info[locus_key]
