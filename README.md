@@ -59,7 +59,7 @@ Optional arguments:
   --contigs CONTIGS [CONTIGS ...]
                         contigs to get genotyped [chr1 chr12 chr22 ..]. If not mentioned every contigs in the region file will be genotyped.
   --min-reads <INT>     minimum read coverage after quality cutoff at a locus to be genotyped. [default: 10]
-  --max-reads <INT>     maximum read coverage at a locus to be genotyped. [default: 300]
+  --max-reads <INT>     maximum number of reads to be used for genotyping a locus. [default: 100]
   --snp-dist <INT>      maximum distance of the SNP from repeat region to be considered for phasing. [default: 5000]
   --snp-count <INT>     number of SNPs to be considered for phasing (minimum value = 1). [default: 3]
   --snp-qual <INT>      minimum basecall quality at the SNP position to be considered for phasing. [default: 13]
@@ -100,7 +100,7 @@ The alignment file should contain at least one of the following tags: `MD` tag, 
 - The MD tag can be generated using the --MD option in minimap2.
 - The CIGAR string with =/X operations can be generated using the --eqx option in minimap2.
 
-If the alignment files were generated without any of these tags, you can add them by running one of the following commands to generate the `MD` tag or both the `MD` tag and the `CIGAR` string with `=/X` operations.
+If the alignment files were generated without any of these tags, you can generate the `MD` tag by running the following command to 
 
 ```bash
 # input: reference genome fasta file & alignment file
@@ -108,11 +108,6 @@ If the alignment files were generated without any of these tags, you can add the
 
 # for generating MD tag
 $ samtools calmd -b aln.bam ref.fa > aln_md.bam
-
-# or
-
-# for generating both MD tag and CIGAR =/X 
-$ samtools calmd -b -e aln.bam ref.fa > aln_md_e.bam
 ```
 ## Region file
 ### `-bed or --regions`
@@ -189,8 +184,8 @@ Minimum number of the supporting reads required to genotype a locus. If the numb
 
 ### `--max-reads`
 **Expects**: *INTEGER*<br>
-**Default**: *300*<br>
-Maximum number of supporting reads allowed for a locus to be genotyped. If the number of reads exceeds this value, the locus will be skipped.
+**Default**: *100*<br>
+Maximum number of supporting reads allowed for a locus to be genotyped. If the number of reads exceeds this limit, only this specified number of reads will be used for genotyping the locus.
 
 ### `--snp-dist`
 **Expects**: *INTEGER*<br>
