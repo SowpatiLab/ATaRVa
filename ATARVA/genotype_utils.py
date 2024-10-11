@@ -9,36 +9,53 @@ def length_genotyper(hallele_counter, global_loci_info, global_loci_variations, 
     stringency_factor = [0.5, 1, 2]
 
     motif_len = float(global_loci_info[locus_key][4])
-    if motif_len <= 6:
-        factor = stringency_factor[0]
-    elif motif_len <= 15:
-        factor = stringency_factor[1]
-    else:
-        factor = stringency_factor[2]
     
     alleles = sorted(hallele_counter.keys())
     diffs = np.diff(alleles)
     mean_diff = np.mean(diffs)
     std_diff = np.std(diffs)
+
+    if std_diff == 0:
+        factor = 0
+    elif std_diff <= 6:
+        factor = stringency_factor[0]
+    elif std_diff <= 15:
+        factor = stringency_factor[1]
+    else:
+        factor = stringency_factor[2]
     
-    lower_bound = mean_diff - std_diff*factor
-    upper_bound = mean_diff + std_diff*factor
-
     clusters = []
-    current_cluster = []
-    for idx,num in enumerate(alleles):
-        if idx==0:
-            current_cluster.append(num)
-        else:
-            diff = num - alleles[idx - 1]
+    if factor>0:
+        lower_bound = mean_diff - std_diff*factor
+        upper_bound = mean_diff + std_diff*factor
 
-            if lower_bound <= diff <= upper_bound:
+        current_cluster = []
+        for idx,num in enumerate(alleles):
+            if idx==0:
                 current_cluster.append(num)
             else:
-                # Start a new cluster
-                clusters.append(current_cluster)
-                current_cluster = [num]
-    clusters.append(current_cluster)
+                diff = num - alleles[idx - 1]
+
+                if lower_bound <= diff <= upper_bound:
+                    current_cluster.append(num)
+                else:
+                    # Start a new cluster
+                    clusters.append(current_cluster)
+                    current_cluster = [num]
+        clusters.append(current_cluster)
+    elif len(alleles)%2 == 0:
+        div=len(alleles)/2
+        clusters.append(alleles[:div])
+        clusters.append(alleles[div:])
+    else:
+        div=round(len(alleles)/2)
+        clusters.append(alleles[:div])
+        clusters.append(alleles[div+1:])
+        med_allele = alleles[div]
+        if sum([hallele_counter[each_num] for each_num in clusters[0]]) < sum([hallele_counter[each_num] for each_num in clusters[1]]):
+            clusters[0].append(med_allele)
+        else:
+            clusters[1].append(med_allele)
     
     del_cl = []
     for idx,each_cluster in enumerate(clusters):
@@ -99,14 +116,16 @@ def length_genotyper(hallele_counter, global_loci_info, global_loci_variations, 
 
 def analyse_genotype(contig, locus_key, global_loci_info,
                      global_loci_variations, global_read_variations, global_snp_positions, hallele_counter,
-                     ref, out, sorted_global_snp_list, level_split, snpQ, snpC, snpD, snpR, phasingR):
+                     ref, out, sorted_global_snp_list, level_split, snpQ, snpC, snpD, snpR, phasingR, maxR, max_limit):
 
     locus_start = int(global_loci_info[locus_key][1])
     locus_end = int(global_loci_info[locus_key][2])
     state = False
 
-
-    read_indices = global_loci_variations[locus_key]['reads']
+    if max_limit == 0:
+        read_indices = global_loci_variations[locus_key]['reads']
+    else:
+        read_indices = global_loci_variations[locus_key]['reads'][:maxR]
 
 
     snp_positions = set()
