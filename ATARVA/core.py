@@ -61,14 +61,29 @@ def main():
 
     start_time = ti.default_timer()
     args = parse_args()
-    
-    for arg in vars(args):
-        print (arg, getattr(args, arg))
 
     aln_format = ''         # format of the alignment file
     if   args.format == 'cram': aln_format = 'rc'
     elif args.format == 'sam':  aln_format = 'r'
     else:            aln_format = 'rb'
+
+    for each_bam in args.bams:
+        count = 0
+        for read in pysam.AlignmentFile(each_bam, aln_format):
+            count+=1
+            string = read.cigarstring
+            if read.has_tag('cs'):
+                break
+            elif (string!=None) and (('X' in string) or ('=' in string)):
+                break
+            elif read.has_tag('MD'):
+                break
+            if count>100:
+                print("No MD tag found in ", each_bam.split('/')[-1])
+                sys.exit()
+    
+    for arg in vars(args):
+        print (arg, getattr(args, arg))
 
     seq_platform = args.platform     # seq_tech of the alignment file
 
@@ -95,6 +110,8 @@ def main():
 
     threads = args.processor
     split_point = total_loci // threads
+    if split_point == 0:
+        split_point = 1
 
     
     fetcher = []
@@ -131,8 +148,10 @@ def main():
 
         if not args.vcf:
             out_file = f'{".".join(each_bam.split(".")[:-1])}'
-        elif mbso:
-            out_file = ".".join(each_bam.split(".")[:-1]) + out_file
+        elif mbso or (out_file[-1]=='/'):
+            out_file = out_file + ".".join(each_bam.split(".")[:-1])
+
+
 
         if threads > 1:
             thread_pool = list()

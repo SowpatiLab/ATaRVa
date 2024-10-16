@@ -36,7 +36,7 @@ def locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, 
             else: print('Locus skipped due to less number of significant snps based on user\'s parameter.')
         else:
             if skip_point == 0:
-                print('Locus skipped due to minimum number of supporting reads')
+                # print('Locus skipped due to minimum number of supporting reads')
                 vcf_fail_writer(Chrom, locus_key, global_loci_info, ref, out, len(prev_reads), skip_point)
             # else:
             #     print('Locus skipped due to maximum number of supporting reads')
@@ -207,7 +207,7 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
                 parse_cstag(read_index, cs_tag, read_start, loci_keys, loci_coords, read_loci_variations, homopoly_positions, global_read_variations, global_snp_positions, read_quality, cigar_one, sorted_global_snp_list)
             else :
                 parse_cigar_tag(read_index, cigar_tuples, read_start, loci_keys, loci_coords, read_loci_variations,
-                                homopoly_positions, global_read_variations, global_snp_positions, read_sequence, read, read_quality, sorted_global_snp_list)
+                                homopoly_positions, global_read_variations, global_snp_positions, read_sequence, read, ref, read_quality, sorted_global_snp_list)
 
             for locus_key in read_loci_variations:
                 global_loci_variations[locus_key]['reads'].append(read_index)
@@ -217,3 +217,7 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
             genotyped_loci_count += locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, level_split, snpQ, snpC, snpD, snpR, phasingR)
                 
         print(f'\nTotal genotyped loci = {genotyped_loci_count}\n', file=sys.stderr)
+
+    bam.close()
+    ref.close()
+    tbx.close()

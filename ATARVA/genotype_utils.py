@@ -44,7 +44,7 @@ def length_genotyper(hallele_counter, global_loci_info, global_loci_variations, 
                     current_cluster = [num]
         clusters.append(current_cluster)
     elif len(alleles)%2 == 0:
-        div=len(alleles)/2
+        div=int(len(alleles)/2)
         clusters.append(alleles[:div])
         clusters.append(alleles[div:])
     else:

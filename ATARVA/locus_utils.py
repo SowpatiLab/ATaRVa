@@ -46,7 +46,7 @@ def process_locus(locus_key, global_loci_variations, global_read_variations, glo
     if total_reads < minR:
         # coverage of the locus is low
         prev_reads = set(read_indices)
-        return [prev_reads, homozygous, ambiguous, homozygous_allele, reads_of_homozygous, {}, 0]
+        return [prev_reads, homozygous, ambiguous, homozygous_allele, reads_of_homozygous, {}, 0, max_limit]
     elif total_reads > maxR:
         # coverage of the locus is high
         read_indices = read_indices[:maxR]
