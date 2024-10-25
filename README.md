@@ -87,14 +87,17 @@ The `-fi` or `--fasta` option is used to specify the input FASTA file. The corre
 ### `--bams`
 **Expects**: *FILE*<br>
 **Default**: *None*<br>
-The `--bams` option is used to specify one or more input alignment files in the same format. ATaRVa accepts any of the three alignment formats: SAM, BAM, or CRAM. The format should be specified using the `--format` option. The corresponding index file (`.bai`) should be located in the same directory. An alignment file can be indexed using following command:
+The `--bams` option is used to specify one or more input alignment files in the same format. ATaRVa accepts any of the three alignment formats: SAM, BAM, or CRAM. The alignment file should be sorted by coordinates. The format should be specified using the `--format` option. The corresponding index file (`.bai` or `.csi`) should be located in the same directory. An alignment file can be sorted and indexed using the following commands:
 
 ```bash
+# to sort the alignment file
+$ samtools sort -o sorted_output.bam input.bam
+
 # to generate .bai index file
-$ samtools index -b input.bam
+$ samtools index -b sorted_output.bam
 ```
 
-The alignment file should contain at least one of the following tags: `MD` tag, `CS` tag, or a `CIGAR` string with `=/X` operations.
+An alignment file containing at least one of the following tags is preferred for faster processing: `MD` tag, `CS` tag, or a `CIGAR` string with `=/X` operations.
 
 - The CS tag is generated using the --cs option when aligning reads with the [minimap2](https://github.com/lh3/minimap2) aligner.
 - The MD tag can be generated using the --MD option in minimap2.
@@ -238,7 +241,7 @@ Each entry includes the fields specified in the [Variant Calling Format (VCF)](h
 | REF | Reference sequence of the repeat region |
 | ALT | Sequence of the repeat alleles in the sample |
 | QUAL | Quality score of the genotype (set to '0') |
-| FILTER | Filter status (set to '.') |
+| FILTER | Filter status (PASS, LESS_READS) |
 | INFO | Information about the TR region |
 | FORMAT | Data type of the genotype information |
 | SAMPLE | Values of the genotype information for the TR region |
@@ -247,7 +250,7 @@ Each entry includes the fields specified in the [Variant Calling Format (VCF)](h
 The `INFO` field describes the general structure of the repeat region and includes the following details:
 |     INFO      |           DESCRIPTION           | 
 |---------------|---------------------------------|
-| AC | Total number of ALT alleles in called genotypes |
+| AC | Total number of respective ALT alleles in called genotypes |
 | AN | Total number of alleles in called genotypes |
 | MOTIF | Motif of the repeat region |
 | END | End position of the repeat region |
@@ -259,10 +262,12 @@ The `FORMAT` fields and their values are provided in the last two columns of the
 | GT | Genotype of the sample |
 | AL | Length of the alleles in base pairs |
 | SD | Number of supporting reads for each alleles |
-| PC | Number of alleles in the phased cluster for each allele |
+| PC | Number of reads in the phased cluster for each allele |
 | DP | Number of the supporting reads for the repeat locus |
 | SN | Number of SNPs used for phasing |
-| SQ | Phred-scale qualities of the SNPs used for phasing |
+| SQ | Phred-scale qualities of the SNPs used for phasing |  
+
+**NOTE: Loci missing in the VCF either have no reads mapped to them, contain reads that do not fully enclose the repeat region, or have reads with low mapping quality (mapQ).**
 
 ### `--platform`
 **Expects**: *STRING*<br>
