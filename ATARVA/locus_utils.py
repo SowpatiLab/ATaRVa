@@ -61,8 +61,6 @@ def process_locus(locus_key, global_loci_variations, global_read_variations, glo
     # recording the counts of each allele length across all reads
     allele_counter = {};  hallele_counter = {}
     count_alleles(locus_key, read_indices, global_loci_variations, allele_counter, hallele_counter)
-        
-        
     if len(hallele_counter) == 1:
         homozygous = True
         homozygous_allele = list(hallele_counter.keys())[0]
@@ -70,7 +68,7 @@ def process_locus(locus_key, global_loci_variations, global_read_variations, glo
     
     else:
         filtered_alleles = list(filter(lambda x: hallele_counter[x] > 1, hallele_counter.keys()))
-        if len(filtered_alleles) == 1 and hallele_counter[filtered_alleles[0]]/total_reads >= 0.5:
+        if len(filtered_alleles) == 1 and hallele_counter[filtered_alleles[0]]/total_reads >= 0.75:
             homozygous = True
             homozygous_allele = filtered_alleles[0]
             reads_of_homozygous = [rindex for rindex in global_loci_variations[locus_key]['read_allele'] if homozygous_allele == global_loci_variations[locus_key]['read_allele'][rindex][0]]

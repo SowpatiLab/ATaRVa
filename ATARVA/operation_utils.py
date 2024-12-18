@@ -42,7 +42,7 @@ def match_jump(rpos, repeat_index, loci_coords, tracked, locus_qpos_range, qpos,
                 locus_qpos_range[r+repeat_index][1] = qpos - (rpos - coord[1])
 
             tracked[r+repeat_index] = True 
-        elif coord[1] < rpos:
+        elif coord[1] <= rpos:
             
             locus_qpos_range[r+repeat_index][1] = qpos - (rpos - coord[1])
 
@@ -126,7 +126,7 @@ def insertion_jump(insertion_length, insert, rpos, repeat_index, loci_keys, trac
         if rpos < coord[0]: break
 
         # if the insertion is happening beyond, the repeat in unaffected
-        if rpos > coord[1] + 1: continue
+        if rpos > coord[1]: continue
 
         locus_key = loci_keys[r+repeat_index]
         if not tracked[r+repeat_index]:

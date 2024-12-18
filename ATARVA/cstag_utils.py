@@ -3,7 +3,7 @@ from operation_utils import match_jump, deletion_jump, insertion_jump
 
 
 def parse_cstag(read_index, cs_tag, read_start, loci_keys, loci_coords, read_loci_variations,
-                homopoly_positions, global_read_variations, global_snp_positions, read_quality, cigar_one, sorted_global_snp_list):
+                homopoly_positions, global_read_variations, global_snp_positions, read_sequence, read_quality, cigar_one, sorted_global_snp_list):
     """
     Parse the CS tag for a read and record the variations observed for the read also for the loci
     """
@@ -82,3 +82,8 @@ def parse_cstag(read_index, cs_tag, read_start, loci_keys, loci_coords, read_loc
             rpos += deletion_length
             repeat_index += deletion_jump(deletion_length, rpos, repeat_index, loci_keys, tracked, loci_coords,
                                           homopoly_positions, read_loci_variations, locus_qpos_range, qpos)
+            
+    for idx,each_key in enumerate(loci_keys):
+        s_pos = locus_qpos_range[idx][0]
+        e_pos = locus_qpos_range[idx][1]
+        read_loci_variations[each_key]['seq'] = read_sequence[s_pos:e_pos]

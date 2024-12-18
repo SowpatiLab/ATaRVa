@@ -11,9 +11,9 @@ import timeit as ti
 import statistics
 import argparse as ap
 from multiprocessing import Process
-from version import __version__
 
-from baseline import cooper
+from version import __version__
+from baseline import *
 
 def parse_args():
     parser = ap.ArgumentParser()
@@ -56,11 +56,64 @@ def parse_args():
     return parser.parse_args()
 
 
+def f_check(path):
+    try:
+        f = pysam.FastaFile(path)
+        f.close()
+    except (FileNotFoundError, ValueError, OSError) as e:
+        print(f"Error: {path} is not a valid FASTA file. {str(e)}")
+        sys.exit()
+    except Exception as e:
+        print("An unexpected error occurred:", str(e))
+        sys.exit()
+
+def b_check(path, aln_format):
+    try:
+        b = pysam.AlignmentFile(path, aln_format)
+        header = b.header
+        if 'HD' in header and 'SO' in header['HD']:
+            sort_order = header['HD']['SO']
+            if sort_order == 'coordinate':
+                pass
+                # print(f"Alignment file sort order: {sort_order}")
+            else:
+                print(f"Alignment file sort order: {sort_order}. It should be sorted by \'coordinate\'!!")
+                print(f"Use: samtools sort sorted_{path.split('/')[-1]} {path.split('/')[-1]}")
+                sys.exit()
+        else:
+            print("No sort order specified in the header.")
+            print(f"Use: samtools sort sorted_{path.split('/')[-1]} {path.split('/')[-1]}")
+            sys.exit()
+
+        b.close()
+    except (FileNotFoundError, ValueError, OSError) as e:
+        print(f"Error: {path} is not a valid alignment file. {str(e)}")
+        sys.exit()
+    except Exception as e:
+        print("An unexpected error occurred:", str(e))
+        sys.exit()
+
+def t_check(path):
+    try:
+        t = pysam.TabixFile(path)
+        t.close()
+    except (FileNotFoundError, ValueError, OSError) as e:
+        print(f"Error: {path} is not a valid tabix file. {str(e)}")
+        sys.exit()
+    except Exception as e:
+        print("An unexpected error occurred:", str(e))
+        sys.exit()
 
 def main():
 
     start_time = ti.default_timer()
     args = parse_args()
+
+    for arg in vars(args):
+        print (arg, getattr(args, arg))
+    print('\n')
+
+    f_check(args.fasta)
 
     aln_format = ''         # format of the alignment file
     if   args.format == 'cram': aln_format = 'rc'
@@ -68,22 +121,9 @@ def main():
     else:            aln_format = 'rb'
 
     for each_bam in args.bams:
-        count = 0
-        for read in pysam.AlignmentFile(each_bam, aln_format):
-            count+=1
-            string = read.cigarstring
-            if read.has_tag('cs'):
-                break
-            elif (string!=None) and (('X' in string) or ('=' in string)):
-                break
-            elif read.has_tag('MD'):
-                break
-            if count>100:
-                print("No MD tag found in ", each_bam.split('/')[-1])
-                sys.exit()
+        b_check(each_bam, aln_format)
+    t_check(args.regions)
     
-    for arg in vars(args):
-        print (arg, getattr(args, arg))
 
     seq_platform = args.platform     # seq_tech of the alignment file
 
@@ -92,9 +132,12 @@ def main():
     if args.vcf:
         if '.vcf' == args.vcf[-4:]:
             out_file = f'{args.vcf}'[:-4]
+        elif args.vcf[-1]=='/':
+            out_file = args.vcf + "atarva_tr_"
         else:
             out_file = f'{args.vcf}'
     # else: out_file = f'{".".join(args.bams.split(".")[:-1])}'
+    external_name = out_file
 
     tbx  = pysam.Tabixfile(args.regions)
     total_loci = 0
@@ -145,11 +188,43 @@ def main():
         mbso = 1
     
     for each_bam in args.bams:
+        out_file = external_name
+        print(f"Processing sample {each_bam.split('/')[-1]}\n")
+
+        count = 0
+        aln_file = pysam.AlignmentFile(each_bam, aln_format)
+        length = 0
+        for read in aln_file.fetch():
+            if (read.flag & 0X400) or (read.flag & 0X100): continue 
+            count+=1
+            string = read.cigarstring
+            length += read.query_length
+            if read.has_tag('cs'):
+                print("CS tag detected. Processing using CS tag...\n")
+                break
+            elif (string!=None) and (('X' in string) or ('=' in string)):
+                print("CIGAR(X/=) tag detected. Processing using CIGAR(X/=) tag...\n")
+                break
+            elif read.has_tag('MD'):
+                print("MD tag detected. Processing using MD tag...")
+                print("Include CS tag or CIGAR tag with 'X/=' for faster processing.\n")
+                break
+            if count>100:
+                print(f"No tags detected in {each_bam.split('/')[-1]}. Processing without tags...")
+                print("Include the CS tag, MD tag, or CIGAR tag with 'X/=' for faster processing.\n")
+                # sys.exit()
+        aln_file.close()
+        srs = False
+        if length/count < 350:
+            print('Short reads detected... Processing in short-read mode.')
+            srs = True
+        else: print('Long reads detected... Processing in long-read mode.')
+        
 
         if not args.vcf:
-            out_file = f'{".".join(each_bam.split(".")[:-1])}'
+            out_file = f'{".".join(each_bam.split("/")[-1].split(".")[:-1])}'
         elif mbso or (out_file[-1]=='/'):
-            out_file = out_file + ".".join(each_bam.split(".")[:-1])
+            out_file = out_file + ".".join(each_bam.split("/")[-1].split('.')[:-1])
 
 
 
@@ -158,9 +233,14 @@ def main():
             # initializing threads
             for tidx in range(threads):
                 contig = fetcher[tidx]
-                thread_x = Process(
-                    target = cooper,
-                    args = (each_bam, args.regions, args.fasta, aln_format, contig, args.map_qual, out_file, seq_platform, args.level_split, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, tidx))
+                if srs:
+                    thread_x = Process(
+                        target = mini_cooper,
+                        args = (each_bam, args.regions, args.fasta, aln_format, contig, args.map_qual, out_file, seq_platform, args.level_split, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, tidx))
+                else:
+                    thread_x = Process(
+                        target = cooper,
+                        args = (each_bam, args.regions, args.fasta, aln_format, contig, args.map_qual, out_file, seq_platform, args.level_split, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, tidx))
                 thread_x.start()
                 thread_pool.append(thread_x)
             # joining Threads 
@@ -169,12 +249,12 @@ def main():
             # emptying thread_pool
             thread_pool.clear()
         
-            out = open(f'{out_file}.vcf', 'w')
+            out = open(f'{out_file}.vcf', 'a')
             print('Concatenating thread outputs!', file=sys.stderr)
-            for tidx in range(threads):
+            for tidx in range(threads)[1:]:
                 thread_out = f'{out_file}_thread_{tidx}.vcf'
                 with open(thread_out, 'r') as fh:
-                    if tidx!=0: next(fh)
+                    # if tidx!=0: next(fh)
                     for line in fh:
                         repeat_info = line.strip().split('\t')
                         print(*repeat_info, file=out, sep='\t')
@@ -182,8 +262,10 @@ def main():
             out.close()
             print('Concatenation completed!! ^_^', file=sys.stderr)
         else:
-            cooper(each_bam, args.regions, args.fasta, aln_format, fetcher[0], args.map_qual, out_file, seq_platform, args.level_split, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, -1)
-                    
+            if srs:
+                mini_cooper(each_bam, args.regions, args.fasta, aln_format, fetcher[0], args.map_qual, out_file, seq_platform, args.level_split, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, -1)
+            else:
+                cooper(each_bam, args.regions, args.fasta, aln_format, fetcher[0], args.map_qual, out_file, seq_platform, args.level_split, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, -1)
 
     time_now = ti.default_timer()
     sys.stderr.write('CPU time: {} seconds\n'.format(time_now - start_time))

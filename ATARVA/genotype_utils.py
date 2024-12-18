@@ -6,106 +6,32 @@ import statistics
 
 
 def length_genotyper(hallele_counter, global_loci_info, global_loci_variations, locus_key, read_indices, contig, locus_start, locus_end, ref, out):
-    stringency_factor = [0.5, 1, 2]
-
-    motif_len = float(global_loci_info[locus_key][4])
     
-    alleles = sorted(hallele_counter.keys())
-    diffs = np.diff(alleles)
-    mean_diff = np.mean(diffs)
-    std_diff = np.std(diffs)
+    total_reads = len(read_indices)
+    filtered_alleles = list(filter(lambda x: hallele_counter[x] > 1, hallele_counter.keys()))
+    top_alleles = [al for al in filtered_alleles if (hallele_counter[al]/total_reads) > 0.2]
+    locus_read_allele = global_loci_variations[locus_key]['read_allele'] # extracting allele info from global_loci_variation
 
-    if std_diff == 0:
-        factor = 0
-    elif std_diff <= 6:
-        factor = stringency_factor[0]
-    elif std_diff <= 15:
-        factor = stringency_factor[1]
+    if len(top_alleles) == 1:
+        hap_reads = [read_id for read_id in locus_read_allele if locus_read_allele[read_id][0]==top_alleles[0]]
+        vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, top_alleles[0], global_loci_variations, hallele_counter[top_alleles[0]], out, hap_reads)
+
+    elif len(top_alleles)>1:
+        phased_read = ['.','.']
+        chosen_snpQ = '.'
+        snp_num = '.'
+        hetero_alleles = sorted(top_alleles, key=lambda x: hallele_counter[x], reverse=True)[:2]
+
+        hap_reads = ([],[])
+        for i,al in enumerate(hetero_alleles):
+            hap_reads[i].extend([read_id for read_id in locus_read_allele if locus_read_allele[read_id][0]==al])
+
+        allele_count = {}
+        for al in hetero_alleles:
+            allele_count[al] = hallele_counter[al]
+        vcf_heterozygous_writer(contig, hetero_alleles, locus_start, global_loci_variations, locus_end, allele_count, len(read_indices), global_loci_info, ref, out, chosen_snpQ, phased_read, snp_num, hap_reads)
     else:
-        factor = stringency_factor[2]
-    
-    clusters = []
-    if factor>0:
-        lower_bound = mean_diff - std_diff*factor
-        upper_bound = mean_diff + std_diff*factor
-
-        current_cluster = []
-        for idx,num in enumerate(alleles):
-            if idx==0:
-                current_cluster.append(num)
-            else:
-                diff = num - alleles[idx - 1]
-
-                if lower_bound <= diff <= upper_bound:
-                    current_cluster.append(num)
-                else:
-                    # Start a new cluster
-                    clusters.append(current_cluster)
-                    current_cluster = [num]
-        clusters.append(current_cluster)
-    elif len(alleles)%2 == 0:
-        div=int(len(alleles)/2)
-        clusters.append(alleles[:div])
-        clusters.append(alleles[div:])
-    else:
-        div=round(len(alleles)/2)
-        clusters.append(alleles[:div])
-        clusters.append(alleles[div+1:])
-        med_allele = alleles[div]
-        if sum([hallele_counter[each_num] for each_num in clusters[0]]) < sum([hallele_counter[each_num] for each_num in clusters[1]]):
-            clusters[0].append(med_allele)
-        else:
-            clusters[1].append(med_allele)
-    
-    del_cl = []
-    for idx,each_cluster in enumerate(clusters):
-        cl_reads = 0
-        for each_num in each_cluster:
-            cl_reads += hallele_counter[each_num]
-        if cl_reads < len(read_indices)*0.2:
-            del_cl.append(each_cluster)
-    for less_cl in del_cl:
-        clusters.remove(less_cl)
-
-    while len(clusters) > 2:
-        cluster_reads = []
-        for each_cluster in clusters:
-            cl_reads = 0
-            for each_num in each_cluster:
-                cl_reads += hallele_counter[each_num]
-            cluster_reads.append(cl_reads)
-        del_cl = clusters[cluster_reads.index(min(cluster_reads))]
-        clusters.remove(del_cl)
-
-    def genotyper(group, hallele_counter):
-        allele_freq = []
-        for allele in group:
-            allele_freq.append(hallele_counter[allele])
-        fidx = allele_freq.index(max(allele_freq))
-        final_allele = group[fidx]
-        return (final_allele, hallele_counter[final_allele], sum(allele_freq))
-
-    genotypes = []
-    allele_count = {}
-    phased_read = []
-    chosen_snpQ = '.'
-    snp_num = '.'
-    if len(clusters) == 1:
-        homo_allele = genotyper(clusters[0], hallele_counter)
-        vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, homo_allele[0], global_loci_variations, homo_allele[1], out)
-
-    elif len(clusters) == 2:
-        hetero_alleles = []
-        for each_cluster in clusters:
-            allele = genotyper(each_cluster, hallele_counter)
-            hetero_alleles.append(allele)
-            genotypes.append(allele[0])
-            phased_read.append(allele[2])
-            if allele[0] not in allele_count:
-                allele_count[allele[0]] = allele[1]
-            else:
-                allele_count[str(allele[0])] = allele[1]
-        vcf_heterozygous_writer(contig, genotypes, locus_start, locus_end, allele_count, len(read_indices), global_loci_info, ref, out, chosen_snpQ, phased_read, snp_num)
+        pass # write allele distribution with only one read supporting to it in vcf
 
     return [True, 10]
         
@@ -164,7 +90,6 @@ def analyse_genotype(contig, locus_key, global_loci_info,
                 snp_allelereads[pos]['Qval'].update(dict([(read_idx,global_snp_positions[pos]['Qval'][read_idx]) for read_idx in snp_allelereads[pos]['alleles'][nuc]]))
 
     del_positions = list(filter(lambda x: snp_allelereads[x]['cov'] < 5, snp_allelereads.keys()))
-    # snp_positions = list(filter(lambda x: snp_allelereads[x]['cov'] >= 5, snp_allelereads.keys()))
     for pos in del_positions:
         del snp_allelereads[pos]
 
@@ -201,7 +126,9 @@ def analyse_genotype(contig, locus_key, global_loci_info,
 
     ref_len = int(locus_key[locus_key.index('-')+1:]) - int(locus_key[locus_key.index(':')+1 : locus_key.index('-')])
     
-        
+    hap_reads = ([],[])
+    for i,al in enumerate(genotypes):
+        hap_reads[i].extend([read_id for read_id in haplotypes[i] if locus_read_allele[read_id][0]==al])
 
     allele_count = {}
     for index, allele in enumerate(genotypes):
@@ -210,7 +137,7 @@ def analyse_genotype(contig, locus_key, global_loci_info,
         else:
             allele_count[str(allele)] = hap_alleles[index].count(allele)
 
-    vcf_heterozygous_writer(contig, genotypes, locus_start, locus_end, allele_count, len(read_indices), global_loci_info, ref, out, chosen_snpQ, phased_read, snp_num)
+    vcf_heterozygous_writer(contig, genotypes, locus_start, global_loci_variations, locus_end, allele_count, len(read_indices), global_loci_info, ref, out, chosen_snpQ, phased_read, snp_num, hap_reads)
     state = True
     return [state, skip_point]
     

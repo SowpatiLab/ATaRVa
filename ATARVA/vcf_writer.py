@@ -1,23 +1,57 @@
-def vcf_writer(out):
+import sys
+import pysam
+from consensus import consensus_seq_poa
 
-    print(*['#CHROM', 'POS', 'ID', 'REF', 'ALT', 'QUAL', 'FILTER', 'INFO', 'FORMAT', 'SAMPLE'], file=out, sep='\t')
+def vcf_writer(out, bam, bam_name):
 
-def vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, homozygous_allele, global_loci_variations, reads_of_homozygous, out):
+    vcf_header = pysam.VariantHeader()
+
+    # command
+    vcf_header.add_line(f"##command=ATaRVa {' '.join(sys.argv)}")
+
+    for contig in bam.header['SQ']:
+        vcf_header.contigs.add(contig['SN'], length=contig['LN'])
+    #sample_name
+    vcf_header.add_sample(bam_name)
+    # FILTER
+    vcf_header.filters.add('LESS_READS', number=None, type=None, description="Read depth below threshold")
+    # INFO
+    vcf_header.info.add("AC", number='A', type="Integer", description="Number of alternate alleles in called genotypes")
+    vcf_header.info.add("AN", number=1, type="Integer", description="Number of alleles in called genotypes")
+    vcf_header.info.add("MOTIF", number=1, type="String", description="Repeat motif")
+    vcf_header.info.add("END", number=1, type="Integer", description="End position of the repeat region")
+    # FORMAT
+    vcf_header.formats.add("GT", number=1, type="String", description="Genotype")
+    vcf_header.formats.add("AL", number=2, type="Integer", description="Allele length in base pairs")
+    vcf_header.formats.add("SD", number='.', type="Integer", description="Number of reads supporting for the alleles")
+    vcf_header.formats.add("PC", number=2, type="Integer", description="Number of reads in the phased cluster for each allele")
+    vcf_header.formats.add("DP", number=1, type="Integer", description="Number of the supporting reads for the repeat locus")
+    vcf_header.formats.add("SN", number='.', type="Integer", description="Number of SNPs used for phasing")
+    vcf_header.formats.add("SQ", number='.', type="Float", description="Phred-scale qualities of the SNPs used for phasing")
+
+    out.write(str(vcf_header))
+    # print(*['#CHROM', 'POS', 'ID', 'REF', 'ALT', 'QUAL', 'FILTER', 'INFO', 'FORMAT', 'SAMPLE'], file=out, sep='\t')
+
+def vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, homozygous_allele, global_loci_variations, reads_len, out, hap_reads):
 
     locus_start = int(global_loci_info[locus_key][1])
     locus_end = int(global_loci_info[locus_key][2])
     
 
-    if type(reads_of_homozygous) == list:
-        reads_of_homozygous = len(reads_of_homozygous)
+    if type(reads_len) == list:
+        reads_len = len(reads_len) #removable
     
     ref_allele_length = locus_end - locus_start
     DP = len(global_loci_variations[locus_key]['reads'])
 
-    AC = 0; AN = 1; GT = '0/0'
+    AC = 0; AN = 2; GT = '0/0'; ALT = '.'
     if homozygous_allele != ref_allele_length:
-        AC = 1
+        AC = 2
         GT = '1/1'
+        seqs = [seq for seq in [global_loci_variations[locus_key]['read_sequence'][read_id] for read_id in hap_reads] if seq!='']
+        if len(seqs)>0:
+            ALT = consensus_seq_poa(seqs, homozygous_allele)
+        else: ALT = '<DEL>'
 
     # INFO = 'AC=' + str(AC) + ';AN=' + str(AN) + ';DP=' + str(DP)+ ';END=' + str(locus_end)
 
@@ -27,39 +61,44 @@ def vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, homozygous_a
     # SAMPLE = str(GT) + ':' + str(homozygous_allele) + ',' + str(homozygous_allele) + ':' + str(reads_of_homozygous)
 
     FORMAT = 'GT:AL:SD:PC:DP:SN:SQ'
-    SAMPLE = str(GT) + ':' + str(homozygous_allele) + ',' + str(homozygous_allele) + ':' + str(reads_of_homozygous) + ':.:' + str(DP) + ':.:.'
+    SAMPLE = str(GT) + ':' + str(homozygous_allele) + ',' + str(homozygous_allele) + ':' + str(reads_len) + ':.:' + str(DP) + ':.:.'
 
-    print(*[contig, locus_start, '.',  ref.fetch(contig, locus_start-1, locus_end), '.', 0, 'PASS', INFO, FORMAT, SAMPLE], file=out, sep='\t')
+    print(*[contig, locus_start, '.',  ref.fetch(contig, locus_start, locus_end), ALT , 0, 'PASS', INFO, FORMAT, SAMPLE], file=out, sep='\t')
     del global_loci_info[locus_key]
 
 
-def vcf_heterozygous_writer(contig, genotypes, locus_start, locus_end, allele_count, DP, global_loci_info, ref, out, chosen_snpQ, phased_read, snp_num):
+def vcf_heterozygous_writer(contig, genotypes, locus_start, global_loci_variations, locus_end, allele_count, DP, global_loci_info, ref, out, chosen_snpQ, phased_read, snp_num, hap_reads):
 
     locus_key = f'{contig}:{locus_start}-{locus_end}'
     final_allele = set(genotypes)
     heterozygous_allele = ''
     AC = 'AC'
-    AN = 'AN'
+    AN = 2
     GT = 'GT'
     SD = 'SD'
     PC = 'PC'
+    ALT = '.'
 
     ref_allele_length = locus_end - locus_start
 
     if len(final_allele) == 1:
-        AN = 1
+        # AN = 1
         if ref_allele_length == tuple(final_allele)[0]:
             AC = 0
             GT = '0|0'
             heterozygous_allele+=str(ref_allele_length)+','+str(ref_allele_length)
             SD = str(allele_count[ref_allele_length])+','+str(allele_count[str(ref_allele_length)])
         else:
-            AC = 1; GT = '1|1'
+            AC = 2; GT = '1|1'
             heterozygous_allele+=str(tuple(final_allele)[0])+','+str(tuple(final_allele)[0])
             SD = str(allele_count[tuple(final_allele)[0]])+','+str(allele_count[str(tuple(final_allele)[0])])
+            seqs = [seq for seq in [global_loci_variations[locus_key]['read_sequence'][read_id] for read_id in hap_reads[0]] if seq!='']
+            if len(seqs)>0:
+                ALT = consensus_seq_poa(seqs, genotypes[0])
+            else: ALT = '<DEL>'
         PC = str(phased_read[0])+','+str(phased_read[1])
     else:
-        AN = 2
+        # AN = 2
         if len(set((ref_allele_length,)) & final_allele) == 1:
             AC = 1
             GT = '0|1'
@@ -67,16 +106,38 @@ def vcf_heterozygous_writer(contig, genotypes, locus_start, locus_end, allele_co
             SD = str(allele_count[ref_allele_length])+','+str(allele_count[tuple(final_allele-{ref_allele_length})[0]])
             if genotypes.index(ref_allele_length) == 0:
                 PC = str(phased_read[0])+','+str(phased_read[1])
-            else: PC = str(phased_read[1])+','+str(phased_read[0])
+                seqs = [seq for seq in [global_loci_variations[locus_key]['read_sequence'][read_id] for read_id in hap_reads[1]] if seq!='']
+                if len(seqs)>0:
+                    ALT = consensus_seq_poa(seqs, genotypes[1])
+                else: ALT = '<DEL>'
+                # ALT = consensus_seq_poa([global_loci_variations[locus_key]['read_sequence'][read_id] for read_id in hap_reads[1]])
+            else:
+                PC = str(phased_read[1])+','+str(phased_read[0])
+                seqs = [seq for seq in [global_loci_variations[locus_key]['read_sequence'][read_id] for read_id in hap_reads[0]] if seq!='']
+                if len(seqs)>0:
+                    ALT = consensus_seq_poa(seqs, genotypes[0])
+                else: ALT = '<DEL>'
+                # ALT = consensus_seq_poa([global_loci_variations[locus_key]['read_sequence'][read_id] for read_id in hap_reads[0]])
         else:
-            AC = 2
+            AC = '1,1'
             GT = '1|2'
             heterozygous_allele+=str(genotypes[0])+','+str(genotypes[1])
             SD = str(allele_count[genotypes[0]])+','+str(allele_count[genotypes[1]])
             PC = str(phased_read[0])+','+str(phased_read[1])
+            seqs1 = [seq for seq in [global_loci_variations[locus_key]['read_sequence'][read_id] for read_id in hap_reads[0]] if seq!='']
+            if len(seqs1)>0:
+                ALT1 = consensus_seq_poa(seqs1, genotypes[0])
+            else: ALT1 = '<DEL>'
+            seqs2 = [seq for seq in [global_loci_variations[locus_key]['read_sequence'][read_id] for read_id in hap_reads[1]] if seq!='']
+            if len(seqs2)>0:
+                ALT2 = consensus_seq_poa(seqs2, genotypes[1])
+            else: ALT2 = '<DEL>'
+            ALT = ALT1 + ',' + ALT2
+            # ALT = consensus_seq_poa([global_loci_variations[locus_key]['read_sequence'][read_id] for read_id in hap_reads[0]]) + ',' + consensus_seq_poa([global_loci_variations[locus_key]['read_sequence'][read_id] for read_id in hap_reads[1]])
 
     # INFO = 'AC='+str(AC)+';AN='+str(AN)+';DP='+str(DP)+';END='+str(locus_end)+';PC='+PC+';SN='+str(snp_num)+';SQ='+chosen_snpQ
 
+    if PC == '.,.': PC = '.' # due  to length genotyper
     INFO = 'AC='+str(AC)+';AN='+str(AN)+';MOTIF=' + str(global_loci_info[locus_key][3]) + ';END='+str(locus_end)
 
     # FORMAT = 'GT:AL:SD'
@@ -85,7 +146,7 @@ def vcf_heterozygous_writer(contig, genotypes, locus_start, locus_end, allele_co
     FORMAT = 'GT:AL:SD:PC:DP:SN:SQ'
     SAMPLE = str(GT)+':'+heterozygous_allele+':' + SD + ':' + PC + ':' + str(DP) + ':' + str(snp_num) + ':' + chosen_snpQ
 
-    print(*[contig, locus_start, '.',  ref.fetch(contig, locus_start-1, locus_end), '.', 0, 'PASS', INFO, FORMAT, SAMPLE], file=out, sep='\t')
+    print(*[contig, locus_start, '.',  ref.fetch(contig, locus_start, locus_end), ALT, 0, 'PASS', INFO, FORMAT, SAMPLE], file=out, sep='\t')
     del global_loci_info[locus_key]
 
 def vcf_fail_writer(contig, locus_key, global_loci_info, ref, out, DP, skip_point):
@@ -99,5 +160,5 @@ def vcf_fail_writer(contig, locus_key, global_loci_info, ref, out, DP, skip_poin
     INFO = 'AC=0;AN=0;MOTIF=' + str(global_loci_info[locus_key][3]) + ';END=' + str(locus_end)
     FORMAT = 'GT:AL:SD:PC:DP:SN:SQ'
     SAMPLE = '.:.:.:.:.:.:.'
-    print(*[contig, locus_start, '.',  ref.fetch(contig, locus_start-1, locus_end), '.', 0, FILTER, INFO, FORMAT, SAMPLE], file=out, sep='\t')
+    print(*[contig, locus_start, '.',  ref.fetch(contig, locus_start, locus_end), '.', 0, FILTER, INFO, FORMAT, SAMPLE], file=out, sep='\t')
     del global_loci_info[locus_key]

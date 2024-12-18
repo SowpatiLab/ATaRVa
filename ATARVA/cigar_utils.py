@@ -1,6 +1,21 @@
 import bisect
+import sys
+import numpy as np
 from operation_utils import match_jump, deletion_jump, insertion_jump
 from md_utils import parse_mdtag
+
+def subex(ref, que):
+
+    if '=' in que:
+        array = np.frombuffer(que.encode(), dtype=np.byte)
+        substitution_indices = np.where(array != ord('='))[0]
+        
+    else:
+        array1 = np.frombuffer(ref.encode(), dtype=np.byte)
+        array2 = np.frombuffer(que.encode(), dtype=np.byte)
+        substitution_indices = np.where(array1 != array2)[0]
+        
+    return substitution_indices.tolist()
 
 def parse_cigar_tag(read_index, cigar_tuples, read_start, loci_keys, loci_coords, read_loci_variations,
                 homopoly_positions, global_read_variations, global_snp_positions, read_sequence, read, ref, read_quality, sorted_global_snp_list):
@@ -47,10 +62,7 @@ def parse_cigar_tag(read_index, cigar_tuples, read_start, loci_keys, loci_coords
                 query_sequence = read_sequence[qpos:qpos+cigar[1]]
                 sub_pos = []
                 if len(ref_sequence)==len(query_sequence):
-                    if '=' not in query_sequence:
-                        sub_pos = [i for i in range(len(ref_sequence)) if (ref_sequence[i] != query_sequence[i]) and (ref_sequence[i]!='N')]
-                    else:
-                        sub_pos = [i for i in range(len(ref_sequence)) if query_sequence[i]!='=']
+                    sub_pos = subex(ref_sequence, query_sequence)
                 else:
                     print('Error in fetching in sequences of ref & read for substitution')
                     sys.exit()
@@ -92,7 +104,7 @@ def parse_cigar_tag(read_index, cigar_tuples, read_start, loci_keys, loci_coords
                     global_snp_positions[rpos][sub_nuc].add(read_index)
                     
                 else: global_snp_positions[rpos][sub_nuc] = {read_index}
-            qpos += 1; rpos += 1; match_len = cigar[1]
+            qpos += cigar[1]; rpos += cigar[1]; match_len = cigar[1]
             repeat_index += match_jump(rpos, repeat_index, loci_coords,tracked, locus_qpos_range, qpos, match_len)
 
     if not X_tag :
@@ -101,3 +113,8 @@ def parse_cigar_tag(read_index, cigar_tuples, read_start, loci_keys, loci_coords
             else: qpos=0
             MD_tag = read.get_tag('MD')
             parse_mdtag(MD_tag, qpos, read_start, global_read_variations, global_snp_positions, read_index, read_quality, read_sequence, sorted_global_snp_list, insertion_point)
+
+    for idx,each_key in enumerate(loci_keys):
+        s_pos = locus_qpos_range[idx][0]
+        e_pos = locus_qpos_range[idx][1]
+        read_loci_variations[each_key]['seq'] = read_sequence[s_pos:e_pos]
