@@ -20,7 +20,7 @@ def update_homopolymer_coords(ref_seq, locus_start, homopoly_positions):
             homopoly_positions[c] = (i-start+1)-l
 
 
-def match_jump(rpos, repeat_index, loci_coords, tracked, locus_qpos_range, qpos, match_len):
+def match_jump(rpos, repeat_index, loci_coords, tracked, locus_qpos_range, qpos, match_len, loci_flank_qpos_range, flank_track, left_flank, right_flank):
     """
     Return the number of repeat indices to jump when scanning through a match segment
     """
@@ -42,12 +42,37 @@ def match_jump(rpos, repeat_index, loci_coords, tracked, locus_qpos_range, qpos,
                 locus_qpos_range[r+repeat_index][1] = qpos - (rpos - coord[1])
 
             tracked[r+repeat_index] = True 
+
+            # for storing repeat qpos ranges
+            if coord[0]+left_flank[r+repeat_index] <= rpos:
+                loci_flank_qpos_range[r+repeat_index][0] = qpos - (rpos - coord[0])+left_flank[r+repeat_index]
+                flank_track[r+repeat_index][0] = True
+            if coord[1]-right_flank[r+repeat_index] <= rpos:
+                loci_flank_qpos_range[r+repeat_index][1] = qpos - (rpos - coord[1])-right_flank[r+repeat_index]
+                if rpos > coord[1]-right_flank[r+repeat_index]: flank_track[r+repeat_index][1] = True
+                # print('1st end point = ', qpos - (rpos - coord[1])-right_flank[r+repeat_index], rpos, coord[1]-right_flank[r+repeat_index], loci_flank_qpos_range[r+repeat_index])
+                
+                
+
         elif coord[1] <= rpos:
             
             locus_qpos_range[r+repeat_index][1] = qpos - (rpos - coord[1])
 
+        # for storing repeat qpos ranges
+        if not flank_track[r+repeat_index][0]:
+            if coord[0]+left_flank[r+repeat_index] <= rpos:
+                loci_flank_qpos_range[r+repeat_index][0] = qpos - (rpos - coord[0])+left_flank[r+repeat_index]
+                flank_track[r+repeat_index][0] = True 
+            if coord[1]-right_flank[r+repeat_index] <= rpos:
+                loci_flank_qpos_range[r+repeat_index][1] = qpos - (rpos - coord[1])-right_flank[r+repeat_index]
+                if rpos > coord[1]-right_flank[r+repeat_index]: flank_track[r+repeat_index][1] = True
+            
+        elif (not flank_track[r+repeat_index][1]) and (coord[1]-right_flank[r+repeat_index] <= rpos):
+            loci_flank_qpos_range[r+repeat_index][1] = qpos - (rpos - coord[1])-right_flank[r+repeat_index]
+            if rpos > coord[1]-right_flank[r+repeat_index]: flank_track[r+repeat_index][1] = True
+            # print('2nd end point = ', qpos - (rpos - coord[1])-right_flank[r+repeat_index], rpos, coord[1]-right_flank[r+repeat_index], loci_flank_qpos_range[r+repeat_index])
 
-
+        # print(flank_track)
     jump = 0    # jump beyond the repeat where all positions are tracked
     if loci_coords[repeat_index + r - 1][1] < rpos:
         for f in loci_coords[repeat_index:]:
@@ -57,7 +82,7 @@ def match_jump(rpos, repeat_index, loci_coords, tracked, locus_qpos_range, qpos,
     return jump
 
 
-def deletion_jump(deletion_length, rpos, repeat_index, loci_keys, tracked, loci_coords, homopoly_positions, read_loci_variations, locus_qpos_range, qpos):
+def deletion_jump(deletion_length, rpos, repeat_index, loci_keys, tracked, loci_coords, homopoly_positions, read_loci_variations, locus_qpos_range, qpos, loci_flank_qpos_range, flank_track, left_flank, right_flank):
     """
     Return the number of repeat indices to jump when scanning through a deletion segment.
     The function tracks specifically if the deletion is segment has complete repeats in them
@@ -86,23 +111,46 @@ def deletion_jump(deletion_length, rpos, repeat_index, loci_keys, tracked, loci_
                 
                 locus_qpos_range[r+repeat_index][1] = qpos
 
+            # for storing repeat qpos ranges
+            if coord[0]+left_flank[r+repeat_index] <= rpos:
+                loci_flank_qpos_range[r+repeat_index][0] = qpos
+                flank_track[r+repeat_index][0] = True
+            if coord[1]-right_flank[r+repeat_index] < rpos:
+                loci_flank_qpos_range[r+repeat_index][1] = qpos
+                flank_track[r+repeat_index][1] = True
+
         elif coord[1] < rpos:
             
             locus_qpos_range[r+repeat_index][1] = qpos
 
+        # for storing repeat qpos ranges
+        if not flank_track[r+repeat_index][0]:
+            if coord[0]+left_flank[r+repeat_index] <= rpos:
+                loci_flank_qpos_range[r+repeat_index][0] = qpos
+                flank_track[r+repeat_index][0] = True 
+            if coord[1]-right_flank[r+repeat_index] < rpos:
+                loci_flank_qpos_range[r+repeat_index][1] = qpos
+                flank_track[r+repeat_index][1] = True
+        elif (not flank_track[r+repeat_index][1]) and (coord[1]-right_flank[r+repeat_index] <= rpos):
+            loci_flank_qpos_range[r+repeat_index][1] = qpos
+            if rpos > coord[1]-right_flank[r+repeat_index]: flank_track[r+repeat_index][1] = True
+
         # updating the allele with the deletion considered
         # read_loci_variations[locus_key][rpos] = f'D|{deletion_length}'
-        del_len = min(coord[1], rpos) - max(coord[0], del_pos)
-        if del_pos not in homopoly_positions:
-            read_loci_variations[locus_key]['alen'] -= del_len
-            read_loci_variations[locus_key]['halen'] -= del_len
-        else:
-            if del_len <= homopoly_positions[del_pos]:
-                # if the deletion is only limited to the homopolymer positions
-                read_loci_variations[locus_key]['halen'] -= del_len
-            else:
+        
+        # del_len = min(coord[1], rpos) - max(coord[0], del_pos)
+        del_len = min(coord[1]-right_flank[r+repeat_index], rpos) - max(coord[0]+left_flank[r+repeat_index], del_pos)
+        if (rpos >= coord[0]+left_flank[r+repeat_index]) and (del_pos <= coord[1]-right_flank[r+repeat_index]): # introduced to include length only if it comes inside repeat region
+            if del_pos not in homopoly_positions:
                 read_loci_variations[locus_key]['alen'] -= del_len
                 read_loci_variations[locus_key]['halen'] -= del_len
+            else:
+                if del_len <= homopoly_positions[del_pos]:
+                    # if the deletion is only limited to the homopolymer positions
+                    read_loci_variations[locus_key]['halen'] -= del_len
+                else:
+                    read_loci_variations[locus_key]['alen'] -= del_len
+                    read_loci_variations[locus_key]['halen'] -= del_len
 
 
     jump = 0    # jump beyond the repeat where all positions are tracked
@@ -114,7 +162,7 @@ def deletion_jump(deletion_length, rpos, repeat_index, loci_keys, tracked, loci_
     return jump
 
 
-def insertion_jump(insertion_length, insert, rpos, repeat_index, loci_keys, tracked, loci_coords, homopoly_positions, read_loci_variations, locus_qpos_range, qpos):
+def insertion_jump(insertion_length, insert, rpos, repeat_index, loci_keys, tracked, loci_coords, homopoly_positions, read_loci_variations, locus_qpos_range, qpos, loci_flank_qpos_range, flank_track, left_flank, right_flank, out_insertion_qpos_ranges_left, out_insertion_qpos_ranges_right, left_ins_rpos, right_ins_rpos):
     """
     Return the number of repeat indices to jump when scanning through a insertion segment.
     The function tracks specifically if the deletion is segment has complete repeats in them
@@ -139,22 +187,53 @@ def insertion_jump(insertion_length, insert, rpos, repeat_index, loci_keys, trac
                
                 locus_qpos_range[r+repeat_index][1] = qpos
                 # here jump can be done
+
+            # for storing repeat qpos ranges
+            if coord[0]+left_flank[r+repeat_index]-1 <= rpos:
+                loci_flank_qpos_range[r+repeat_index][0] = qpos-insertion_length
+                flank_track[r+repeat_index][0] = True
+            if coord[1]-right_flank[r+repeat_index] <= rpos:
+                loci_flank_qpos_range[r+repeat_index][1] = qpos
+                if rpos > coord[1]-right_flank[r+repeat_index]: flank_track[r+repeat_index][1] = True
+                # print('INS 1st end_point = ', qpos, rpos, coord[1], right_flank[r+repeat_index])
+
+
         elif coord[1] == rpos:
             
             locus_qpos_range[r+repeat_index][1] = qpos
 
+        # for storing repeat qpos ranges
+        if not flank_track[r+repeat_index][0]:
+            if coord[0]+left_flank[r+repeat_index] <= rpos:
+                loci_flank_qpos_range[r+repeat_index][0] = qpos-insertion_length
+                flank_track[r+repeat_index][0] = True 
+            if coord[1]-right_flank[r+repeat_index] <= rpos:
+                loci_flank_qpos_range[r+repeat_index][1] = qpos
+                if rpos > coord[1]-right_flank[r+repeat_index]: flank_track[r+repeat_index][1] = True
+        elif (not flank_track[r+repeat_index][1]) and (coord[1]-right_flank[r+repeat_index] <= rpos):
+            loci_flank_qpos_range[r+repeat_index][1] = qpos
+            if rpos > coord[1]-right_flank[r+repeat_index]: flank_track[r+repeat_index][1] = True
+            # print('INS 2nd end_point = ', qpos, rpos, coord[1], right_flank[r+repeat_index], " alen = ", qpos - loci_flank_qpos_range[r+repeat_index][0])
+
         # read_loci_variations[locus_key][rpos] = f'I|{insertion_length}'
-        if rpos not in homopoly_positions:
-            read_loci_variations[locus_key]['alen'] += insertion_length
-            read_loci_variations[locus_key]['halen'] += insertion_length
-        else:
-            if len(set(insert)) == 1:
-                # only if the insertion is a homopolymer; consider it as homopolymer insertion
-                read_loci_variations[locus_key]['halen'] += insertion_length
-            else:
+        if coord[0]+left_flank[r+repeat_index] <= rpos <= coord[1]-right_flank[r+repeat_index]: # introduced to include length only if it comes inside repeat region
+            if rpos not in homopoly_positions:
                 read_loci_variations[locus_key]['alen'] += insertion_length
                 read_loci_variations[locus_key]['halen'] += insertion_length
+            else:
+                if len(set(insert)) == 1:
+                    # only if the insertion is a homopolymer; consider it as homopolymer insertion
+                    read_loci_variations[locus_key]['halen'] += insertion_length
+                else:
+                    read_loci_variations[locus_key]['alen'] += insertion_length
+                    read_loci_variations[locus_key]['halen'] += insertion_length
 
+        if coord[0] <= rpos <= coord[0]+left_flank[r+repeat_index]-1: # -1 is included so ins near the start pos is not taken into account as it is already added
+            out_insertion_qpos_ranges_left[r+repeat_index].append((qpos-insertion_length, qpos))
+            left_ins_rpos[r+repeat_index].append(rpos)
+        elif coord[1]-right_flank[r+repeat_index]+1 <= rpos <= coord[1]: # +1 is included so ins near the end pos is not taken into account as it is already added
+            out_insertion_qpos_ranges_right[r+repeat_index].append((qpos-insertion_length, qpos))
+            right_ins_rpos[r+repeat_index].append(rpos)
 
     jump = 0    # jump beyond the repeat where all positions are tracked
     if loci_coords[repeat_index + r - 1][1] < rpos:
