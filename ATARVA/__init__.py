@@ -1,2 +1,2 @@
 #! /usr/bin/env python
-from .version import __version__
+from ATARVA.version import __version__
