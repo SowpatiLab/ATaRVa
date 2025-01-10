@@ -48,7 +48,7 @@ def vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, homozygous_a
     if homozygous_allele != ref_allele_length:
         AC = 2
         GT = '1/1'
-        seqs = [seq for seq in [global_loci_variations[locus_key]['read_sequence'][read_id] for read_id in hap_reads] if seq!='']
+        seqs = [seq for seq in [global_loci_variations[locus_key]['read_sequence'][read_id][0] for read_id in hap_reads] if seq!='']
         if len(seqs)>0:
             ALT = consensus_seq_poa(seqs, homozygous_allele)
         else: ALT = '<DEL>'
@@ -92,7 +92,7 @@ def vcf_heterozygous_writer(contig, genotypes, locus_start, global_loci_variatio
             AC = 2; GT = '1|1'
             heterozygous_allele+=str(tuple(final_allele)[0])+','+str(tuple(final_allele)[0])
             SD = str(allele_count[tuple(final_allele)[0]])+','+str(allele_count[str(tuple(final_allele)[0])])
-            seqs = [seq for seq in [global_loci_variations[locus_key]['read_sequence'][read_id] for read_id in hap_reads[0]] if seq!='']
+            seqs = [seq for seq in [global_loci_variations[locus_key]['read_sequence'][read_id][0] for read_id in hap_reads[0]] if seq!='']
             if len(seqs)>0:
                 ALT = consensus_seq_poa(seqs, genotypes[0])
             else: ALT = '<DEL>'
@@ -106,14 +106,14 @@ def vcf_heterozygous_writer(contig, genotypes, locus_start, global_loci_variatio
             SD = str(allele_count[ref_allele_length])+','+str(allele_count[tuple(final_allele-{ref_allele_length})[0]])
             if genotypes.index(ref_allele_length) == 0:
                 PC = str(phased_read[0])+','+str(phased_read[1])
-                seqs = [seq for seq in [global_loci_variations[locus_key]['read_sequence'][read_id] for read_id in hap_reads[1]] if seq!='']
+                seqs = [seq for seq in [global_loci_variations[locus_key]['read_sequence'][read_id][0] for read_id in hap_reads[1]] if seq!='']
                 if len(seqs)>0:
                     ALT = consensus_seq_poa(seqs, genotypes[1])
                 else: ALT = '<DEL>'
                 # ALT = consensus_seq_poa([global_loci_variations[locus_key]['read_sequence'][read_id] for read_id in hap_reads[1]])
             else:
                 PC = str(phased_read[1])+','+str(phased_read[0])
-                seqs = [seq for seq in [global_loci_variations[locus_key]['read_sequence'][read_id] for read_id in hap_reads[0]] if seq!='']
+                seqs = [seq for seq in [global_loci_variations[locus_key]['read_sequence'][read_id][0] for read_id in hap_reads[0]] if seq!='']
                 if len(seqs)>0:
                     ALT = consensus_seq_poa(seqs, genotypes[0])
                 else: ALT = '<DEL>'
@@ -124,11 +124,11 @@ def vcf_heterozygous_writer(contig, genotypes, locus_start, global_loci_variatio
             heterozygous_allele+=str(genotypes[0])+','+str(genotypes[1])
             SD = str(allele_count[genotypes[0]])+','+str(allele_count[genotypes[1]])
             PC = str(phased_read[0])+','+str(phased_read[1])
-            seqs1 = [seq for seq in [global_loci_variations[locus_key]['read_sequence'][read_id] for read_id in hap_reads[0]] if seq!='']
+            seqs1 = [seq for seq in [global_loci_variations[locus_key]['read_sequence'][read_id][0] for read_id in hap_reads[0]] if seq!='']
             if len(seqs1)>0:
                 ALT1 = consensus_seq_poa(seqs1, genotypes[0])
             else: ALT1 = '<DEL>'
-            seqs2 = [seq for seq in [global_loci_variations[locus_key]['read_sequence'][read_id] for read_id in hap_reads[1]] if seq!='']
+            seqs2 = [seq for seq in [global_loci_variations[locus_key]['read_sequence'][read_id][0] for read_id in hap_reads[1]] if seq!='']
             if len(seqs2)>0:
                 ALT2 = consensus_seq_poa(seqs2, genotypes[1])
             else: ALT2 = '<DEL>'
