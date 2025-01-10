@@ -1,6 +1,6 @@
 import sys
 
-def haplocluster_reads(snp_allelereads, ordered_snp_on_cov, read_indices, level_split, snpQ, snpC, snpR, phasingR):
+def haplocluster_reads(snp_allelereads, ordered_snp_on_cov, read_indices, snpQ, snpC, snpR, phasingR):
 
     threshold_range = [(0.3, 0.7),(0.25, 0.75),(0.2, 0.8)] # threshold values to get Significant_snps
     for idx,range in enumerate(threshold_range):
@@ -22,7 +22,7 @@ def haplocluster_reads(snp_allelereads, ordered_snp_on_cov, read_indices, level_
 
 
         if len(filtered_significant_poses) == 0:
-            if idx < level_split:
+            if idx < 2: #level_split:
                 continue
             else:
                 skip_point = 0
@@ -30,7 +30,7 @@ def haplocluster_reads(snp_allelereads, ordered_snp_on_cov, read_indices, level_
 
         final_haplos, status, min_snp, skip_point, chosen_snpQ, phased_read, snp_num = merge_snpreadsets(filtered_significant_poses, ordered_split_pos, read_indices, snpQ, snpC, snpR, phasingR) # calling the phasing function
         if status: break
-        if idx == level_split:
+        if idx == 2: #level_split:
             break
 
     return [final_haplos, min_snp, skip_point, chosen_snpQ, phased_read, snp_num]
