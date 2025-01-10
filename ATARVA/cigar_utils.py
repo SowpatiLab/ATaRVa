@@ -18,7 +18,7 @@ def subex(ref, que):
     return substitution_indices.tolist()
 
 def parse_cigar_tag(read_index, cigar_tuples, read_start, loci_keys, loci_coords, read_loci_variations,
-                homopoly_positions, global_read_variations, global_snp_positions, read_sequence, read, ref, read_quality, sorted_global_snp_list):
+                homopoly_positions, global_read_variations, global_snp_positions, read_sequence, read, ref, read_quality, sorted_global_snp_list, left_flank_list, right_flank_list):
     rpos = read_start   # NOTE: The coordinates are 1 based in SAM
     qpos = 0            # starts from 0 the sub string the read sequence in python
 
@@ -27,8 +27,20 @@ def parse_cigar_tag(read_index, cigar_tuples, read_start, loci_keys, loci_coords
     tracked = [False] * len(loci_coords)
 
     locus_qpos_range = []
+    loci_flank_qpos_range = []
+    out_insertion_qpos_ranges_left = []
+    out_insertion_qpos_ranges_right = []
+    left_ins_rpos = []
+    right_ins_rpos = []
     for _ in loci_coords:
         locus_qpos_range.append([0,0])
+        loci_flank_qpos_range.append([0,0])
+        out_insertion_qpos_ranges_left.append([])
+        out_insertion_qpos_ranges_right.append([])
+        left_ins_rpos.append([])
+        right_ins_rpos.append([])
+
+    flank_track = [[False,False] for _ in loci_coords]
 
     X_tag = False
     insertion_point = {}
@@ -48,14 +60,14 @@ def parse_cigar_tag(read_index, cigar_tuples, read_start, loci_keys, loci_coords
             for _ in range(deletion_length): global_read_variations[read_index]['dels'].add(rpos+_)
             rpos += cigar[1]
             repeat_index += deletion_jump(deletion_length, rpos, repeat_index, loci_keys, tracked, loci_coords,
-                                          homopoly_positions, read_loci_variations, locus_qpos_range, qpos)
+                                          homopoly_positions, read_loci_variations, locus_qpos_range, qpos, loci_flank_qpos_range, flank_track, left_flank_list, right_flank_list)
         elif cigar[0] == 1:     # insertion
             insertion_point[rpos] = cigar[1]
             insert = read_sequence[qpos:qpos+cigar[1]]
             insert_length = cigar[1]
             qpos += cigar[1]
             repeat_index += insertion_jump(insert_length, insert, rpos, repeat_index, loci_keys,
-                                           tracked, loci_coords, homopoly_positions, read_loci_variations, locus_qpos_range, qpos)
+                                           tracked, loci_coords, homopoly_positions, read_loci_variations, locus_qpos_range, qpos, loci_flank_qpos_range, flank_track, left_flank_list, right_flank_list, out_insertion_qpos_ranges_left, out_insertion_qpos_ranges_right, left_ins_rpos, right_ins_rpos)
         elif cigar[0] == 0: # match (both equals & difference)
             if not md:
                 ref_sequence = ref.fetch(chrom, rpos, rpos+cigar[1])
@@ -82,12 +94,12 @@ def parse_cigar_tag(read_index, cigar_tuples, read_start, loci_keys, loci_coords
                         else: global_snp_positions[rpos+each_sub][sub_nuc] = {read_index}
 
             qpos += cigar[1]; rpos += cigar[1]; match_len = cigar[1]
-            repeat_index += match_jump(rpos, repeat_index, loci_coords,tracked, locus_qpos_range, qpos, match_len)
+            repeat_index += match_jump(rpos, repeat_index, loci_coords,tracked, locus_qpos_range, qpos, match_len, loci_flank_qpos_range, flank_track, left_flank_list, right_flank_list)
 
         elif cigar[0] == 7: # exact match (equals)
             X_tag = True
             qpos += cigar[1]; rpos += cigar[1]; match_len = cigar[1]
-            repeat_index += match_jump(rpos, repeat_index, loci_coords,tracked, locus_qpos_range, qpos, match_len)
+            repeat_index += match_jump(rpos, repeat_index, loci_coords,tracked, locus_qpos_range, qpos, match_len, loci_flank_qpos_range, flank_track, left_flank_list, right_flank_list)
 
         elif cigar[0] == 8: # substitution (difference)
             X_tag = True
@@ -105,7 +117,7 @@ def parse_cigar_tag(read_index, cigar_tuples, read_start, loci_keys, loci_coords
                     
                 else: global_snp_positions[rpos][sub_nuc] = {read_index}
             qpos += cigar[1]; rpos += cigar[1]; match_len = cigar[1]
-            repeat_index += match_jump(rpos, repeat_index, loci_coords,tracked, locus_qpos_range, qpos, match_len)
+            repeat_index += match_jump(rpos, repeat_index, loci_coords,tracked, locus_qpos_range, qpos, match_len, loci_flank_qpos_range, flank_track, left_flank_list, right_flank_list)
 
     if not X_tag :
         if read.has_tag('MD'):
@@ -117,4 +129,8 @@ def parse_cigar_tag(read_index, cigar_tuples, read_start, loci_keys, loci_coords
     for idx,each_key in enumerate(loci_keys):
         s_pos = locus_qpos_range[idx][0]
         e_pos = locus_qpos_range[idx][1]
-        read_loci_variations[each_key]['seq'] = read_sequence[s_pos:e_pos]
+        loci_flank_qpos_range[idx][0] = loci_flank_qpos_range[idx][0] - s_pos
+        loci_flank_qpos_range[idx][1] = loci_flank_qpos_range[idx][1] - s_pos
+        ins_left = [(each_tuple[0]-s_pos, each_tuple[1]-s_pos) for each_tuple in out_insertion_qpos_ranges_left[idx]]
+        ins_right = [(each_tuple[0]-s_pos, each_tuple[1]-s_pos) for each_tuple in out_insertion_qpos_ranges_right[idx]]
+        read_loci_variations[each_key]['seq'] = [read_sequence[s_pos:e_pos], loci_flank_qpos_range[idx], ins_left, ins_right, left_ins_rpos[idx], right_ins_rpos[idx]]
