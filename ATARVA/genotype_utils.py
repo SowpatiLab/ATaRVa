@@ -3,49 +3,83 @@ from vcf_writer import *
 import numpy as np
 import sys
 import statistics
+from sklearn.cluster import KMeans
+import warnings
+from threadpoolctl import threadpool_limits
 
 
 def length_genotyper(hallele_counter, global_loci_info, global_loci_variations, locus_key, read_indices, contig, locus_start, locus_end, ref, out):
+
+    read_indices = sorted(read_indices)
+    locus_read_allele = global_loci_variations[locus_key]['read_allele']
     
-    total_reads = len(read_indices)
-    filtered_alleles = list(filter(lambda x: hallele_counter[x] > 1, hallele_counter.keys()))
-    top_alleles = [al for al in filtered_alleles if (hallele_counter[al]/total_reads) > 0.2]
-    locus_read_allele = global_loci_variations[locus_key]['read_allele'] # extracting allele info from global_loci_variation
+    alen_with_1read = [item[0] for item in hallele_counter.items() if item[1]==1]
+    main_read_id = []
+    alen_data = []
+    
+    for id in read_indices:
+        if locus_read_allele[id][0] in alen_with_1read: continue
+        else:
+            alen_data.append(locus_read_allele[id][0])
+            main_read_id.append(id)
 
-    if len(top_alleles) == 1:
-        hap_reads = [read_id for read_id in locus_read_allele if locus_read_allele[read_id][0]==top_alleles[0]]
-        vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, top_alleles[0], global_loci_variations, hallele_counter[top_alleles[0]], out, hap_reads)
+    data = np.array(alen_data)
+    data = data.reshape(-1, 1)
+    with threadpool_limits(limits=1): # to restrict kmeans to use every possible threads available
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=UserWarning) # to prevent warning messages get printed in terminal
+            kmeans = KMeans(n_clusters=2, init='k-means++', n_init=5, random_state=0).fit(data)
+    cluster_labels = kmeans.labels_  
+    c1 = [i for i, x in enumerate(cluster_labels) if x == 0]
+    c2 = [i for i, x in enumerate(cluster_labels) if x == 1]
+    haplotypes = ([main_read_id[idx] for idx in c1], [main_read_id[idx] for idx in c2])
 
-    elif len(top_alleles)>1:
+    cutoff = 0.15*len(alen_data) # cluster atleast should have 15% of alleles in it
+    if (c1!=[] and len(c1)>=cutoff) and (c2!=[] and len(c2)>=cutoff):
         phased_read = ['.','.']
         chosen_snpQ = '.'
         snp_num = '.'
-        hetero_alleles = sorted(top_alleles, key=lambda x: hallele_counter[x], reverse=True)[:2]
+        hap_al1 = [alen_data[i] for i in c1]
+        hap_al2 = [alen_data[i] for i in c2]
+        haplo_alleles = (hap_al1,hap_al2)
+
+        genotypes = []
+        for alleles_set in haplo_alleles: # making the set of final alleles from two clusters
+            genotypes.append(statistics.mode(alleles_set))
 
         hap_reads = ([],[])
-        for i,al in enumerate(hetero_alleles):
-            hap_reads[i].extend([read_id for read_id in locus_read_allele if locus_read_allele[read_id][0]==al])
+        for i,al in enumerate(genotypes):
+            hap_reads[i].extend([read_id for read_id in haplotypes[i] if locus_read_allele[read_id][0]==al])
 
         allele_count = {}
-        for al in hetero_alleles:
+        for al in genotypes:
             allele_count[al] = hallele_counter[al]
-        vcf_heterozygous_writer(contig, hetero_alleles, locus_start, global_loci_variations, locus_end, allele_count, len(read_indices), global_loci_info, ref, out, chosen_snpQ, phased_read, snp_num, hap_reads)
-    else:
-        pass # write allele distribution with only one read supporting to it in vcf
+        vcf_heterozygous_writer(contig, genotypes, locus_start, global_loci_variations, locus_end, allele_count, len(read_indices), global_loci_info, ref, out, chosen_snpQ, phased_read, snp_num, hap_reads)
 
+    elif c1!=[] and len(c1)>=cutoff:
+        hap_al1 = [alen_data[i] for i in c1]
+        genotypes = statistics.mode(hap_al1)
+        hap_reads = [read_id for read_id in haplotypes[0] if locus_read_allele[read_id][0]==genotypes]
+        vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, genotypes, global_loci_variations, hap_al1.count(genotypes), out, hap_reads)
+
+    else:
+        return [False, 6] # write allele distribution with only one read supporting to it in vcf
+    
     return [True, 10]
-        
-            
+
+
+    
 
 
     
 
 def analyse_genotype(contig, locus_key, global_loci_info,
                      global_loci_variations, global_read_variations, global_snp_positions, hallele_counter,
-                     ref, out, sorted_global_snp_list, level_split, snpQ, snpC, snpD, snpR, phasingR, maxR, max_limit):
+                     ref, out, sorted_global_snp_list, snpQ, snpC, snpD, snpR, phasingR, maxR, max_limit):
 
     locus_start = int(global_loci_info[locus_key][1])
     locus_end = int(global_loci_info[locus_key][2])
+
     state = False
 
     if max_limit == 0:
@@ -90,6 +124,7 @@ def analyse_genotype(contig, locus_key, global_loci_info,
                 snp_allelereads[pos]['Qval'].update(dict([(read_idx,global_snp_positions[pos]['Qval'][read_idx]) for read_idx in snp_allelereads[pos]['alleles'][nuc]]))
 
     del_positions = list(filter(lambda x: snp_allelereads[x]['cov'] < 5, snp_allelereads.keys()))
+
     for pos in del_positions:
         del snp_allelereads[pos]
 
@@ -97,7 +132,7 @@ def analyse_genotype(contig, locus_key, global_loci_info,
     ordered_snp_on_cov = sorted(snp_allelereads.keys(), key = lambda item : non_ref_snp_cov[item], reverse = True)
 
 
-    haplotypes, min_snp, skip_point, chosen_snpQ, phased_read, snp_num = haplocluster_reads(snp_allelereads, ordered_snp_on_cov, read_indices, level_split, snpQ, snpC, snpR, phasingR) # SNP ifo and supporting reads for specific locus are given to the phasing function
+    haplotypes, min_snp, skip_point, chosen_snpQ, phased_read, snp_num = haplocluster_reads(snp_allelereads, ordered_snp_on_cov, read_indices, snpQ, snpC, snpR, phasingR) # SNP ifo and supporting reads for specific locus are given to the phasing function
 
     if haplotypes == (): # if the loci has no significant snps
         state, skip_point = length_genotyper(hallele_counter, global_loci_info, global_loci_variations, locus_key, read_indices, contig, locus_start, locus_end, ref, out)
@@ -119,12 +154,10 @@ def analyse_genotype(contig, locus_key, global_loci_info,
         for each_read in haplo_tuple:
             hap_alleles[idx].append(locus_read_allele[each_read][0])
 
-
     genotypes = []
     for alleles_set in hap_alleles: # making the set of final alleles from two clusters
         genotypes.append(statistics.mode(alleles_set))
 
-    ref_len = int(locus_key[locus_key.index('-')+1:]) - int(locus_key[locus_key.index(':')+1 : locus_key.index('-')])
     
     hap_reads = ([],[])
     for i,al in enumerate(genotypes):
