@@ -7,13 +7,19 @@ from vcf_writer import *
 
 import pysam
 import sys
+import logging
 
-def locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, level_split, snpQ, snpC, snpD, snpR, phasingR):
+def locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, snpQ, snpC, snpD, snpR, phasingR, tbx, flank, sorted_global_ins_rpos_set, log_bool, logger):
 
     genotyped_loci = 0
     popped    = global_loci_ends.pop(0)
     locus_key = global_loci_keys.pop(0)
-    allele_lengths = tuple()
+    lstart = int(locus_key[locus_key.index(':')+1 : locus_key.index('-')])
+    lend = int(locus_key[locus_key.index('-')+1:])
+    near_by_loci = []
+    for row in tbx.fetch(Chrom, lstart-flank, lend+flank):
+        row = row.split('\t')
+        near_by_loci.append( ( int(row[1]), int(row[2]) ) )
 
     if locus_key in global_loci_variations:
         
@@ -22,46 +28,107 @@ def locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, 
             sorted_global_snp_list = sorted(list(global_snp_positions.keys()))
         
 
-        prev_reads, homozygous, ambiguous, homozygous_allele, reads_of_homozygous, hallele_counter, skip_point, max_limit = process_locus(locus_key, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR)
+        prev_reads, homozygous, ambiguous, homozygous_allele, reads_of_homozygous, hallele_counter, skip_point, max_limit = process_locus(locus_key, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, global_loci_info, near_by_loci, sorted_global_ins_rpos_set, Chrom, lstart, lend, ref, log_bool, logger)
 
         if homozygous:
             vcf_homozygous_writer(ref, Chrom, locus_key, global_loci_info, homozygous_allele, global_loci_variations, len(reads_of_homozygous), out, reads_of_homozygous)
             genotyped_loci += 1
         elif ambiguous:
-            state, skip_point = analyse_genotype(Chrom, locus_key, global_loci_info, global_loci_variations, global_read_variations, global_snp_positions, hallele_counter, ref, out, sorted_global_snp_list, level_split, snpQ, snpC, snpD, snpR, phasingR, maxR, max_limit)
+            state, skip_point = analyse_genotype(Chrom, locus_key, global_loci_info, global_loci_variations, global_read_variations, global_snp_positions, hallele_counter, ref, out, sorted_global_snp_list, snpQ, snpC, snpD, snpR, phasingR, maxR, max_limit)
             if state: genotyped_loci += 1
             elif skip_point == 0: print('Locus skipped due to insignificant snps at the level of read split.')
             elif skip_point == 1: print('Locus skipped due to less read contribution of Significant snps.')
             elif skip_point == 2: print('Locus skipped due to less read contribution in the phased clusters.')
+            elif skip_point == 6: print('Locus skipped due to wide distribution of alleles with one read supporting to it.') # add vcf_fail_writer with new FILTER tag
             else: print('Locus skipped due to less number of significant snps based on user\'s parameter.')
         else:
             if skip_point == 0:
+                # print('Locus skipped due to minimum number of supporting reads')
                 vcf_fail_writer(Chrom, locus_key, global_loci_info, ref, out, len(prev_reads), skip_point)
+            # else:
+            #     print('Locus skipped due to maximum number of supporting reads')
                 
         del global_loci_variations[locus_key]
         
     return genotyped_loci
 
+# def flank_adjustment(loci_coords, exact_loci_coords, right_flank_list, left_flank_list): # incorrect code
+#     # Adjusting flanks based on the nearby repeat region
+#     for idx,locus in enumerate(loci_coords):
+#         current_left = left_flank_list[idx]
+#         current_right = right_flank_list[idx]
+#         new_left_flanks = []
+#         new_right_flanks = []
+#         for exact_locus in exact_loci_coords:
+#             if exact_locus[0]>locus[1]: break
+#             elif locus[1]>exact_locus[0]:  # after skipping locus (or) after came across the current locus, adjust the right flank dist
+#                 new_right_flanks.append(locus[1]-exact_locus[0] if (locus[1]-exact_locus[0]) < current_right else current_right)
+#             elif locus[0]<exact_locus[1]: # adjust the left flank dist
+#                 new_left_flanks.append(exact_locus[1] - locus[0] if (exact_locus[1] - locus[0]) < current_left else current_left) # add adjusted left flank dist for each overlapping exact repeat regions with cureent repeat region's flank on left. Zero is not to adjust any dist 
+#         if new_left_flanks!=[]:
+#             left_flank_list[idx] -= max(new_left_flanks) # take the max value of adjusted value, so that it wont affect other exact repeats
+#         if new_right_flanks!=[]:
+#             right_flank_list[idx] -= max(new_right_flanks) # take the max value of adjusted value, so that it wont affect other exact repeats
+
+#     return [right_flank_list, left_flank_list]
+
+def flank_adjustment(loci_coords, exact_loci_coords, right_flank_list, left_flank_list, tracker_idx):
+    # Adjusting flanks based on the nearby repeat region
+    for idx,locus in enumerate(loci_coords):
+        current_left = left_flank_list[idx]
+        current_right = right_flank_list[idx]
+        new_left_flanks = []
+        new_right_flanks = []
+        tr_idx = tracker_idx[idx]
+        for e_idx,exact_locus in enumerate(exact_loci_coords):
+            if exact_locus[0]>locus[1]:
+                break
+            if e_idx == tr_idx:
+                continue
+            if (e_idx>tr_idx) and (locus[1]>exact_locus[0]):  # after skipping locus (or) after came across the current locus, adjust the right flank dist
+                new_right_flanks.append(locus[1]-exact_locus[0] if (locus[1]-exact_locus[0]) < current_right else current_right)
+            if (e_idx<tr_idx) and (locus[0]<exact_locus[1]): # adjust the left flank dist
+                new_left_flanks.append(exact_locus[1] - locus[0] if (exact_locus[1] - locus[0]) < current_left else current_left) # add adjusted left flank dist for each overlapping exact repeat regions with cureent repeat region's flank on left. Zero is not to adjust any dist 
+        if new_left_flanks!=[]:
+            left_flank_list[idx] -= max(new_left_flanks) # take the max value of adjusted value, so that it wont affect other exact repeats
+        if new_right_flanks!=[]:
+            right_flank_list[idx] -= max(new_right_flanks) # take the max value of adjusted value, so that it wont affect other exact repeats
+
+    return [right_flank_list, left_flank_list]
 
 
-
-def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, outfile, seq_tech, level_split, snpQ, snpC, snpD, maxR, minR, snpR, phasingR, tidx):
+def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, outfile, seq_tech, snpQ, snpC, snpD, maxR, minR, snpR, phasingR, tidx, log_bool):
     # this function iterates through each contig and processes the genotypes for each locus
     tbx  = pysam.Tabixfile(tbx_file)
     bam  = pysam.AlignmentFile(bam_file, aln_format)
     ref  = pysam.FastaFile(ref_file)
 
+    logger = 0
     if tidx!=-1:
         if tidx==0:
             out = open(f'{outfile}.vcf', 'w')
             vcf_writer(out, bam, bam_file.split("/")[-1].split('.')[0])
+            log_name = f'{outfile}_debug.log'
         else:
             out = open(f'{outfile}_thread_{tidx}.vcf', 'w')
+            log_name = f'{outfile}_debug_{tidx}.log'
+
     else:
         out = open(f'{outfile}.vcf', 'w')
         vcf_writer(out, bam, bam_file.split("/")[-1].split('.')[0])
-    
+        log_name = f'{outfile}_debug.log'
 
+    if log_bool:
+        with open(log_name, 'w'):
+            pass
+        logging.basicConfig(
+            filename=log_name,
+            level=logging.DEBUG,
+            format='%(levelname)s - %(message)s'
+        )
+        logger = logging.getLogger("MyLogger")
+    
+    flank = 10
     for contig in contigs:
 
         Chrom, Start, End = contig
@@ -92,6 +159,7 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
 
         prev_reads = set()
         sorted_global_snp_list = []
+        sorted_global_ins_rpos_set = set()
 
         read_index = 0
         for read in bam.fetch(Chrom, Start[0], End[1]):
@@ -107,7 +175,7 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
 
             while len(global_loci_ends) > 0 and read_start > global_loci_ends[0]:
 
-                genotyped_loci_count += locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, level_split, snpQ, snpC, snpD, snpR, phasingR)
+                genotyped_loci_count += locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, snpQ, snpC, snpD, snpR, phasingR, tbx, flank, sorted_global_ins_rpos_set, log_bool, logger)
                 
 
             while len(global_read_ends) > 0 and read_start > global_read_ends[0]:
@@ -134,12 +202,20 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
                         del global_read_variations[rindex]
 
                         if rindex in prev_reads: prev_reads.remove(rindex)
+                    del_ins_pos_idx = 0
+                    list_rpos = sorted(sorted_global_ins_rpos_set)
+                    for i in list_rpos:
+                        del_ins_pos_idx+=1
+                        if i > popped: break
+                    del list_rpos[:del_ins_pos_idx]
+                    sorted_global_ins_rpos_set = set(list_rpos)
+                    
 
 
             # if the read is beyond the last locus in the bed file the loop stops
             if read_start > end_coord:
                 while len(global_loci_ends) > 0:
-                    genotyped_loci_count += locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, level_split, snpQ, snpC, snpD, snpR, phasingR)
+                    genotyped_loci_count += locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, snpQ, snpC, snpD, snpR, phasingR, tbx, flank, sorted_global_ins_rpos_set, log_bool, logger)
                 # process the loci left in global_loci_variation
                 break
 
@@ -150,7 +226,12 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
 
             # repeat loci covered by the read
             loci_coords = []; loci_keys = []
-            start_check = 0
+            left_flank_list = []; right_flank_list = []
+            exact_loci_coords = []
+            track_idx = []
+            passed_loci_coords = []
+            # start_check = 0
+            tracker = 0
             for row in tbx.fetch(read_chrom, read_start, read_end):
                 
                 # adjust read start and end based on soft and hard clippings
@@ -158,6 +239,16 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
 
                 row = row.split('\t')
                 locus_start = int(row[1]);  locus_end = int(row[2]); locus_len = locus_end-locus_start
+
+                exact_loci_coords.append((locus_start, locus_end))
+                tracker+=1
+
+                # if locus_start>Start[0]:
+                #     pass
+                # elif locus_start==Start[0] and locus_end==Start[1]:
+                #     start_check = 1
+                # elif start_check!=1:
+                #     continue
 
                 if (locus_start>=Start[0]) and (locus_end<=End[1]):
                     if locus_start==Start[0]:
@@ -168,14 +259,26 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
                     continue
                 elif locus_start>=End[0]: break
                 
-
+                # a location which is tracked with absurdly large number of SNPs
+                # if locus_start >= 143242921 and locus_end <= 143276906: continue
 
                 # if only the read completely covers the repeat
                 if ( locus_start >= read_start ) & ( locus_end <= read_end ):
-                    loci_coords.append((locus_start, locus_end))
+                    left_flank = flank; right_flank = flank
+                    if (locus_start - flank) < read_start:
+                        left_flank = locus_start - read_start
+                    if (locus_end + flank) > read_end:
+                        right_flank  = read_end - locus_end
+                    left_flank_list.append(left_flank)
+                    right_flank_list.append(right_flank)
+
+                    loci_coords.append((locus_start - left_flank, locus_end + right_flank))
+                    track_idx.append(tracker-1)
+                    passed_loci_coords.append((locus_start, locus_end))
+
                     locus_key = f'{read_chrom}:{locus_start}-{locus_end}'
                     loci_keys.append(locus_key)
-                    read_loci_variations[locus_key] = {'halen': locus_len, 'alen': locus_len, 'rlen': locus_len, 'seq': ''}
+                    read_loci_variations[locus_key] = {'halen': locus_len, 'alen': locus_len, 'rlen': locus_len, 'seq': []}
 
                     if locus_key not in global_loci_variations:
                         global_loci_variations[locus_key] = {'rlen': locus_len, 'reads': [], 'read_allele': {}, 'read_sequence': {}}
@@ -187,7 +290,11 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
 
             # if no repeats are covered by the read
             if len(loci_coords) == 0: continue
-        
+
+            # right_flank_list, left_flank_list = flank_adjustment(loci_coords, exact_loci_coords, right_flank_list, left_flank_list, tracker_idx)
+            # for idx,locus in enumerate(passed_loci_coords):
+            #     loci_coords[idx] = (locus[0]-left_flank_list[idx], locus[1]+right_flank_list[idx]) 
+
             read_index += 1
             read_quality = read.query_qualities
             cigar_tuples = read.cigartuples
@@ -204,18 +311,18 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
 
             if read.has_tag('cs'):
                 cs_tag = read.get_tag('cs')
-                parse_cstag(read_index, cs_tag, read_start, loci_keys, loci_coords, read_loci_variations, homopoly_positions, global_read_variations, global_snp_positions, read_sequence, read_quality, cigar_one, sorted_global_snp_list)
+                parse_cstag(read_index, cs_tag, read_start, loci_keys, loci_coords, read_loci_variations, homopoly_positions, global_read_variations, global_snp_positions, read_sequence, read_quality, cigar_one, sorted_global_snp_list, left_flank_list, right_flank_list)
             else :
                 parse_cigar_tag(read_index, cigar_tuples, read_start, loci_keys, loci_coords, read_loci_variations,
-                                homopoly_positions, global_read_variations, global_snp_positions, read_sequence, read, ref, read_quality, sorted_global_snp_list)
+                                homopoly_positions, global_read_variations, global_snp_positions, read_sequence, read, ref, read_quality, sorted_global_snp_list, left_flank_list, right_flank_list)
 
             for locus_key in read_loci_variations:
                 global_loci_variations[locus_key]['reads'].append(read_index)
-                global_loci_variations[locus_key]['read_allele'][read_index] = (read_loci_variations[locus_key]['halen'], read_loci_variations[locus_key]['alen'])
+                global_loci_variations[locus_key]['read_allele'][read_index] = [read_loci_variations[locus_key]['halen'], read_loci_variations[locus_key]['alen']]
                 global_loci_variations[locus_key]['read_sequence'][read_index] = read_loci_variations[locus_key]['seq']
 
         while len(global_loci_ends) > 0:
-            genotyped_loci_count += locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, level_split, snpQ, snpC, snpD, snpR, phasingR)
+            genotyped_loci_count += locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, snpQ, snpC, snpD, snpR, phasingR, tbx, flank, sorted_global_ins_rpos_set, log_bool, logger)
                 
         print(f'\nTotal genotyped loci = {genotyped_loci_count} out of {total_loci} in {Chrom} {Start[0]}-{End[1]}\n', file=sys.stderr)
 
@@ -225,7 +332,7 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
     out.close()
 
 
-def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, outfile, seq_tech, level_split, snpQ, snpC, snpD, maxR, minR, snpR, phasingR, tidx):
+def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, outfile, seq_tech, snpQ, snpC, snpD, maxR, minR, snpR, phasingR, tidx, log_bool):
     # this function iterates through each contig and processes the genotypes for each locus
     tbx  = pysam.Tabixfile(tbx_file)
     bam  = pysam.AlignmentFile(bam_file, aln_format)
@@ -236,16 +343,30 @@ def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshol
     # else: out = open(f'{outfile}.vcf', 'w')
     # vcf_writer(out)
 
+    logger = 0
     if tidx!=-1:
         if tidx==0:
             out = open(f'{outfile}.vcf', 'w')
             vcf_writer(out, bam, bam_file.split("/")[-1].split('.')[0])
+            log_name = f'{outfile}_debug.log'
         else:
             out = open(f'{outfile}_thread_{tidx}.vcf', 'w')
+            log_name = f'{outfile}_debug_{tidx}.log'
+
     else:
         out = open(f'{outfile}.vcf', 'w')
         vcf_writer(out, bam, bam_file.split("/")[-1].split('.')[0])
+        log_name = f'{outfile}_debug.log'
 
+    if log_bool:
+        logging.basicConfig(
+            filename=log_name,
+            level=logging.DEBUG,
+            format='%(levelname)s - %(message)s'
+        )
+        logger = logging.getLogger("MyLogger")
+
+    flank = 10
     for contig in contigs:
 
         Chrom, Start, End = contig
@@ -276,6 +397,7 @@ def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshol
 
         prev_reads = set()
         sorted_global_snp_list = []
+        sorted_global_ins_rpos_set = set()
 
         read_index = 0
         start_check = 0
@@ -304,7 +426,7 @@ def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshol
                 continue
             elif locus_start>=End[0]: break
             
-            
+            left_flank_list = []; right_flank_list = []
             for read in bam.fetch(Chrom, int(row[1]), int(row[2])):
                 if read.mapping_quality < mapq_threshold:
                     continue
@@ -325,11 +447,32 @@ def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshol
     
                 # repeat loci covered by the read
                 loci_coords = []; loci_keys = []
+                exact_loci_coords = []
+                passed_loci_coords = [(locus_start, locus_end)]
+                track_idx = []
+                tracker = 0
 
-                loci_coords.append((locus_start, locus_end))
+                for in_row in tbx.fetch(read_chrom, read_start, read_end):
+
+                    in_row = in_row.split('\t')
+                    in_locus_start = int(in_row[1]);  in_locus_end = int(in_row[2])
+                    exact_loci_coords.append((in_locus_start, in_locus_end))
+                    tracker += 1
+                    if (in_locus_start==locus_start) and (in_locus_end==locus_end): track_idx.append(tracker-1)
+
+                left_flank = flank; right_flank = flank
+                if (locus_start - flank) < read_start:
+                    left_flank = locus_start - read_start
+                if (locus_end + flank) > read_end:
+                    right_flank  = read_end - locus_end
+                left_flank_list.append(left_flank)
+                right_flank_list.append(right_flank)
+
+                loci_coords.append((locus_start - left_flank, locus_end + right_flank))
+
                 locus_key = f'{read_chrom}:{locus_start}-{locus_end}'
                 loci_keys.append(locus_key)
-                read_loci_variations[locus_key] = {'halen': locus_len, 'alen': locus_len, 'rlen': locus_len}
+                read_loci_variations[locus_key] = {'halen': locus_len, 'alen': locus_len, 'rlen': locus_len, 'seq': []}
 
                 if locus_key not in global_loci_variations:
                     global_loci_variations[locus_key] = {'rlen': locus_len, 'reads': [], 'read_allele': {}, 'read_sequence': {}}
@@ -339,6 +482,10 @@ def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshol
 
 
                 if len(loci_coords) == 0: continue
+
+                # right_flank_list, left_flank_list = flank_adjustment(loci_coords, exact_loci_coords, right_flank_list, left_flank_list, tracker_idx)
+                # for idx,locus in enumerate(passed_loci_coords):
+                #     loci_coords[idx] = (locus[0]-left_flank_list[idx], locus[1]+right_flank_list[idx]) 
         
                 read_index += 1
                 read_quality = read.query_qualities
@@ -355,22 +502,20 @@ def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshol
                     update_homopolymer_coords(ref.fetch(Chrom, each_coords[0]-100, each_coords[1]+100), each_coords[0]-100, homopoly_positions)
     
                 if read.has_tag('cs'):
-                    # print('CS-tag')
                     cs_tag = read.get_tag('cs')
-                    parse_cstag(read_index, cs_tag, read_start, loci_keys, loci_coords, read_loci_variations, homopoly_positions, global_read_variations, global_snp_positions, read_sequence, read_quality, cigar_one, sorted_global_snp_list)
+                    parse_cstag(read_index, cs_tag, read_start, loci_keys, loci_coords, read_loci_variations, homopoly_positions, global_read_variations, global_snp_positions, read_sequence, read_quality, cigar_one, sorted_global_snp_list, left_flank_list, right_flank_list)
                 else :
-                    # print('CIGAR-tag')
                     parse_cigar_tag(read_index, cigar_tuples, read_start, loci_keys, loci_coords, read_loci_variations,
-                                homopoly_positions, global_read_variations, global_snp_positions, read_sequence, read, ref, read_quality, sorted_global_snp_list)
+                                homopoly_positions, global_read_variations, global_snp_positions, read_sequence, read, ref, read_quality, sorted_global_snp_list, left_flank_list, right_flank_list)
     
                 for locus_key in read_loci_variations:
                     global_loci_variations[locus_key]['reads'].append(read_index)
-                    global_loci_variations[locus_key]['read_allele'][read_index] = (read_loci_variations[locus_key]['halen'], read_loci_variations[locus_key]['alen'])
+                    global_loci_variations[locus_key]['read_allele'][read_index] = [read_loci_variations[locus_key]['halen'], read_loci_variations[locus_key]['alen']]
                     global_loci_variations[locus_key]['read_sequence'][read_index] = read_loci_variations[locus_key]['seq']
             
             while len(global_loci_ends) > 0:
 
-                genotyped_loci_count += locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, level_split, snpQ, snpC, snpD, snpR, phasingR)
+                genotyped_loci_count += locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, snpQ, snpC, snpD, snpR, phasingR, tbx, flank, sorted_global_ins_rpos_set, log_bool, logger)
 
             while len(global_read_ends) > 0:
 
@@ -390,6 +535,13 @@ def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshol
                     del global_read_variations[rindex]
 
                     if rindex in prev_reads: prev_reads.remove(rindex)
+                del_ins_pos_idx = 0
+                list_rpos = sorted(sorted_global_ins_rpos_set)
+                for i in list_rpos:
+                    del_ins_pos_idx+=1
+                    if i > popped: break
+                del list_rpos[:del_ins_pos_idx]
+                sorted_global_ins_rpos_set = set(list_rpos)
 
         print(f'\nTotal genotyped loci = {genotyped_loci_count} out of {total_loci} in {Chrom} {Start[0]}-{End[1]}\n', file=sys.stderr)
     bam.close()
