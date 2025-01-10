@@ -205,19 +205,6 @@ Maximum number of SNPs to be used for read clustering and phasing.
 **Default**: *13*<br>
 Minimum Q value of the SNPs to be used for phasing.
 
-### `--level-split`
-**Expects**: *INTEGER*<br>
-**Default**: *2*<br>
-This option has three categories of levels:
-
-- 0: 30% to 70%
-- 1: 25% to 75%
-- 2: 20% to 80%
-
-Each of these integers is associated with a range of percentages that describe the minimum presence of SNPs in the supporting reads for a repeat locus to be used for phasing. These ranges are ordered from stringent to lenient to select the best heterozygous SNPs for phasing the reads. For example, using `--level-split 0` means that only those SNPs with a percentage of at least 30% and a maximum of 70% will be used for clustering and phasing of reads.
-
-In the default option (2), SNPs are tested across all three percentage ranges. If no SNPs are found in the 30%-70% range, they are then tested in the 25%-75% range. If no SNPs are found there, the last range (20%-80%) is applied. If no SNPs are found in any of these ranges, the reads are clustered based on their size.
-
 ### `--snp-read`
 **Expects**: *FLOAT*<br>
 **Default**: *0.2*<br>
