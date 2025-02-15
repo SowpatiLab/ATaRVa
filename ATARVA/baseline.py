@@ -39,8 +39,8 @@ def locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, 
             elif skip_point == 0: print('Locus skipped due to insignificant snps at the level of read split.')
             elif skip_point == 1: print('Locus skipped due to less read contribution of Significant snps.')
             elif skip_point == 2: print('Locus skipped due to less read contribution in the phased clusters.')
-            elif skip_point == 6: print('Locus skipped due to wide distribution of alleles with one read supporting to it.') # add vcf_fail_writer with new FILTER tag
-            else: print('Locus skipped due to less number of significant snps based on user\'s parameter.')
+            elif skip_point == 6: print(f'Locus {locus_key} skipped due to wide distribution of alleles with one read supporting to it.') # add vcf_fail_writer with new FILTER tag
+            else: print('Locus  skipped due to less number of significant snps based on user\'s parameter.')
         else:
             if skip_point == 0:
                 # print('Locus skipped due to minimum number of supporting reads')
@@ -97,7 +97,7 @@ def flank_adjustment(loci_coords, exact_loci_coords, right_flank_list, left_flan
     return [right_flank_list, left_flank_list]
 
 
-def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, outfile, seq_tech, snpQ, snpC, snpD, maxR, minR, snpR, phasingR, tidx, log_bool):
+def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, outfile, seq_tech, snpQ, snpC, snpD, maxR, minR, snpR, phasingR, tidx, flank, log_bool):
     # this function iterates through each contig and processes the genotypes for each locus
     tbx  = pysam.Tabixfile(tbx_file)
     bam  = pysam.AlignmentFile(bam_file, aln_format)
@@ -128,7 +128,7 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
         )
         logger = logging.getLogger("MyLogger")
     
-    flank = 10
+    # flank = 50
     for contig in contigs:
 
         Chrom, Start, End = contig
@@ -143,7 +143,8 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
             total_loci += 1
             end_coord = int(row[2])
             if End[0] == int(row[1]): break
-        print(f"> {Chrom} {Start} {End} Total loci = ", total_loci, file=sys.stderr)
+        # print(f"> {Chrom} {Start} {End} Total loci = ", total_loci, file=sys.stderr)
+        print(f"> {Chrom} {Start} {End} Total loci = ", total_loci)
 
         homozygous = False
         ambiguous = False
@@ -243,12 +244,7 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
                 exact_loci_coords.append((locus_start, locus_end))
                 tracker+=1
 
-                # if locus_start>Start[0]:
-                #     pass
-                # elif locus_start==Start[0] and locus_end==Start[1]:
-                #     start_check = 1
-                # elif start_check!=1:
-                #     continue
+
 
                 if (locus_start>=Start[0]) and (locus_end<=End[1]):
                     if locus_start==Start[0]:
@@ -259,8 +255,6 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
                     continue
                 elif locus_start>=End[0]: break
                 
-                # a location which is tracked with absurdly large number of SNPs
-                # if locus_start >= 143242921 and locus_end <= 143276906: continue
 
                 # if only the read completely covers the repeat
                 if ( locus_start >= read_start ) & ( locus_end <= read_end ):
@@ -324,7 +318,8 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
         while len(global_loci_ends) > 0:
             genotyped_loci_count += locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, snpQ, snpC, snpD, snpR, phasingR, tbx, flank, sorted_global_ins_rpos_set, log_bool, logger)
                 
-        print(f'\nTotal genotyped loci = {genotyped_loci_count} out of {total_loci} in {Chrom} {Start[0]}-{End[1]}\n', file=sys.stderr)
+        # print(f'\nTotal genotyped loci = {genotyped_loci_count} out of {total_loci} in {Chrom} {Start[0]}-{End[1]}\n', file=sys.stderr)
+        print(f'\nTotal genotyped loci = {genotyped_loci_count} out of {total_loci} in {Chrom} {Start[0]}-{End[1]}\n')
 
     bam.close()
     ref.close()
@@ -332,7 +327,7 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
     out.close()
 
 
-def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, outfile, seq_tech, snpQ, snpC, snpD, maxR, minR, snpR, phasingR, tidx, log_bool):
+def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, outfile, seq_tech, snpQ, snpC, snpD, maxR, minR, snpR, phasingR, tidx, flank, log_bool):
     # this function iterates through each contig and processes the genotypes for each locus
     tbx  = pysam.Tabixfile(tbx_file)
     bam  = pysam.AlignmentFile(bam_file, aln_format)
@@ -366,7 +361,7 @@ def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshol
         )
         logger = logging.getLogger("MyLogger")
 
-    flank = 10
+    # flank = 10
     for contig in contigs:
 
         Chrom, Start, End = contig
@@ -381,7 +376,8 @@ def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshol
             total_loci += 1
             end_coord = int(row[2])
             if End[0] == int(row[1]): break
-        print(f"> {Chrom} {Start} {End} Total loci = ", total_loci, file=sys.stderr)
+        # print(f"> {Chrom} {Start} {End} Total loci =  {total_loci}", file=sys.stderr)
+        print(f"> {Chrom} {Start} {End} Total loci =  {total_loci}")
 
         homozygous = False
         ambiguous = False
@@ -401,21 +397,12 @@ def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshol
 
         read_index = 0
         start_check = 0
-
+        
         for row in tbx.fetch(Chrom, Start[0], End[1]):
-           
+
             row = row.split('\t')
             locus_start = int(row[1]);  locus_end = int(row[2]); locus_len = locus_end-locus_start
 
-
-            # if locus_start>Start[0]:
-            #     pass
-            # elif locus_start==Start[0] and locus_end==Start[1]:
-            #     start_check = 1
-            # elif start_check!=1:
-            #     continue
-            
-            # if locus_start>End[0]: break
 
             if (locus_start>=Start[0]) and (locus_end<=End[1]):
                 if locus_start==Start[0]:
@@ -426,7 +413,7 @@ def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshol
                 continue
             elif locus_start>=End[0]: break
             
-            left_flank_list = []; right_flank_list = []
+           
             for read in bam.fetch(Chrom, int(row[1]), int(row[2])):
                 if read.mapping_quality < mapq_threshold:
                     continue
@@ -451,6 +438,7 @@ def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshol
                 passed_loci_coords = [(locus_start, locus_end)]
                 track_idx = []
                 tracker = 0
+                left_flank_list = []; right_flank_list = []
 
                 for in_row in tbx.fetch(read_chrom, read_start, read_end):
 
@@ -543,7 +531,8 @@ def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshol
                 del list_rpos[:del_ins_pos_idx]
                 sorted_global_ins_rpos_set = set(list_rpos)
 
-        print(f'\nTotal genotyped loci = {genotyped_loci_count} out of {total_loci} in {Chrom} {Start[0]}-{End[1]}\n', file=sys.stderr)
+        # print(f'\nTotal genotyped loci = {genotyped_loci_count} out of {total_loci} in {Chrom} {Start[0]}-{End[1]}\n', file=sys.stderr)
+        print(f'\nTotal genotyped loci = {genotyped_loci_count} out of {total_loci} in {Chrom} {Start[0]}-{End[1]}\n')
     bam.close()
     ref.close()
     tbx.close()

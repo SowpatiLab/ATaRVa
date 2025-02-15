@@ -1,7 +1,6 @@
 from snp_utils import haplocluster_reads
 from vcf_writer import *
 import numpy as np
-import sys
 import statistics
 from sklearn.cluster import KMeans
 import warnings
@@ -13,28 +12,38 @@ def length_genotyper(hallele_counter, global_loci_info, global_loci_variations, 
     read_indices = sorted(read_indices)
     locus_read_allele = global_loci_variations[locus_key]['read_allele']
     
-    alen_with_1read = [item[0] for item in hallele_counter.items() if item[1]==1]
+    alen_with_1read = [item[0] for item in hallele_counter.items() if item[1]==1] # allele with 1 read contribution
+    alen_with_gread = set(hallele_counter.keys()) - set(alen_with_1read) # allele with more than 1 read contribution
     main_read_id = []
     alen_data = []
     
     for id in read_indices:
-        if locus_read_allele[id][0] in alen_with_1read: continue
+        if locus_read_allele[id][0] in alen_with_1read: # checking if the '1 read - allele' is nearby any of other 'good read - allele'
+            num = locus_read_allele[id][0]
+            for i in alen_with_gread:
+                if i in range(num-10, num+10): # '1 read - allele' is considered if other allele are within 10 bp on either of the side
+                    alen_data.append(num)
+                    main_read_id.append(id)
+                    break
         else:
             alen_data.append(locus_read_allele[id][0])
             main_read_id.append(id)
 
+    if alen_data == []:
+        return [False, 6]
+
     data = np.array(alen_data)
     data = data.reshape(-1, 1)
-    with threadpool_limits(limits=1): # to restrict kmeans to use every possible threads available
+    with threadpool_limits(limits=1):
         with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=UserWarning) # to prevent warning messages get printed in terminal
+            warnings.filterwarnings("ignore", category=UserWarning)
             kmeans = KMeans(n_clusters=2, init='k-means++', n_init=5, random_state=0).fit(data)
     cluster_labels = kmeans.labels_  
     c1 = [i for i, x in enumerate(cluster_labels) if x == 0]
     c2 = [i for i, x in enumerate(cluster_labels) if x == 1]
-    haplotypes = ([main_read_id[idx] for idx in c1], [main_read_id[idx] for idx in c2])
 
-    cutoff = 0.15*len(alen_data) # cluster atleast should have 15% of alleles in it
+    haplotypes = ([main_read_id[idx] for idx in c1], [main_read_id[idx] for idx in c2])
+    cutoff = 0.15*len(alen_data) # 15%
     if (c1!=[] and len(c1)>=cutoff) and (c2!=[] and len(c2)>=cutoff):
         phased_read = ['.','.']
         chosen_snpQ = '.'
@@ -42,6 +51,7 @@ def length_genotyper(hallele_counter, global_loci_info, global_loci_variations, 
         hap_al1 = [alen_data[i] for i in c1]
         hap_al2 = [alen_data[i] for i in c2]
         haplo_alleles = (hap_al1,hap_al2)
+        
 
         genotypes = []
         for alleles_set in haplo_alleles: # making the set of final alleles from two clusters
@@ -61,17 +71,19 @@ def length_genotyper(hallele_counter, global_loci_info, global_loci_variations, 
         genotypes = statistics.mode(hap_al1)
         hap_reads = [read_id for read_id in haplotypes[0] if locus_read_allele[read_id][0]==genotypes]
         vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, genotypes, global_loci_variations, hap_al1.count(genotypes), out, hap_reads)
+        
 
+    elif c2!=[] and len(c2)>=cutoff:
+        hap_al2 = [alen_data[i] for i in c2]
+        genotypes = statistics.mode(hap_al2)
+        hap_reads = [read_id for read_id in haplotypes[1] if locus_read_allele[read_id][0]==genotypes]
+        vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, genotypes, global_loci_variations, hap_al2.count(genotypes), out, hap_reads)
+        
     else:
         return [False, 6] # write allele distribution with only one read supporting to it in vcf
     
     return [True, 10]
 
-
-    
-
-
-    
 
 def analyse_genotype(contig, locus_key, global_loci_info,
                      global_loci_variations, global_read_variations, global_snp_positions, hallele_counter,

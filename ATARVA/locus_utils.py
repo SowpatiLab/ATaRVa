@@ -1,4 +1,3 @@
-import regex as re
 from realignment_utils import *
 import sys
 
@@ -45,7 +44,6 @@ def inrepeat_ins(near_by_loci, ins_rpos, sorted_global_ins_rpos_set):
 
 
 
-
 def process_locus(locus_key, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, global_loci_info, near_by_loci, sorted_global_ins_rpos_set, Chrom, locus_start, locus_end, ref, log_bool, logger):
 
 
@@ -81,9 +79,9 @@ def process_locus(locus_key, global_loci_variations, global_read_variations, glo
 
     locus_read_allele = global_loci_variations[locus_key]['read_allele'] # extracting allele info from global_loci_variation
     locus_read_seq = global_loci_variations[locus_key]['read_sequence']
-
     ILR=0;PI=0;CI=0;
     for each_read in read_indices:
+
         query,rep_range,ins_left,ins_right, left_rpos, right_rpos = locus_read_seq[each_read] # fetching repeat seq with flanks, correct start end position and insertion coordinates
 
         new_start,new_end = rep_range # new coordinates same as correct corrdinates
@@ -100,6 +98,7 @@ def process_locus(locus_key, global_loci_variations, global_read_variations, glo
 
         for lid,each_tuple in enumerate(sorted_left):# checking the insertion on left, whether its a repeats or not
             ins_len = each_tuple[1]-each_tuple[0]
+            
             if ins_len < period:
                 if ins_len>=10: pass
                 else: continue
@@ -111,17 +110,19 @@ def process_locus(locus_key, global_loci_variations, global_read_variations, glo
                 align, pos = stripSW(Inputs(ref_seq, test_query))
                 que_len = len(test_query)
                 align_len = len(align)
-                if align_len<=round(0.2*que_len):
+
+                if align_len<=round(0.2*min([que_len,ref_len])):
                     continue
-                elif (align_len >= ref_len) and (align.count('|') >= round(0.75*align_len)): # when insertion is larger then the ref seq
+                elif (align_len >= round(0.75*ref_len)) and (align.count('|') >= round(0.75*align_len)): # when insertion is larger then the ref seq
                     ILR+=1
-                    new_start = each_tuple[0] + pos[0]
+                    new_start = each_tuple[0] #+ pos[0]
                     for ins in sorted_left_rpos[lid:]:
                         new_ins_rpos_current_loci.add(ins)
                     break
                 elif (align.count('|') >= round(0.75*align_len)) and (pos[1]>=round(0.7*que_len)) and (align_len>=round(0.45*que_len)):
                     if align_len<=0.5*que_len: PI+=1
                     else: CI+=1
+                    # print('either CI or PI')
                     new_start = each_tuple[0] + pos[0]
                     for ins in sorted_left_rpos[lid:]:
                         new_ins_rpos_current_loci.add(ins)
@@ -140,11 +141,11 @@ def process_locus(locus_key, global_loci_variations, global_read_variations, glo
                 align, pos = stripSW(Inputs(ref_seq, test_query))
                 que_len = len(test_query)
                 align_len = len(align)
-                if align_len<=round(0.2*que_len):
+                if align_len<=round(0.2*min([que_len,ref_len])):
                     continue
-                elif (align_len >= ref_len) and (align.count('|') >= round(0.75*align_len)): # when insertion is larger then the ref seq
+                elif (align_len >= round(0.75*ref_len)) and (align.count('|') >= round(0.75*align_len)): # when insertion is larger then the ref seq
                     ILR+=1
-                    new_end = each_tuple[0] + pos[1]
+                    new_end = each_tuple[1] #each_tuple[0] + pos[1]
                     for ins in sorted_right_rpos[rid:]:
                         new_ins_rpos_current_loci.add(ins)
                     break
@@ -163,10 +164,10 @@ def process_locus(locus_key, global_loci_variations, global_read_variations, glo
 
     if log_bool: logger.debug(f"{locus_key};Larger_ins={ILR};Partial_ins={PI};Complete_ins={CI}")
     sorted_global_ins_rpos_set |= new_ins_rpos_current_loci
-    
     # recording the counts of each allele length across all reads
     allele_counter = {};  hallele_counter = {}
     count_alleles(locus_key, read_indices, global_loci_variations, allele_counter, hallele_counter)
+
     
     if len(hallele_counter) == 1:
         homozygous = True

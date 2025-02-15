@@ -50,7 +50,6 @@ def match_jump(rpos, repeat_index, loci_coords, tracked, locus_qpos_range, qpos,
             if coord[1]-right_flank[r+repeat_index] <= rpos:
                 loci_flank_qpos_range[r+repeat_index][1] = qpos - (rpos - coord[1])-right_flank[r+repeat_index]
                 if rpos > coord[1]-right_flank[r+repeat_index]: flank_track[r+repeat_index][1] = True
-                # print('1st end point = ', qpos - (rpos - coord[1])-right_flank[r+repeat_index], rpos, coord[1]-right_flank[r+repeat_index], loci_flank_qpos_range[r+repeat_index])
                 
                 
 
@@ -70,9 +69,8 @@ def match_jump(rpos, repeat_index, loci_coords, tracked, locus_qpos_range, qpos,
         elif (not flank_track[r+repeat_index][1]) and (coord[1]-right_flank[r+repeat_index] <= rpos):
             loci_flank_qpos_range[r+repeat_index][1] = qpos - (rpos - coord[1])-right_flank[r+repeat_index]
             if rpos > coord[1]-right_flank[r+repeat_index]: flank_track[r+repeat_index][1] = True
-            # print('2nd end point = ', qpos - (rpos - coord[1])-right_flank[r+repeat_index], rpos, coord[1]-right_flank[r+repeat_index], loci_flank_qpos_range[r+repeat_index])
 
-        # print(flank_track)
+    
     jump = 0    # jump beyond the repeat where all positions are tracked
     if loci_coords[repeat_index + r - 1][1] < rpos:
         for f in loci_coords[repeat_index:]:
@@ -195,7 +193,6 @@ def insertion_jump(insertion_length, insert, rpos, repeat_index, loci_keys, trac
             if coord[1]-right_flank[r+repeat_index] <= rpos:
                 loci_flank_qpos_range[r+repeat_index][1] = qpos
                 if rpos > coord[1]-right_flank[r+repeat_index]: flank_track[r+repeat_index][1] = True
-                # print('INS 1st end_point = ', qpos, rpos, coord[1], right_flank[r+repeat_index])
 
 
         elif coord[1] == rpos:
@@ -213,7 +210,6 @@ def insertion_jump(insertion_length, insert, rpos, repeat_index, loci_keys, trac
         elif (not flank_track[r+repeat_index][1]) and (coord[1]-right_flank[r+repeat_index] <= rpos):
             loci_flank_qpos_range[r+repeat_index][1] = qpos
             if rpos > coord[1]-right_flank[r+repeat_index]: flank_track[r+repeat_index][1] = True
-            # print('INS 2nd end_point = ', qpos, rpos, coord[1], right_flank[r+repeat_index], " alen = ", qpos - loci_flank_qpos_range[r+repeat_index][0])
 
         # read_loci_variations[locus_key][rpos] = f'I|{insertion_length}'
         if coord[0]+left_flank[r+repeat_index] <= rpos <= coord[1]-right_flank[r+repeat_index]: # introduced to include length only if it comes inside repeat region
