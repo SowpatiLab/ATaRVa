@@ -37,8 +37,10 @@ $ python core.py -h # Print the help message of ATaRVa (see below)
 ```
 ### Docker installation
 ATaRVa can also be installed using the provided **Docker** image with the following steps:
- - `cd ATaRVa`
- - `docker build --network host -t atarva`
+```bash
+$ cd ATaRVa
+$ docker build --network host -t atarva
+```
 
 ## Usage
 The help message and available options can be accessed using
