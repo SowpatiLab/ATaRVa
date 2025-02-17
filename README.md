@@ -19,9 +19,16 @@ $ git clone https://github.com/SowpatiLab/ATaRVa.git
 
 # Install
 $ cd ATaRVa
+$ python setup.py build_ext --inplace
 $ python setup.py install
 ```
-Both of the methods add a console command `ATARVA`, which can be executed from any directory. It can also be used without installation by running the `core.py` file in the `ATARVA` subfolder:
+
+After installing ATaRVa, add the absolute path of `ATARVA/Complete_Striped_Smith_Waterman_Library/src` to the `LD_LIBRARY_PATH` to include the dynamic library `libssw.so`
+```bash
+$ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:path_of_libssw.so
+```
+
+Both of the methods add a console command `ATARVA`, which can be executed from any directory. It can also be used by running the `core.py` file in the `ATARVA` subfolder:
 
 ```bash
 $ git clone https://github.com/SowpatiLab/ATaRVa.git
