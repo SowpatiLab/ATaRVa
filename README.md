@@ -5,12 +5,12 @@
 ATaRVa - Analysis of Tandem Repeat Variation (pronunced atharva) is a tool for genotyping tandem repeats from LRS whole genome sequencing datasets. The tool is designed with custom approaches for LRS datasets and also based on the sequencing platform used in long read sequencing dataset.  
 
 ## Installation
+
 ATaRVa can be directly installed using pip with the package name `atarva`.
 
 ```bash
 $ pip install atarva
 ```
-
 Alternatively, it can be installed from the source code:
 
 ```bash
@@ -35,6 +35,10 @@ $ git clone https://github.com/SowpatiLab/ATaRVa.git
 $ cd ATaRVa/ATARVA
 $ python core.py -h # Print the help message of ATaRVa (see below)
 ```
+### Docker installation
+ATaRVa can also be installed using the provided **Docker** image with the following steps:
+ - `cd ATaRVa`
+ - `docker build --network host -t atarva`
 
 ## Usage
 The help message and available options can be accessed using
@@ -303,6 +307,12 @@ $ ATARVA --format cram -fi ref.fa --bams input.cram -bed regions.bed.gz
 # input sam file
 $ ATARVA --format sam -fi ref.fa --bams input.sam -bed regions.bed.gz
 ```
+### Usage in docker
+To run ATaRVa in docker container, use the following command:
+```bash
+$ docker run -i -t --rm -v /path_of_necessary_files/:/folder_name atarva:latest -fi /folder_name/ref.fa --bams /folder_name/input.bam -bed /folder_name/regions.bed.gz
+``` 
+
 In all the above examples, the output of ATaRVa is saved to input.vcf unless -o is specified.
 
 ## Citation
