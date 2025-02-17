@@ -287,8 +287,8 @@ $ ATARVA -fi ref.fa --bams input.bam -bed regions.bed.gz
 ### Stringent parameter usage
 To run ATaRVa with stringent parameters, use the following command:
 ```bash
-$ ATARVA -q 20 --snp-count 5 --snp-qual 25 --level-split 0 --min-reads 20 -p 32 -fi ref.fa --bams input.bam -bed regions.bed.gz
-# The above command with --level-split 0 and --snp-count 5 will use a maximum of five heterozygous SNPs fetched from the first range of percentage read splits (30-70%) to provide accurate genotypes, but only when phasing is based on SNPs and not on length.
+$ ATARVA -q 20 --snp-count 5 --snp-qual 25 --min-reads 20 -p 32 -fi ref.fa --bams input.bam -bed regions.bed.gz
+# The above command with --snp-count 5 will use a maximum of five heterozygous SNPs to provide accurate genotypes, but only when phasing is based on SNPs and not on length.
 ```
 ### Genotyping TRs from specific chromosome/s
 To genotype TRs from specific chromosomes only, run ATaRVa with the following command:
