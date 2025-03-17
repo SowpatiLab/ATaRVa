@@ -58,7 +58,7 @@ def parse_cigar_tag(read_index, cigar_tuples, read_start, loci_keys, loci_coords
            qpos += cigar[1] 
         elif cigar[0] == 2:     # deletion
             deletion_length = cigar[1]
-            for _ in range(deletion_length): global_read_variations[read_index]['dels'].add(rpos+_)
+            global_read_variations[read_index]['dels'] |= set(range(rpos, rpos+deletion_length))
             rpos += cigar[1]
             repeat_index += deletion_jump(deletion_length, rpos, repeat_index, loci_keys, tracked, loci_coords,
                                           homopoly_positions, read_loci_variations, locus_qpos_range, qpos, loci_flank_qpos_range, flank_track, left_flank_list, right_flank_list)

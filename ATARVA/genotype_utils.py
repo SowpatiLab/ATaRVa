@@ -7,7 +7,7 @@ import warnings
 from threadpoolctl import threadpool_limits
 
 
-def length_genotyper(hallele_counter, global_loci_info, global_loci_variations, locus_key, read_indices, contig, locus_start, locus_end, ref, out):
+def length_genotyper(hallele_counter, global_loci_info, global_loci_variations, locus_key, read_indices, contig, locus_start, locus_end, ref, out, male):
 
     read_indices = sorted(read_indices)
     locus_read_allele = global_loci_variations[locus_key]['read_allele']
@@ -44,7 +44,18 @@ def length_genotyper(hallele_counter, global_loci_info, global_loci_variations, 
 
     haplotypes = ([main_read_id[idx] for idx in c1], [main_read_id[idx] for idx in c2])
     cutoff = 0.15*len(alen_data) # 15%
-    if (c1!=[] and len(c1)>=cutoff) and (c2!=[] and len(c2)>=cutoff):
+
+    if male:
+        cluster_len = [len(c1), len(c2)]
+        cidx = cluster_len.index(max( cluster_len ))
+        if cluster_len[cidx]>=cutoff:
+            mac = haplotypes[cidx]
+            hap_al1 = [alen_data[i] for i in [c1,c2][cidx]]
+            genotypes = statistics.mode(hap_al1)
+            hap_reads = [read_id for read_id in mac if locus_read_allele[read_id][0]==genotypes]
+            vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, genotypes, global_loci_variations, hap_al1.count(genotypes), out, hap_reads)
+    
+    elif (c1!=[] and len(c1)>=cutoff) and (c2!=[] and len(c2)>=cutoff):
         phased_read = ['.','.']
         chosen_snpQ = '.'
         snp_num = '.'
@@ -87,7 +98,7 @@ def length_genotyper(hallele_counter, global_loci_info, global_loci_variations, 
 
 def analyse_genotype(contig, locus_key, global_loci_info,
                      global_loci_variations, global_read_variations, global_snp_positions, hallele_counter,
-                     ref, out, sorted_global_snp_list, snpQ, snpC, snpD, snpR, phasingR, maxR, max_limit):
+                     ref, out, sorted_global_snp_list, snpQ, snpC, snpD, snpR, phasingR, maxR, max_limit, male):
 
     locus_start = int(global_loci_info[locus_key][1])
     locus_end = int(global_loci_info[locus_key][2])
@@ -98,6 +109,10 @@ def analyse_genotype(contig, locus_key, global_loci_info,
         read_indices = global_loci_variations[locus_key]['reads']
     else:
         read_indices = global_loci_variations[locus_key]['reads'][:maxR]
+
+    if male: 
+        state, skip_point = length_genotyper(hallele_counter, global_loci_info, global_loci_variations, locus_key, read_indices, contig, locus_start, locus_end, ref, out, male)
+        return [state, skip_point]
 
 
     snp_positions = set()
@@ -147,7 +162,7 @@ def analyse_genotype(contig, locus_key, global_loci_info,
     haplotypes, min_snp, skip_point, chosen_snpQ, phased_read, snp_num = haplocluster_reads(snp_allelereads, ordered_snp_on_cov, read_indices, snpQ, snpC, snpR, phasingR) # SNP ifo and supporting reads for specific locus are given to the phasing function
 
     if haplotypes == (): # if the loci has no significant snps
-        state, skip_point = length_genotyper(hallele_counter, global_loci_info, global_loci_variations, locus_key, read_indices, contig, locus_start, locus_end, ref, out)
+        state, skip_point = length_genotyper(hallele_counter, global_loci_info, global_loci_variations, locus_key, read_indices, contig, locus_start, locus_end, ref, out, male)
         return [state, skip_point]
     
     if min_snp != -1:

@@ -43,6 +43,7 @@ def parse_args():
     optional.add_argument('--platform', type=str, metavar='<STR>', default='simplex', help='sequencing platform used for generating the data. changing this will have an affect \
                                                                            on phasing which is happening on SNPs. allowed options: [hifi, duplex, simplex-hq, simplex]. \
                                                                            default: [simplex]')
+    optional.add_argument('--karyotype', nargs='+', help='karyotype of the samples [XY XX]')
     optional.add_argument('-p',  '--processor', type=int, metavar='<INT>', default=1, help='number of processor. [default: 1]')
     optional.add_argument('-v', '--version', action='version', version=f'ATaRVa version {__version__}')
     optional.add_argument('-log', '--debug_mode', action='store_true', help="write the debug messages to log file. [default: False]")
@@ -151,6 +152,11 @@ def main():
             for row in tbx.fetch(each_contig):
                 total_loci += 1
 
+    if not args.karyotype:
+        karyotype_list = [False]*len(args.bams)
+    else:
+        karyotype_list = [i=='XY' for i in args.karyotype]
+
     threads = args.processor
     split_point = total_loci // threads
     if split_point == 0:
@@ -187,7 +193,7 @@ def main():
     if (len(args.bams)>1) and (args.vcf):
         mbso = 1
     
-    for each_bam in args.bams:
+    for kidx, each_bam in enumerate(args.bams):
         out_file = external_name
         print(f"Processing sample {each_bam.split('/')[-1]}\n")
 
@@ -237,11 +243,11 @@ def main():
                 if srs:
                     thread_x = Process(
                         target = mini_cooper,
-                        args = (each_bam, args.regions, args.fasta, aln_format, contig, args.map_qual, out_file, seq_platform, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, tidx, args.flank, args.debug_mode))
+                        args = (each_bam, args.regions, args.fasta, aln_format, contig, args.map_qual, out_file, seq_platform, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, tidx, args.flank, args.debug_mode, karyotype_list[kidx]))
                 else:
                     thread_x = Process(
                         target = cooper,
-                        args = (each_bam, args.regions, args.fasta, aln_format, contig, args.map_qual, out_file, seq_platform, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, tidx, args.flank, args.debug_mode))
+                        args = (each_bam, args.regions, args.fasta, aln_format, contig, args.map_qual, out_file, seq_platform, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, tidx, args.flank, args.debug_mode, karyotype_list[kidx]))
                 thread_x.start()
                 thread_pool.append(thread_x)
             # joining Threads 
@@ -275,9 +281,9 @@ def main():
                 out_log.close()
         else:
             if srs:
-                mini_cooper(each_bam, args.regions, args.fasta, aln_format, fetcher[0], args.map_qual, out_file, seq_platform, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, -1, args.flank, args.debug_mode)
+                mini_cooper(each_bam, args.regions, args.fasta, aln_format, fetcher[0], args.map_qual, out_file, seq_platform, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, -1, args.flank, args.debug_mode, karyotype_list[kidx])
             else:
-                cooper(each_bam, args.regions, args.fasta, aln_format, fetcher[0], args.map_qual, out_file, seq_platform, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, -1, args.flank, args.debug_mode)
+                cooper(each_bam, args.regions, args.fasta, aln_format, fetcher[0], args.map_qual, out_file, seq_platform, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, -1, args.flank, args.debug_mode, karyotype_list[kidx])
 
     time_now = ti.default_timer()
     sys.stderr.write('CPU time: {} seconds\n'.format(time_now - start_time))

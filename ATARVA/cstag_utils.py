@@ -90,7 +90,7 @@ def parse_cstag(read_index, cs_tag, read_start, loci_keys, loci_coords, read_loc
             while i < cs_len and cs_tag[i] not in operations:
                 deletion += cs_tag[i]; deletion_length += 1
                 i += 1
-            # for _ in range(deletion_length): global_read_variations[read_index]['dels'].add(rpos+_)
+            global_read_variations[read_index]['dels'] |= set(range(rpos, rpos+deletion_length))
             rpos += deletion_length
             repeat_index += deletion_jump(deletion_length, rpos, repeat_index, loci_keys, tracked, loci_coords,
                                           homopoly_positions, read_loci_variations, locus_qpos_range, qpos, loci_flank_qpos_range, flank_track, left_flank_list, right_flank_list)

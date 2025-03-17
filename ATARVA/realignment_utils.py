@@ -12,10 +12,12 @@ def suppress_stderr():
     os.dup2(devnull, stderr_fileno)  # Redirect stderr to /dev/null
     os.close(devnull)  # Close descriptor
 
-def restore_stderr():
+def restore_stderr(original_stderr):
     """Restores the original stderr after suppression."""
     sys.stderr.flush()
-    sys.stderr = sys.__stderr__  # Restore original stderr
+    os.dup2(original_stderr, sys.stderr.fileno())
+    os.close(original_stderr)
+    # sys.stderr = sys.__stderr__  # Restore original stderr
 
 class Inputs:
     def __init__(self, target, query):
@@ -69,9 +71,10 @@ def stripSW(args):
     
     rNum = pyssw.to_int(sRSeq, lEle, dEle2Int)
     if nMaskLen<15:
+        original_stderr = os.dup(sys.stderr.fileno())
         suppress_stderr()
         res = pyssw.align_one(ssw, qProfile, rNum, len(sRSeq), args.nOpen, args.nExt, nFlag, nMaskLen)
-        restore_stderr()
+        restore_stderr(original_stderr)
     else:
         res = pyssw.align_one(ssw, qProfile, rNum, len(sRSeq), args.nOpen, args.nExt, nFlag, nMaskLen)
     sCigar, sQ, sA, sR = pyssw.buildPath(sQSeq, sRSeq, res[4], res[2], res[8])
