@@ -76,7 +76,6 @@ Optional arguments:
   --snp-dist <INT>      maximum distance of the SNP from repeat region to be considered for phasing. [default: 5000]
   --snp-count <INT>     number of SNPs to be considered for phasing (minimum value = 1). [default: 3]
   --snp-qual <INT>      minimum basecall quality at the SNP position to be considered for phasing. [default: 13]
-  --level-split <INT>   a positive integer(0 to 2, where 0 : 30 to 70% ; 1 : 25 to 75% ; 2 : 20 to 80%) as the percentage level of read split of snps to be used for phasing. [default: 2]
   --snp-read <FLOAT>    a positive float as the minimum fraction of snp's read contribution to be used for phasing. [default: 0.25]
   --phasing-read <FLOAT>
                         a positive float as the minimum fraction of total read contribution from the phased read clusters. [default: 0.4]
