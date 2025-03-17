@@ -9,7 +9,7 @@ import pysam
 import sys
 import logging
 
-def locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, snpQ, snpC, snpD, snpR, phasingR, tbx, flank, sorted_global_ins_rpos_set, log_bool, logger):
+def locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, snpQ, snpC, snpD, snpR, phasingR, tbx, flank, sorted_global_ins_rpos_set, log_bool, logger, male):
 
     genotyped_loci = 0
     popped    = global_loci_ends.pop(0)
@@ -34,7 +34,7 @@ def locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, 
             vcf_homozygous_writer(ref, Chrom, locus_key, global_loci_info, homozygous_allele, global_loci_variations, len(reads_of_homozygous), out, reads_of_homozygous)
             genotyped_loci += 1
         elif ambiguous:
-            state, skip_point = analyse_genotype(Chrom, locus_key, global_loci_info, global_loci_variations, global_read_variations, global_snp_positions, hallele_counter, ref, out, sorted_global_snp_list, snpQ, snpC, snpD, snpR, phasingR, maxR, max_limit)
+            state, skip_point = analyse_genotype(Chrom, locus_key, global_loci_info, global_loci_variations, global_read_variations, global_snp_positions, hallele_counter, ref, out, sorted_global_snp_list, snpQ, snpC, snpD, snpR, phasingR, maxR, max_limit, male)
             if state: genotyped_loci += 1
             elif skip_point == 0: print('Locus skipped due to insignificant snps at the level of read split.')
             elif skip_point == 1: print('Locus skipped due to less read contribution of Significant snps.')
@@ -97,7 +97,7 @@ def flank_adjustment(loci_coords, exact_loci_coords, right_flank_list, left_flan
     return [right_flank_list, left_flank_list]
 
 
-def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, outfile, seq_tech, snpQ, snpC, snpD, maxR, minR, snpR, phasingR, tidx, flank, log_bool):
+def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, outfile, seq_tech, snpQ, snpC, snpD, maxR, minR, snpR, phasingR, tidx, flank, log_bool, karyotype):
     # this function iterates through each contig and processes the genotypes for each locus
     tbx  = pysam.Tabixfile(tbx_file)
     bam  = pysam.AlignmentFile(bam_file, aln_format)
@@ -128,10 +128,11 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
         )
         logger = logging.getLogger("MyLogger")
     
-    # flank = 50
     for contig in contigs:
 
         Chrom, Start, End = contig
+        male = False
+        if (Chrom in {'chrX', 'chrY', 'X', 'Y'}) and karyotype: male = True
 
         # print(f"\nProcessing contig {contig}..\n", file=sys.stderr)
         total_loci = 0
@@ -143,8 +144,7 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
             total_loci += 1
             end_coord = int(row[2])
             if End[0] == int(row[1]): break
-        # print(f"> {Chrom} {Start} {End} Total loci = ", total_loci, file=sys.stderr)
-        print(f"> {Chrom} {Start} {End} Total loci = ", total_loci)
+        print(f"> {Chrom} {Start} {End} Total loci = ", total_loci, file=sys.stderr)
 
         homozygous = False
         ambiguous = False
@@ -176,7 +176,7 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
 
             while len(global_loci_ends) > 0 and read_start > global_loci_ends[0]:
 
-                genotyped_loci_count += locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, snpQ, snpC, snpD, snpR, phasingR, tbx, flank, sorted_global_ins_rpos_set, log_bool, logger)
+                genotyped_loci_count += locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, snpQ, snpC, snpD, snpR, phasingR, tbx, flank, sorted_global_ins_rpos_set, log_bool, logger, male)
                 
 
             while len(global_read_ends) > 0 and read_start > global_read_ends[0]:
@@ -201,6 +201,7 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
                         for snp in del_snps:
                             del global_snp_positions[snp]
                         del global_read_variations[rindex]
+                        del del_snps
 
                         if rindex in prev_reads: prev_reads.remove(rindex)
                     del_ins_pos_idx = 0
@@ -216,7 +217,7 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
             # if the read is beyond the last locus in the bed file the loop stops
             if read_start > end_coord:
                 while len(global_loci_ends) > 0:
-                    genotyped_loci_count += locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, snpQ, snpC, snpD, snpR, phasingR, tbx, flank, sorted_global_ins_rpos_set, log_bool, logger)
+                    genotyped_loci_count += locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, snpQ, snpC, snpD, snpR, phasingR, tbx, flank, sorted_global_ins_rpos_set, log_bool, logger, male)
                 # process the loci left in global_loci_variation
                 break
 
@@ -305,10 +306,10 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
 
             if read.has_tag('cs'):
                 cs_tag = read.get_tag('cs')
-                parse_cstag(read_index, cs_tag, read_start, loci_keys, loci_coords, read_loci_variations, homopoly_positions, global_read_variations, global_snp_positions, read_sequence, read_quality, cigar_one, sorted_global_snp_list, left_flank_list, right_flank_list)
+                parse_cstag(read_index, cs_tag, read_start, loci_keys, loci_coords, read_loci_variations, homopoly_positions, global_read_variations, global_snp_positions, read_sequence, read_quality, cigar_one, sorted_global_snp_list, left_flank_list, right_flank_list, male)
             else :
                 parse_cigar_tag(read_index, cigar_tuples, read_start, loci_keys, loci_coords, read_loci_variations,
-                                homopoly_positions, global_read_variations, global_snp_positions, read_sequence, read, ref, read_quality, sorted_global_snp_list, left_flank_list, right_flank_list)
+                                homopoly_positions, global_read_variations, global_snp_positions, read_sequence, read, ref, read_quality, sorted_global_snp_list, left_flank_list, right_flank_list, male)
 
             for locus_key in read_loci_variations:
                 global_loci_variations[locus_key]['reads'].append(read_index)
@@ -316,10 +317,9 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
                 global_loci_variations[locus_key]['read_sequence'][read_index] = read_loci_variations[locus_key]['seq']
 
         while len(global_loci_ends) > 0:
-            genotyped_loci_count += locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, snpQ, snpC, snpD, snpR, phasingR, tbx, flank, sorted_global_ins_rpos_set, log_bool, logger)
+            genotyped_loci_count += locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, snpQ, snpC, snpD, snpR, phasingR, tbx, flank, sorted_global_ins_rpos_set, log_bool, logger, male)
                 
-        # print(f'\nTotal genotyped loci = {genotyped_loci_count} out of {total_loci} in {Chrom} {Start[0]}-{End[1]}\n', file=sys.stderr)
-        print(f'\nTotal genotyped loci = {genotyped_loci_count} out of {total_loci} in {Chrom} {Start[0]}-{End[1]}\n')
+        print(f'\nTotal genotyped loci = {genotyped_loci_count} out of {total_loci} in {Chrom} {Start[0]}-{End[1]}\n', file=sys.stderr)
 
     bam.close()
     ref.close()
@@ -327,16 +327,13 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
     out.close()
 
 
-def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, outfile, seq_tech, snpQ, snpC, snpD, maxR, minR, snpR, phasingR, tidx, flank, log_bool):
+def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, outfile, seq_tech, snpQ, snpC, snpD, maxR, minR, snpR, phasingR, tidx, flank, log_bool, karyotype):
     # this function iterates through each contig and processes the genotypes for each locus
     tbx  = pysam.Tabixfile(tbx_file)
+    tbx2  = pysam.Tabixfile(tbx_file)
     bam  = pysam.AlignmentFile(bam_file, aln_format)
     ref  = pysam.FastaFile(ref_file)
 
-    # if tidx!=-1:
-    #     out = open(f'{outfile}_thread_{tidx}.vcf', 'w')
-    # else: out = open(f'{outfile}.vcf', 'w')
-    # vcf_writer(out)
 
     logger = 0
     if tidx!=-1:
@@ -361,23 +358,21 @@ def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshol
         )
         logger = logging.getLogger("MyLogger")
 
-    # flank = 10
     for contig in contigs:
 
         Chrom, Start, End = contig
+        male = False
+        if (Chrom in {'chrX', 'chrY', 'X', 'Y'}) and karyotype: male = True
 
         # print(f"\nProcessing contig {contig}..\n", file=sys.stderr)
         total_loci = 0
-        end_coord = 0
         genotyped_loci_count = 0
         for row in tbx.fetch(Chrom, Start[0], End[1]):
             row = row.split('\t')
             if (total_loci == 0) and (int(row[2]) != Start[1]): continue
             total_loci += 1
-            end_coord = int(row[2])
             if End[0] == int(row[1]): break
-        # print(f"> {Chrom} {Start} {End} Total loci =  {total_loci}", file=sys.stderr)
-        print(f"> {Chrom} {Start} {End} Total loci =  {total_loci}")
+        print(f"> {Chrom} {Start} {End} Total loci =  {total_loci}", file=sys.stderr)
 
         homozygous = False
         ambiguous = False
@@ -396,7 +391,6 @@ def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshol
         sorted_global_ins_rpos_set = set()
 
         read_index = 0
-        start_check = 0
         
         for row in tbx.fetch(Chrom, Start[0], End[1]):
 
@@ -434,19 +428,8 @@ def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshol
     
                 # repeat loci covered by the read
                 loci_coords = []; loci_keys = []
-                exact_loci_coords = []
-                passed_loci_coords = [(locus_start, locus_end)]
-                track_idx = []
-                tracker = 0
+ 
                 left_flank_list = []; right_flank_list = []
-
-                for in_row in tbx.fetch(read_chrom, read_start, read_end):
-
-                    in_row = in_row.split('\t')
-                    in_locus_start = int(in_row[1]);  in_locus_end = int(in_row[2])
-                    exact_loci_coords.append((in_locus_start, in_locus_end))
-                    tracker += 1
-                    if (in_locus_start==locus_start) and (in_locus_end==locus_end): track_idx.append(tracker-1)
 
                 left_flank = flank; right_flank = flank
                 if (locus_start - flank) < read_start:
@@ -468,12 +451,6 @@ def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshol
                     global_loci_ends.append(locus_end)
                     global_loci_keys.append(locus_key)
 
-
-                if len(loci_coords) == 0: continue
-
-                # right_flank_list, left_flank_list = flank_adjustment(loci_coords, exact_loci_coords, right_flank_list, left_flank_list, tracker_idx)
-                # for idx,locus in enumerate(passed_loci_coords):
-                #     loci_coords[idx] = (locus[0]-left_flank_list[idx], locus[1]+right_flank_list[idx]) 
         
                 read_index += 1
                 read_quality = read.query_qualities
@@ -491,10 +468,10 @@ def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshol
     
                 if read.has_tag('cs'):
                     cs_tag = read.get_tag('cs')
-                    parse_cstag(read_index, cs_tag, read_start, loci_keys, loci_coords, read_loci_variations, homopoly_positions, global_read_variations, global_snp_positions, read_sequence, read_quality, cigar_one, sorted_global_snp_list, left_flank_list, right_flank_list)
+                    parse_cstag(read_index, cs_tag, read_start, loci_keys, loci_coords, read_loci_variations, homopoly_positions, global_read_variations, global_snp_positions, read_sequence, read_quality, cigar_one, sorted_global_snp_list, left_flank_list, right_flank_list, male)
                 else :
                     parse_cigar_tag(read_index, cigar_tuples, read_start, loci_keys, loci_coords, read_loci_variations,
-                                homopoly_positions, global_read_variations, global_snp_positions, read_sequence, read, ref, read_quality, sorted_global_snp_list, left_flank_list, right_flank_list)
+                                homopoly_positions, global_read_variations, global_snp_positions, read_sequence, read, ref, read_quality, sorted_global_snp_list, left_flank_list, right_flank_list, male)
     
                 for locus_key in read_loci_variations:
                     global_loci_variations[locus_key]['reads'].append(read_index)
@@ -503,7 +480,7 @@ def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshol
             
             while len(global_loci_ends) > 0:
 
-                genotyped_loci_count += locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, snpQ, snpC, snpD, snpR, phasingR, tbx, flank, sorted_global_ins_rpos_set, log_bool, logger)
+                genotyped_loci_count += locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, snpQ, snpC, snpD, snpR, phasingR, tbx2, flank, sorted_global_ins_rpos_set, log_bool, logger, male)
 
             while len(global_read_ends) > 0:
 
@@ -521,6 +498,7 @@ def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshol
                     for snp in del_snps:
                         del global_snp_positions[snp]
                     del global_read_variations[rindex]
+                    del del_snps
 
                     if rindex in prev_reads: prev_reads.remove(rindex)
                 del_ins_pos_idx = 0
@@ -531,9 +509,10 @@ def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshol
                 del list_rpos[:del_ins_pos_idx]
                 sorted_global_ins_rpos_set = set(list_rpos)
 
-        # print(f'\nTotal genotyped loci = {genotyped_loci_count} out of {total_loci} in {Chrom} {Start[0]}-{End[1]}\n', file=sys.stderr)
-        print(f'\nTotal genotyped loci = {genotyped_loci_count} out of {total_loci} in {Chrom} {Start[0]}-{End[1]}\n')
+        print(f'\nTotal genotyped loci = {genotyped_loci_count} out of {total_loci} in {Chrom} {Start[0]}-{End[1]}\n', file=sys.stderr)
+
     bam.close()
     ref.close()
     tbx.close()
+    tbx2.close()
     out.close()
