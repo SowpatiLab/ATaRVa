@@ -3,7 +3,7 @@ from operation_utils import match_jump, deletion_jump, insertion_jump
 
 
 def parse_cstag(read_index, cs_tag, read_start, loci_keys, loci_coords, read_loci_variations,
-                homopoly_positions, global_read_variations, global_snp_positions, read_sequence, read_quality, cigar_one, sorted_global_snp_list, left_flank_list, right_flank_list):
+                homopoly_positions, global_read_variations, global_snp_positions, read_sequence, read_quality, cigar_one, sorted_global_snp_list, left_flank_list, right_flank_list, male):
     """
     Parse the CS tag for a read and record the variations observed for the read also for the loci
     """
@@ -58,20 +58,21 @@ def parse_cstag(read_index, cs_tag, read_start, loci_keys, loci_coords, read_loc
         elif cs_tag[i] == '*':      # substitution of a base; is followed by reference and substituted base
             ref_nuc = cs_tag[i+1]; sub_nuc = cs_tag[i+2]
             i += 3
-            Q_value = read_quality[qpos]
-            
-            global_read_variations[read_index]['snps'].add(rpos)
-            
-            if rpos not in global_snp_positions:
-                global_snp_positions[rpos] = { 'cov': 1, sub_nuc: {read_index}, 'Qval': {read_index:Q_value} }
-                bisect.insort(sorted_global_snp_list, rpos)
-            else:
-                global_snp_positions[rpos]['cov'] += 1
-                global_snp_positions[rpos]['Qval'][read_index] = Q_value
-                if sub_nuc in global_snp_positions[rpos]: 
-                    global_snp_positions[rpos][sub_nuc].add(read_index)
 
-                else: global_snp_positions[rpos][sub_nuc] = {read_index}
+            if not male:
+                Q_value = read_quality[qpos]
+                global_read_variations[read_index]['snps'].add(rpos)
+                
+                if rpos not in global_snp_positions:
+                    global_snp_positions[rpos] = { 'cov': 1, sub_nuc: {read_index}, 'Qval': {read_index:Q_value} }
+                    bisect.insort(sorted_global_snp_list, rpos)
+                else:
+                    global_snp_positions[rpos]['cov'] += 1
+                    global_snp_positions[rpos]['Qval'][read_index] = Q_value
+                    if sub_nuc in global_snp_positions[rpos]: 
+                        global_snp_positions[rpos][sub_nuc].add(read_index)
+
+                    else: global_snp_positions[rpos][sub_nuc] = {read_index}
             
             qpos += 1; rpos += 1; match_len = 1
             repeat_index += match_jump(rpos, repeat_index, loci_coords, tracked, locus_qpos_range, qpos, match_len, loci_flank_qpos_range, flank_track, left_flank_list, right_flank_list)
@@ -90,7 +91,8 @@ def parse_cstag(read_index, cs_tag, read_start, loci_keys, loci_coords, read_loc
             while i < cs_len and cs_tag[i] not in operations:
                 deletion += cs_tag[i]; deletion_length += 1
                 i += 1
-            global_read_variations[read_index]['dels'] |= set(range(rpos, rpos+deletion_length))
+            if not male:
+                global_read_variations[read_index]['dels'] |= set(range(rpos, rpos+deletion_length))
             rpos += deletion_length
             repeat_index += deletion_jump(deletion_length, rpos, repeat_index, loci_keys, tracked, loci_coords,
                                           homopoly_positions, read_loci_variations, locus_qpos_range, qpos, loci_flank_qpos_range, flank_track, left_flank_list, right_flank_list)

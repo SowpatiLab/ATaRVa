@@ -18,7 +18,7 @@ def subex(ref, que):
     return substitution_indices.tolist()
 
 def parse_cigar_tag(read_index, cigar_tuples, read_start, loci_keys, loci_coords, read_loci_variations,
-                homopoly_positions, global_read_variations, global_snp_positions, read_sequence, read, ref, read_quality, sorted_global_snp_list, left_flank_list, right_flank_list):
+                homopoly_positions, global_read_variations, global_snp_positions, read_sequence, read, ref, read_quality, sorted_global_snp_list, left_flank_list, right_flank_list, male):
     
     rpos = read_start   # NOTE: The coordinates are 1 based in SAM
     qpos = 0            # starts from 0 the sub string the read sequence in python
@@ -58,7 +58,8 @@ def parse_cigar_tag(read_index, cigar_tuples, read_start, loci_keys, loci_coords
            qpos += cigar[1] 
         elif cigar[0] == 2:     # deletion
             deletion_length = cigar[1]
-            global_read_variations[read_index]['dels'] |= set(range(rpos, rpos+deletion_length))
+            if not male:
+                global_read_variations[read_index]['dels'] |= set(range(rpos, rpos+deletion_length))
             rpos += cigar[1]
             repeat_index += deletion_jump(deletion_length, rpos, repeat_index, loci_keys, tracked, loci_coords,
                                           homopoly_positions, read_loci_variations, locus_qpos_range, qpos, loci_flank_qpos_range, flank_track, left_flank_list, right_flank_list)
@@ -104,19 +105,20 @@ def parse_cigar_tag(read_index, cigar_tuples, read_start, loci_keys, loci_coords
 
         elif cigar[0] == 8: # substitution (difference)
             X_tag = True
-            sub_nuc = read_sequence[qpos]
-            Q_value = read_quality[qpos]
-            global_read_variations[read_index]['snps'].add(rpos)
-            if rpos not in global_snp_positions:
-                global_snp_positions[rpos] = { 'cov': 1, sub_nuc: {read_index}, 'Qval': {read_index:Q_value} }
-                bisect.insort(sorted_global_snp_list, rpos)
-            else:
-                global_snp_positions[rpos]['cov'] += 1
-                global_snp_positions[rpos]['Qval'][read_index] = Q_value
-                if sub_nuc in global_snp_positions[rpos]: 
-                    global_snp_positions[rpos][sub_nuc].add(read_index)
-                    
-                else: global_snp_positions[rpos][sub_nuc] = {read_index}
+            if not male:
+                sub_nuc = read_sequence[qpos]
+                Q_value = read_quality[qpos]
+                global_read_variations[read_index]['snps'].add(rpos)
+                if rpos not in global_snp_positions:
+                    global_snp_positions[rpos] = { 'cov': 1, sub_nuc: {read_index}, 'Qval': {read_index:Q_value} }
+                    bisect.insort(sorted_global_snp_list, rpos)
+                else:
+                    global_snp_positions[rpos]['cov'] += 1
+                    global_snp_positions[rpos]['Qval'][read_index] = Q_value
+                    if sub_nuc in global_snp_positions[rpos]: 
+                        global_snp_positions[rpos][sub_nuc].add(read_index)
+                        
+                    else: global_snp_positions[rpos][sub_nuc] = {read_index}
             qpos += cigar[1]; rpos += cigar[1]; match_len = cigar[1]
             repeat_index += match_jump(rpos, repeat_index, loci_coords,tracked, locus_qpos_range, qpos, match_len, loci_flank_qpos_range, flank_track, left_flank_list, right_flank_list)
 
