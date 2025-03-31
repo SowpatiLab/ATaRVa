@@ -1,5 +1,4 @@
 import bisect
-import sys
 
 def update_global_snpPos(ref_start, pos, global_read_variations, global_snp_positions, read_index, read_sequence, read_quality, sorted_global_snp_list, insertion_point, qpos):
 

@@ -1,5 +1,5 @@
-from Complete_Striped_Smith_Waterman_Library.src import pyssw
-from Complete_Striped_Smith_Waterman_Library.src import ssw_lib
+from ATARVA.Complete_Striped_Smith_Waterman_Library.src import pyssw
+from ATARVA.Complete_Striped_Smith_Waterman_Library.src import ssw_lib
 import ctypes as ct
 import os, sys
 

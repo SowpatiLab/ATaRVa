@@ -1,6 +1,6 @@
 import sys
 import pysam
-from consensus import consensus_seq_poa
+from ATARVA.consensus import consensus_seq_poa
 
 def vcf_writer(out, bam, bam_name):
 

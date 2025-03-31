@@ -1,5 +1,5 @@
-from snp_utils import haplocluster_reads
-from vcf_writer import *
+from ATARVA.snp_utils import haplocluster_reads
+from ATARVA.vcf_writer import *
 import numpy as np
 import statistics
 from sklearn.cluster import KMeans

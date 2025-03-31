@@ -1,8 +1,8 @@
 import bisect
 import sys
 import numpy as np
-from operation_utils import match_jump, deletion_jump, insertion_jump
-from md_utils import parse_mdtag
+from ATARVA.operation_utils import match_jump, deletion_jump, insertion_jump
+from ATARVA.md_utils import parse_mdtag
 
 def subex(ref, que):
 

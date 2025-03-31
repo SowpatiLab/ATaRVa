@@ -11,8 +11,8 @@ import timeit as ti
 import argparse as ap
 from multiprocessing import Process
 
-from version import __version__
-from baseline import *
+from ATARVA.version import __version__
+from ATARVA.baseline import *
 
 def parse_args():
     parser = ap.ArgumentParser()

@@ -1,4 +1,4 @@
-from realignment_utils import *
+from ATARVA.realignment_utils import *
 import sys
 
 def count_alleles(locus_key, read_indices, global_loci_variations, allele_counter, hallele_counter):

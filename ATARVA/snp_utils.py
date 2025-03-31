@@ -1,5 +1,3 @@
-import sys
-
 def haplocluster_reads(snp_allelereads, ordered_snp_on_cov, read_indices, snpQ, snpC, snpR, phasingR):
 
     threshold_range = [(0.3, 0.7),(0.25, 0.75),(0.2, 0.8)] # threshold values to get Significant_snps

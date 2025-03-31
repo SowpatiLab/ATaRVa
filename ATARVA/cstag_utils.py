@@ -1,5 +1,5 @@
 import bisect
-from operation_utils import match_jump, deletion_jump, insertion_jump
+from ATARVA.operation_utils import match_jump, deletion_jump, insertion_jump
 
 
 def parse_cstag(read_index, cs_tag, read_start, loci_keys, loci_coords, read_loci_variations,

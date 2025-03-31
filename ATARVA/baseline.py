@@ -1,9 +1,9 @@
-from locus_utils import process_locus
-from cstag_utils import parse_cstag
-from cigar_utils import parse_cigar_tag
-from operation_utils import update_homopolymer_coords
-from genotype_utils import analyse_genotype
-from vcf_writer import *
+from ATARVA.locus_utils import process_locus
+from ATARVA.cstag_utils import parse_cstag
+from ATARVA.cigar_utils import parse_cigar_tag
+from ATARVA.operation_utils import update_homopolymer_coords
+from ATARVA.genotype_utils import analyse_genotype
+from ATARVA.vcf_writer import *
 
 import pysam
 import sys
@@ -229,11 +229,7 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
             # repeat loci covered by the read
             loci_coords = []; loci_keys = []
             left_flank_list = []; right_flank_list = []
-            exact_loci_coords = []
-            track_idx = []
-            passed_loci_coords = []
-            # start_check = 0
-            tracker = 0
+
             for row in tbx.fetch(read_chrom, read_start, read_end):
                 
                 # adjust read start and end based on soft and hard clippings
@@ -241,10 +237,6 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
 
                 row = row.split('\t')
                 locus_start = int(row[1]);  locus_end = int(row[2]); locus_len = locus_end-locus_start
-
-                exact_loci_coords.append((locus_start, locus_end))
-                tracker+=1
-
 
 
                 if (locus_start>=Start[0]) and (locus_end<=End[1]):
@@ -268,8 +260,6 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
                     right_flank_list.append(right_flank)
 
                     loci_coords.append((locus_start - left_flank, locus_end + right_flank))
-                    track_idx.append(tracker-1)
-                    passed_loci_coords.append((locus_start, locus_end))
 
                     locus_key = f'{read_chrom}:{locus_start}-{locus_end}'
                     loci_keys.append(locus_key)
@@ -301,8 +291,8 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
             global_read_indices.append(read_index)
             global_read_variations[read_index] = {'s': read_start, 'e': read_end, 'snps': set(), 'dels': set()}
 
-            for each_coords in loci_coords:
-                update_homopolymer_coords(ref.fetch(Chrom, each_coords[0]-100, each_coords[1]+100), each_coords[0]-100, homopoly_positions)
+            # for each_coords in loci_coords:
+            #     update_homopolymer_coords(ref.fetch(Chrom, each_coords[0]-100, each_coords[1]+100), each_coords[0]-100, homopoly_positions)
 
             if read.has_tag('cs'):
                 cs_tag = read.get_tag('cs')
@@ -463,8 +453,8 @@ def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshol
                 global_read_indices.append(read_index)
                 global_read_variations[read_index] = {'s': read_start, 'e': read_end, 'snps': set(), 'dels': set()}
     
-                for each_coords in loci_coords:
-                    update_homopolymer_coords(ref.fetch(Chrom, each_coords[0]-100, each_coords[1]+100), each_coords[0]-100, homopoly_positions)
+                # for each_coords in loci_coords:
+                #     update_homopolymer_coords(ref.fetch(Chrom, each_coords[0]-100, each_coords[1]+100), each_coords[0]-100, homopoly_positions)
     
                 if read.has_tag('cs'):
                     cs_tag = read.get_tag('cs')
