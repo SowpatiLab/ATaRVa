@@ -10,6 +10,7 @@ import pysam
 import timeit as ti
 import argparse as ap
 from multiprocessing import Process
+from tqdm import tqdm
 
 from ATARVA.version import __version__
 from ATARVA.baseline import *
@@ -33,7 +34,7 @@ def parse_args():
     optional.add_argument('--contigs', nargs='+', help='contigs to get genotyped [chr1 chr12 chr22 ..]. If not mentioned every contigs in the region file will be genotyped.')
     optional.add_argument('--min-reads', type=int, metavar='<INT>', default=10, help='minimum read coverage after quality cutoff at a locus to be genotyped. [default: 10]')
     optional.add_argument('--max-reads', type=int, metavar='<INT>', default=300, help='maximum number of reads to be used for genotyping a locus. [default: 100]')
-    optional.add_argument('--snp-dist', type=int, metavar='<INT>', default=5000, help='maximum distance of the SNP from repeat region to be considered for phasing. [default: 5000]')
+    optional.add_argument('--snp-dist', type=int, metavar='<INT>', default=3000, help='maximum distance of the SNP from repeat region to be considered for phasing. [default: 3000]')
     optional.add_argument('--snp-count', type=int, metavar='<INT>', default=3, help='number of SNPs to be considered for phasing (minimum value = 1). [default: 3]')
     optional.add_argument('--snp-qual', type=int, metavar='<INT>', default=13, help='minimum basecall quality at the SNP position to be considered for phasing. [default: 13]')
     optional.add_argument('--flank', type=int, metavar='<INT>', default=10, help='length of the flanking region (in base pairs) to search for insertion with a repeat in it. [default: 10]')
@@ -161,6 +162,7 @@ def main():
     split_point = total_loci // threads
     if split_point == 0:
         split_point = 1
+        threads = 1
 
     
     fetcher = []
@@ -226,7 +228,6 @@ def main():
             print('Short reads detected... Processing in short-read mode.')
             srs = True
         else: print('Long reads detected... Processing in long-read mode.')
-        
 
         if not args.vcf:
             out_file = f'{".".join(each_bam.split("/")[-1].split(".")[:-1])}'
@@ -250,9 +251,13 @@ def main():
                         args = (each_bam, args.regions, args.fasta, aln_format, contig, args.map_qual, out_file, seq_platform, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, tidx, args.flank, args.debug_mode, karyotype_list[kidx]))
                 thread_x.start()
                 thread_pool.append(thread_x)
+
+
             # joining Threads 
-            for tidx, thread_x in enumerate(thread_pool):
+            for thread_x in tqdm(thread_pool, desc="Processing ", ascii="_>", ncols=75, bar_format="{l_bar}{bar}{n_fmt}/{total_fmt}"):
                 thread_x.join()
+                # progress_bar.update(1)
+
             # emptying thread_pool
             thread_pool.clear()
         

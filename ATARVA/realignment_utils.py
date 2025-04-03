@@ -1,5 +1,5 @@
-from Complete_Striped_Smith_Waterman_Library.src import pyssw
-from Complete_Striped_Smith_Waterman_Library.src import ssw_lib
+import ATARVA.pyssw as pyssw
+import ATARVA.ssw_lib as ssw_lib
 import ctypes as ct
 import os, sys
 
@@ -22,7 +22,7 @@ def restore_stderr(original_stderr):
 class Inputs:
     def __init__(self, target, query):
         # self.sLibPath = 'Complete_Striped_Smith_Waterman_Library/src'  # Set your libssw.so path
-        self.sLibPath = False #"./"  # Set your libssw.so path
+        self.sLibPath = False # Set your libssw.so path
         self.nMatch = 2
         self.nMismatch = 2
         self.nOpen = 3
@@ -56,7 +56,6 @@ def stripSW(args):
             else:
                 lScore[i*nEleNum+j] = -args.nMismatch
     
-    # print(so_path)
     ssw = ssw_lib.CSsw(args.sLibPath)
     
     sRSeq = args.target

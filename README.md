@@ -2,14 +2,14 @@
 <p align=center>
   <img src="lib/ATaRVa_logo.png" alt="Logo of ATaRVa" width="200"/>
 </p>
-ATaRVa - Analysis of Tandem Repeat Variation (pronunced atharva) is a tool for genotyping tandem repeats from LRS whole genome sequencing datasets. The tool is designed with custom approaches for LRS datasets and also based on the sequencing platform used in long read sequencing dataset.  
+Long-read sequencing propelled comprehensive analysis of tandem repeats (TRs) in genomes. Current long-read TR genotypers are either platform specific or computationally inefficient. Here we present ATaRVa, a technology-agnostic genotyper that outperforms existing tools while running an order of magnitude faster. ATaRVa also supports short-read data, multi-threading, haplotyping, and motif decomposition, making it an invaluable tool for population scale TR analyses.   
 
 ## Installation
 
-ATaRVa can be directly installed using pip with the package name `atarva`.
+ATaRVa can be directly installed using pip with the package name `ATaRVa`.
 
 ```bash
-$ pip install atarva
+$ pip install ATaRVa
 ```
 Alternatively, it can be installed from the source code:
 
@@ -19,19 +19,12 @@ $ git clone https://github.com/SowpatiLab/ATaRVa.git
 
 # Install
 $ cd ATaRVa
-$ python setup.py build_ext --inplace
-$ python setup.py install
-```
-
-After installing ATaRVa, add the absolute path of `ATARVA/Complete_Striped_Smith_Waterman_Library/src` to the `LD_LIBRARY_PATH` to include the dynamic library `libssw.so`
-```bash
-$ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:path_of_libssw.so
-```
-
-Both of the methods add a console command `ATARVA`, which can be executed from any directory. It can also be used by running the `core.py` file in the `ATARVA` subfolder:
+$ python -m build
+$ pip install .
+``
+Both of the methods add a console command `atarva`, which can be executed from any directory. It can also be used by running the `core.py` file in the `ATARVA` subfolder:
 
 ```bash
-$ git clone https://github.com/SowpatiLab/ATaRVa.git
 $ cd ATaRVa/ATARVA
 $ python core.py -h # Print the help message of ATaRVa (see below)
 ```
@@ -46,15 +39,16 @@ $ docker build --network host -t atarva
 The help message and available options can be accessed using
 
 ```bash
-$ ATARVA -h
+$ atarva -h
 #  or
-$ ATARVA --help
+$ atarva --help
 ```
 which gives the following output
 
 ```
-usage: core.py [-h] -fi <FILE> --bams <FILE> [<FILE> ...] -bed <FILE> [--format <STR>] [-q <INT>] [--contigs CONTIGS [CONTIGS ...]] [--min-reads <INT>] [--max-reads <INT>] [--snp-dist <INT>] [--snp-count <INT>]
-               [--snp-qual <INT>] [--level-split <INT>] [--snp-read <FLOAT>] [--phasing-read <FLOAT>] [-o <FILE>] [--platform <STR>] [-p <INT>] [-v]
+usage: core.py [-h] -fi <FILE> --bams <FILE> [<FILE> ...] -bed <FILE> [--format <STR>] [-q <INT>] [--contigs CONTIGS [CONTIGS ...]] [--min-reads <INT>] [--max-reads <INT>] [--snp-dist <INT>]
+               [--snp-count <INT>] [--snp-qual <INT>] [--flank <INT>] [--snp-read <FLOAT>] [--phasing-read <FLOAT>] [-o <FILE>] [--platform <STR>] [--karyotype KARYOTYPE [KARYOTYPE ...]] [-p <INT>]
+               [-v] [-log]
 
 Required arguments:
   -fi <FILE>, --fasta <FILE>
@@ -62,8 +56,8 @@ Required arguments:
   --bams <FILE> [<FILE> ...]
                         samples alignment files. allowed formats: SAM, BAM, CRAM
   -bed <FILE>, --regions <FILE>
-                        input regions file. the regions file should be strictly in bgzipped tabix format. If the regions input file is in bed format. First sort it using bedtools. Compress it using bgzip. Index the bgzipped
-                        file with tabix command from samtools package.
+                        input regions file. the regions file should be strictly in bgzipped tabix format. If the regions input file is in bed format. First sort it using bedtools. Compress it using
+                        bgzip. Index the bgzipped file with tabix command from samtools package.
 
 Optional arguments:
   --format <STR>        format of input alignment file. allowed options: [cram, bam, sam]. default: [bam]
@@ -76,15 +70,20 @@ Optional arguments:
   --snp-dist <INT>      maximum distance of the SNP from repeat region to be considered for phasing. [default: 5000]
   --snp-count <INT>     number of SNPs to be considered for phasing (minimum value = 1). [default: 3]
   --snp-qual <INT>      minimum basecall quality at the SNP position to be considered for phasing. [default: 13]
+  --flank <INT>         length of the flanking region (in base pairs) to search for insertion with a repeat in it. [default: 10]
   --snp-read <FLOAT>    a positive float as the minimum fraction of snp's read contribution to be used for phasing. [default: 0.25]
   --phasing-read <FLOAT>
                         a positive float as the minimum fraction of total read contribution from the phased read clusters. [default: 0.4]
   -o <FILE>, --vcf <FILE>
                         name of the output file, output is in vcf format. [default: sys.stdout]
-  --platform <STR>      sequencing platform used for generating the data. changing this will have an affect on phasing which is happening on SNPs. allowed options: [hifi, duplex, simplex-hq, simplex]. default: [simplex]
+  --platform <STR>      sequencing platform used for generating the data. changing this will have an affect on phasing which is happening on SNPs. allowed options: [hifi, duplex, simplex-hq, simplex].
+                        default: [simplex]
+  --karyotype KARYOTYPE [KARYOTYPE ...]
+                        karyotype of the samples [XY XX]
   -p <INT>, --processor <INT>
                         number of processor. [default: 1]
   -v, --version         show program's version number and exit
+  -log, --debug_mode    write the debug messages to log file. [default: False]
 ```
 
 The details of each option are given below:
@@ -111,9 +110,8 @@ $ samtools index -b sorted_output.bam
 
 An alignment file containing at least one of the following tags is preferred for faster processing: `MD` tag, `CS` tag, or a `CIGAR` string with `=/X` operations.
 
-- The CS tag is generated using the --cs option when aligning reads with the [minimap2](https://github.com/lh3/minimap2) aligner.
+- The CS tag is generated using the --cs option when aligning reads with the [minimap2](https://github.com/lh3/minimap2) aligner. (`--cs==short` is prefered over `--cs=long`)
 - The MD tag can be generated using the --MD option in minimap2.
-- The CIGAR string with =/X operations can be generated using the --eqx option in minimap2.
 
 If the alignment files were generated without any of these tags, you can generate the `MD` tag by running the following command to 
 
@@ -204,7 +202,7 @@ Maximum number of supporting reads allowed for a locus to be genotyped. If the n
 
 ### `--snp-dist`
 **Expects**: *INTEGER*<br>
-**Default**: *5000*<br>
+**Default**: *3000*<br>
 Maximum base pair (bp) distance from the flanks of the repeat locus to fetch SNPs from each read considered for phasing.
 
 ### `--snp-count`
@@ -287,26 +285,35 @@ The following examples assume the input reference genome is in `FASTA` format an
 ### Basic usage
 To run ATaRVa with default parameters, use the following command:
 ```bash
-$ ATARVA -fi ref.fa --bams input.bam -bed regions.bed.gz
+$ atarva -fi ref.fa --bams input.bam -bed regions.bed.gz
+```
+### With karyotype
+To run ATaRVa with karyotype, use the following command:
+```bash
+$ atarva -fi ref.fa --bams input.bam -bed regions.bed.gz --karyotype XY
+```
+With multiple bams:
+```bash
+$ atarva -fi ref.fa --bams input1.bam input2.bam -bed regions.bed.gz --karyotype XY XX
 ```
 ### Stringent parameter usage
 To run ATaRVa with stringent parameters, use the following command:
 ```bash
-$ ATARVA -q 20 --snp-count 5 --snp-qual 25 --min-reads 20 -p 32 -fi ref.fa --bams input.bam -bed regions.bed.gz
+$ atarva -q 20 --snp-count 5 --snp-qual 25 --min-reads 20 -p 32 -fi ref.fa --bams input.bam -bed regions.bed.gz
 # The above command with --snp-count 5 will use a maximum of five heterozygous SNPs to provide accurate genotypes, but only when phasing is based on SNPs and not on length.
 ```
 ### Genotyping TRs from specific chromosome/s
 To genotype TRs from specific chromosomes only, run ATaRVa with the following command:
 ```bash
-$ ATARVA --contigs chr9 chr15 chr17 chrX -p 32 -fi ref.fa --bams input.bam -bed regions.bed.gz
+$ atarva --contigs chr9 chr15 chr17 chrX -p 32 -fi ref.fa --bams input.bam -bed regions.bed.gz
 ```
 ### For input alignment file other than `bam`
 ```bash
 # input cram file
-$ ATARVA --format cram -fi ref.fa --bams input.cram -bed regions.bed.gz
+$ atarva --format cram -fi ref.fa --bams input.cram -bed regions.bed.gz
 
 # input sam file
-$ ATARVA --format sam -fi ref.fa --bams input.sam -bed regions.bed.gz
+$ atarva --format sam -fi ref.fa --bams input.sam -bed regions.bed.gz
 ```
 ### Usage in docker
 To run ATaRVa in docker container, use the following command:

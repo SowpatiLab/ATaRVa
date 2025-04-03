@@ -99,7 +99,7 @@ def length_genotyper(hallele_counter, global_loci_info, global_loci_variations, 
 def analyse_genotype(contig, locus_key, global_loci_info,
                      global_loci_variations, global_read_variations, global_snp_positions, hallele_counter,
                      ref, out, sorted_global_snp_list, snpQ, snpC, snpD, snpR, phasingR, maxR, max_limit, male):
-
+            
     locus_start = int(global_loci_info[locus_key][1])
     locus_end = int(global_loci_info[locus_key][2])
 

@@ -1,5 +1,5 @@
 from ATARVA.realignment_utils import *
-import sys
+import sys, bisect
 
 def count_alleles(locus_key, read_indices, global_loci_variations, allele_counter, hallele_counter):
     """
@@ -15,21 +15,30 @@ def count_alleles(locus_key, read_indices, global_loci_variations, allele_counte
         except KeyError: hallele_counter[halen] = 1
 
 
-def record_snps(read_indices, old_reads, new_reads, global_read_variations, global_snp_positions, sorted_global_snp_list):
+def record_snps(read_indices, old_reads, new_reads, global_read_variations, global_snp_positions, sorted_global_snp_list, locus_start, locus_end, snp_dist, prev_locus_end):
+
+    read_indices = set(read_indices)
+    snp_start = locus_start - snp_dist
+    snp_end = locus_end + snp_dist
+    prev_locus_end += snp_dist
 
     for rindex in read_indices:
-        if rindex not in new_reads: continue
-        
-        rstart = global_read_variations[rindex]['s']
-        rend   = global_read_variations[rindex]['e']
-        snps   = global_read_variations[rindex]['snps']
-        dels   = global_read_variations[rindex]['dels']
-        
+        # if rindex not in new_reads: continue
+
+        read_variation = global_read_variations[rindex]
+        rstart = read_variation['s']
+        rend   = read_variation['e']
+        snps   = read_variation['snps']
+        dels   = read_variation['dels']
+
+            
         for pos in sorted_global_snp_list:
-        
+            if pos < prev_locus_end: continue
+            if not (snp_start <= pos <= snp_end): continue
             if pos < rstart: continue
             if pos > rend: break
-            if pos not in snps and pos not in dels:
+            
+            if (pos not in snps) and (bisect.bisect(dels, pos) % 2 == 0):
                 if 'r' in global_snp_positions[pos]: global_snp_positions[pos]['r'].add(rindex)
                 else: global_snp_positions[pos]['r'] = {rindex}
                 global_snp_positions[pos]['cov'] += 1
@@ -43,8 +52,7 @@ def inrepeat_ins(near_by_loci, ins_rpos, sorted_global_ins_rpos_set):
     return 0
 
 
-
-def process_locus(locus_key, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, global_loci_info, near_by_loci, sorted_global_ins_rpos_set, Chrom, locus_start, locus_end, ref, log_bool, logger):
+def process_locus(locus_key, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, global_loci_info, near_by_loci, sorted_global_ins_rpos_set, Chrom, locus_start, locus_end, ref, log_bool, logger, snp_dist, prev_locus_end):
 
 
     ref_seq = ref.fetch(Chrom, locus_start, locus_end)
@@ -183,7 +191,7 @@ def process_locus(locus_key, global_loci_variations, global_read_variations, glo
         else:
             ambiguous = True
             
-    record_snps(read_indices, old_reads, new_reads, global_read_variations, global_snp_positions, sorted_global_snp_list)
+    record_snps(read_indices, old_reads, new_reads, global_read_variations, global_snp_positions, sorted_global_snp_list, locus_start, locus_end, snp_dist, prev_locus_end)
     
     prev_reads = current_reads.copy()
     return [prev_reads, homozygous, ambiguous, homozygous_allele, reads_of_homozygous, hallele_counter, 10, max_limit]

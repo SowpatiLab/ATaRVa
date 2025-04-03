@@ -9,3 +9,4 @@ dependencies:
   - scikit-learn>=1.4.1
   - threadpoolctl>=3.3.0
   - scipy>=1.12.0
+  - tqdm >=4.66.1

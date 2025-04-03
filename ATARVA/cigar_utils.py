@@ -59,16 +59,16 @@ def parse_cigar_tag(read_index, cigar_tuples, read_start, loci_keys, loci_coords
         elif cigar[0] == 2:     # deletion
             deletion_length = cigar[1]
             if not male:
-                global_read_variations[read_index]['dels'] |= set(range(rpos, rpos+deletion_length))
+                global_read_variations[read_index]['dels'].extend([rpos, rpos+deletion_length])
             rpos += cigar[1]
             repeat_index += deletion_jump(deletion_length, rpos, repeat_index, loci_keys, tracked, loci_coords,
                                           homopoly_positions, read_loci_variations, locus_qpos_range, qpos, loci_flank_qpos_range, flank_track, left_flank_list, right_flank_list)
         elif cigar[0] == 1:     # insertion
             insertion_point[rpos] = cigar[1]
-            insert = read_sequence[qpos:qpos+cigar[1]]
+            # insert = read_sequence[qpos:qpos+cigar[1]]
             insert_length = cigar[1]
             qpos += cigar[1]
-            repeat_index += insertion_jump(insert_length, insert, rpos, repeat_index, loci_keys,
+            repeat_index += insertion_jump(insert_length, '', rpos, repeat_index, loci_keys,
                                            tracked, loci_coords, homopoly_positions, read_loci_variations, locus_qpos_range, qpos, loci_flank_qpos_range, flank_track, left_flank_list, right_flank_list, out_insertion_qpos_ranges_left, out_insertion_qpos_ranges_right, left_ins_rpos, right_ins_rpos)
         elif cigar[0] == 0: # match (both equals & difference)
             if not md:
