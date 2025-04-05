@@ -1,8 +1,13 @@
-# ATaRVa
+# ATaRVa - a tandem repeat genotyper
 <p align=center>
   <img src="lib/ATaRVa_logo.png" alt="Logo of ATaRVa" width="200"/>
 </p>
-Long-read sequencing propelled comprehensive analysis of tandem repeats (TRs) in genomes. Current long-read TR genotypers are either platform specific or computationally inefficient. Here we present ATaRVa, a technology-agnostic genotyper that outperforms existing tools while running an order of magnitude faster. ATaRVa also supports short-read data, multi-threading, haplotyping, and motif decomposition, making it an invaluable tool for population scale TR analyses.   
+
+ATaRVa (pronounced uh-thur-va, IPA: /əθərvə/, Sanskrit: अथर्व) is a technology-agnostic tandem repeat genotyper, specially designed for long read data. The name expands to **A**nalysis of **Ta**ndem **R**epeat **Va**riation, and is derived from the the Sanskrit word _Atharva_ meaning knowledge.
+
+
+## Motivation
+Long-read sequencing propelled comprehensive analysis of tandem repeats (TRs) in genomes. Current long-read TR genotypers are either platform specific or computationally inefficient. ATaRva outperforms existing tools while running an order of magnitude faster. ATaRVa also supports short-read data, multi-threading, haplotyping, and motif decomposition, making it an invaluable tool for population scale TR analyses.   
 
 ## Installation
 
@@ -21,13 +26,9 @@ $ git clone https://github.com/SowpatiLab/ATaRVa.git
 $ cd ATaRVa
 $ python -m build
 $ pip install .
-``
-Both of the methods add a console command `atarva`, which can be executed from any directory. It can also be used by running the `core.py` file in the `ATARVA` subfolder:
-
-```bash
-$ cd ATaRVa/ATARVA
-$ python core.py -h # Print the help message of ATaRVa (see below)
 ```
+Both of the methods add a console command `atarva`, which can be executed from any directory
+
 ### Docker installation
 ATaRVa can also be installed using the provided **Docker** image with the following steps:
 ```bash
@@ -46,7 +47,7 @@ $ atarva --help
 which gives the following output
 
 ```
-usage: core.py [-h] -fi <FILE> --bams <FILE> [<FILE> ...] -bed <FILE> [--format <STR>] [-q <INT>] [--contigs CONTIGS [CONTIGS ...]] [--min-reads <INT>] [--max-reads <INT>] [--snp-dist <INT>]
+usage: atarva [-h] -fi <FILE> --bams <FILE> [<FILE> ...] -bed <FILE> [--format <STR>] [-q <INT>] [--contigs CONTIGS [CONTIGS ...]] [--min-reads <INT>] [--max-reads <INT>] [--snp-dist <INT>]
                [--snp-count <INT>] [--snp-qual <INT>] [--flank <INT>] [--snp-read <FLOAT>] [--phasing-read <FLOAT>] [-o <FILE>] [--platform <STR>] [--karyotype KARYOTYPE [KARYOTYPE ...]] [-p <INT>]
                [-v] [-log]
 
@@ -76,7 +77,6 @@ Optional arguments:
                         a positive float as the minimum fraction of total read contribution from the phased read clusters. [default: 0.4]
   -o <FILE>, --vcf <FILE>
                         name of the output file, output is in vcf format. [default: sys.stdout]
-  --platform <STR>      sequencing platform used for generating the data. changing this will have an affect on phasing which is happening on SNPs. allowed options: [hifi, duplex, simplex-hq, simplex].
                         default: [simplex]
   --karyotype KARYOTYPE [KARYOTYPE ...]
                         karyotype of the samples [XY XX]
@@ -138,11 +138,11 @@ Below is an example of a repeat region BED file. **NOTE: The BED file should eit
 
 | #CHROM | START | END | MOTIF | MOTIF_LEN |
 |--------|-------|-----|-------|-----------|
-| chr1   | 10000 | 10467 | TAACCC | 6.0    |
-| chr1   | 10481 | 10497 | GCCC | 4.0      |
-| chr2   | 10005 | 10173 | CCCACACACCACA | 13.0 |
-| chr2   | 10174 | 10604 | ACCCTA | 6.0    |
-| chr17  | 60483 | 60491 | AGA    | 3.0    |
+| chr1   | 10000 | 10467 | TAACCC | 6    |
+| chr1   | 10481 | 10497 | GCCC | 4      |
+| chr2   | 10005 | 10173 | CCCACACACCACA | 13 |
+| chr2   | 10174 | 10604 | ACCCTA | 6    |
+| chr17  | 60483 | 60491 | AGA    | 3    |
 
 To sort, bgzip, and index the BED file, use the following commands:
 
@@ -183,12 +183,12 @@ This option sets the format of the alignment file. The default format is BAM. Sp
 ### `-q or --map-qual`
 **Expects**: *INTEGER*<br>
 **Default**: *5*<br>
-Minimum mapping quality for the reads to be considered. All reads with a mapping quality below the specified value will not be included in the genotyping of the repeat locus.
+Minimum mapping quality for the reads to be considered. All reads with a mapping quality below the specified value will be excluded during genotyping.
 
 ### `--contigs`
 **Expects**: *STRING*<br>
 **Default**: *None*<br>
-Specify the chromosome(s) for genotyping; repeat loci on all other chromosomes will be skipped. If no chromosomes are mentioned, repeats on all chromosomes in the BED file will be genotyped. eg: `--contigs chr1 chr12 chr22` this will genotype only the repeat loci in these mentioned chromosomes in the BED file.
+Specify the chromosome(s) for genotyping; repeat loci on all other chromosomes will be skipped. If no chromosomes are mentioned, repeats on all chromosomes in the BED file will be genotyped. eg: `--contigs chr1 chr12 chr22` will genotype only the repeat loci in these mentioned chromosomes in the BED file.
 
 ### `--min-reads`
 **Expects**: *INTEGER*<br>
@@ -266,11 +266,6 @@ The `FORMAT` fields and their values are provided in the last two columns of the
 
 **NOTE: Loci missing in the VCF either have no reads mapped to them, contain reads that do not fully enclose the repeat region, or have reads with low mapping quality (mapQ).**
 
-### `--platform`
-**Expects**: *STRING*<br>
-**Default**: *None*<br>
-This option sets the type of sequencing technology used in the input data, such as `simplex`, `simplex-hq`, `duplex`, or `hifi`. The program will apply preset optimized parameters based on the specified technology. If not specified, genotyping will proceed with default parameters.
-
 ### `-p or --processor`
 **Expects**: *INTEGER*<br>
 **Default**: *1*<br>
@@ -288,7 +283,7 @@ To run ATaRVa with default parameters, use the following command:
 $ atarva -fi ref.fa --bams input.bam -bed regions.bed.gz
 ```
 ### With karyotype
-To run ATaRVa with karyotype, use the following command:
+To run ATaRVa with sex chromosome karyotype, use the following command:
 ```bash
 $ atarva -fi ref.fa --bams input.bam -bed regions.bed.gz --karyotype XY
 ```
@@ -327,12 +322,12 @@ In all the above examples, the output of ATaRVa is saved to input.vcf unless -o 
 If you find ATaRVa useful for your research, please cite it as follows:
 
 ATaRVa: Analysis of Tandem Repeat Variation from Long Read Sequencing data  
-*Akshay Kumar Avvaru, Divya Tej Sowpati*  
-  
+_Abishek Kumar Sivakumar, Sriram Sudarsanam, Anukrati Sharma, Akshay Kumar Avvaru, Divya Tej Sowpati_
 doi:
 
 ## Contact
 For queries or suggestions, please contact:
 
-Divya Tej Sowpati - [tej@ccmb.res.in](tej@ccmb.res.in)  
-Akshay Kumar Avvaru - [avvaru@ccmb.res.in](avvaru@ccmb.res.in)
+Divya Tej Sowpati - tej at csirccmb dot org
+Abishek Kumar S - abishekks at csirccmb dot org
+Akshay Kumar Avvaru - avvaruakshay at gmail dot com

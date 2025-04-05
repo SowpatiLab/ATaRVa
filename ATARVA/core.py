@@ -16,7 +16,7 @@ from ATARVA.version import __version__
 from ATARVA.baseline import *
 
 def parse_args():
-    parser = ap.ArgumentParser()
+    parser = ap.ArgumentParser(prog="atarva")
     parser._action_groups.pop()
 
     print("ATaRVa (atharva) - Analysis of Tandem Repeat Variants\nSowpati Lab\n")
@@ -41,13 +41,11 @@ def parse_args():
     optional.add_argument('--snp-read', type=float, metavar='<FLOAT>', default=0.2, help='a positive float as the minimum fraction of snp\'s read contribution to be used for phasing. [default: 0.25]')
     optional.add_argument('--phasing-read', type=float, metavar='<FLOAT>', default=0.4, help='a positive float as the minimum fraction of total read contribution from the phased read clusters. [default: 0.4]')
     optional.add_argument('-o',  '--vcf', type=str, metavar='<FILE>', default='', help='name of the output file, output is in vcf format. [default: sys.stdout]')
-    optional.add_argument('--platform', type=str, metavar='<STR>', default='simplex', help='sequencing platform used for generating the data. changing this will have an affect \
-                                                                           on phasing which is happening on SNPs. allowed options: [hifi, duplex, simplex-hq, simplex]. \
-                                                                           default: [simplex]')
     optional.add_argument('--karyotype', nargs='+', help='karyotype of the samples [XY XX]')
     optional.add_argument('-p',  '--processor', type=int, metavar='<INT>', default=1, help='number of processor. [default: 1]')
     optional.add_argument('-v', '--version', action='version', version=f'ATaRVa version {__version__}')
     optional.add_argument('-log', '--debug_mode', action='store_true', help="write the debug messages to log file. [default: False]")
+    optional.add_argument('--decompose', action='store_true', help="write the motif-decomposed sequence to the vcf. [default: False]")
 
     
 
@@ -125,9 +123,6 @@ def main():
     for each_bam in args.bams:
         b_check(each_bam, aln_format)
     t_check(args.regions)
-    
-
-    seq_platform = args.platform     # seq_tech of the alignment file
 
 
     out_file = sys.stdout
@@ -244,11 +239,11 @@ def main():
                 if srs:
                     thread_x = Process(
                         target = mini_cooper,
-                        args = (each_bam, args.regions, args.fasta, aln_format, contig, args.map_qual, out_file, seq_platform, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, tidx, args.flank, args.debug_mode, karyotype_list[kidx]))
+                        args = (each_bam, args.regions, args.fasta, aln_format, contig, args.map_qual, out_file, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, tidx, args.flank, args.debug_mode, karyotype_list[kidx], args.decompose))
                 else:
                     thread_x = Process(
                         target = cooper,
-                        args = (each_bam, args.regions, args.fasta, aln_format, contig, args.map_qual, out_file, seq_platform, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, tidx, args.flank, args.debug_mode, karyotype_list[kidx]))
+                        args = (each_bam, args.regions, args.fasta, aln_format, contig, args.map_qual, out_file, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, tidx, args.flank, args.debug_mode, karyotype_list[kidx], args.decompose))
                 thread_x.start()
                 thread_pool.append(thread_x)
 
@@ -286,9 +281,9 @@ def main():
                 out_log.close()
         else:
             if srs:
-                mini_cooper(each_bam, args.regions, args.fasta, aln_format, fetcher[0], args.map_qual, out_file, seq_platform, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, -1, args.flank, args.debug_mode, karyotype_list[kidx])
+                mini_cooper(each_bam, args.regions, args.fasta, aln_format, fetcher[0], args.map_qual, out_file, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, -1, args.flank, args.debug_mode, karyotype_list[kidx], args.decompose)
             else:
-                cooper(each_bam, args.regions, args.fasta, aln_format, fetcher[0], args.map_qual, out_file, seq_platform, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, -1, args.flank, args.debug_mode, karyotype_list[kidx])
+                cooper(each_bam, args.regions, args.fasta, aln_format, fetcher[0], args.map_qual, out_file, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, -1, args.flank, args.debug_mode, karyotype_list[kidx], args.decompose)
 
     time_now = ti.default_timer()
     sys.stderr.write('CPU time: {} seconds\n'.format(time_now - start_time))
