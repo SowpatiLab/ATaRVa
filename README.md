@@ -2,9 +2,12 @@
 <p align=center>
   <img src="lib/ATaRVa_logo.png" alt="Logo of ATaRVa" width="200"/>
 </p>
+
 ATaRVa (pronounced uh-thur-va, IPA: /əθərvə/, Sanskrit: अथर्व) is a technology-agnostic tandem repeat genotyper, specially designed for long read data. The name expands to **A**nalysis of **Ta**ndem **R**epeat **Va**riation, and is derived from the the Sanskrit word _Atharva_ meaning knowledge.
 
-Long-read sequencing propelled comprehensive analysis of tandem repeats (TRs) in genomes. Current long-read TR genotypers are either platform specific or computationally inefficient. Here we present ATaRVa, a technology-agnostic genotyper that outperforms existing tools while running an order of magnitude faster. ATaRVa also supports short-read data, multi-threading, haplotyping, and motif decomposition, making it an invaluable tool for population scale TR analyses.   
+
+## Motivation
+Long-read sequencing propelled comprehensive analysis of tandem repeats (TRs) in genomes. Current long-read TR genotypers are either platform specific or computationally inefficient. ATaRva outperforms existing tools while running an order of magnitude faster. ATaRVa also supports short-read data, multi-threading, haplotyping, and motif decomposition, making it an invaluable tool for population scale TR analyses.   
 
 ## Installation
 
@@ -23,7 +26,7 @@ $ git clone https://github.com/SowpatiLab/ATaRVa.git
 $ cd ATaRVa
 $ python -m build
 $ pip install .
-``
+```
 Both of the methods add a console command `atarva`, which can be executed from any directory. It can also be used by running the `core.py` file in the `ATARVA` subfolder:
 
 ```bash
