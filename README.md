@@ -1,4 +1,4 @@
-# ATaRVa
+# ATaRVa - a tandem repeat genotyper
 <p align=center>
   <img src="lib/ATaRVa_logo.png" alt="Logo of ATaRVa" width="200"/>
 </p>
@@ -143,11 +143,11 @@ Below is an example of a repeat region BED file. **NOTE: The BED file should eit
 
 | #CHROM | START | END | MOTIF | MOTIF_LEN |
 |--------|-------|-----|-------|-----------|
-| chr1   | 10000 | 10467 | TAACCC | 6.0    |
-| chr1   | 10481 | 10497 | GCCC | 4.0      |
-| chr2   | 10005 | 10173 | CCCACACACCACA | 13.0 |
-| chr2   | 10174 | 10604 | ACCCTA | 6.0    |
-| chr17  | 60483 | 60491 | AGA    | 3.0    |
+| chr1   | 10000 | 10467 | TAACCC | 6    |
+| chr1   | 10481 | 10497 | GCCC | 4      |
+| chr2   | 10005 | 10173 | CCCACACACCACA | 13 |
+| chr2   | 10174 | 10604 | ACCCTA | 6    |
+| chr17  | 60483 | 60491 | AGA    | 3    |
 
 To sort, bgzip, and index the BED file, use the following commands:
 
@@ -188,12 +188,12 @@ This option sets the format of the alignment file. The default format is BAM. Sp
 ### `-q or --map-qual`
 **Expects**: *INTEGER*<br>
 **Default**: *5*<br>
-Minimum mapping quality for the reads to be considered. All reads with a mapping quality below the specified value will not be included in the genotyping of the repeat locus.
+Minimum mapping quality for the reads to be considered. All reads with a mapping quality below the specified value will be excluded during genotyping.
 
 ### `--contigs`
 **Expects**: *STRING*<br>
 **Default**: *None*<br>
-Specify the chromosome(s) for genotyping; repeat loci on all other chromosomes will be skipped. If no chromosomes are mentioned, repeats on all chromosomes in the BED file will be genotyped. eg: `--contigs chr1 chr12 chr22` this will genotype only the repeat loci in these mentioned chromosomes in the BED file.
+Specify the chromosome(s) for genotyping; repeat loci on all other chromosomes will be skipped. If no chromosomes are mentioned, repeats on all chromosomes in the BED file will be genotyped. eg: `--contigs chr1 chr12 chr22` will genotype only the repeat loci in these mentioned chromosomes in the BED file.
 
 ### `--min-reads`
 **Expects**: *INTEGER*<br>
@@ -293,7 +293,7 @@ To run ATaRVa with default parameters, use the following command:
 $ atarva -fi ref.fa --bams input.bam -bed regions.bed.gz
 ```
 ### With karyotype
-To run ATaRVa with karyotype, use the following command:
+To run ATaRVa with sex chromosome karyotype, use the following command:
 ```bash
 $ atarva -fi ref.fa --bams input.bam -bed regions.bed.gz --karyotype XY
 ```
@@ -332,12 +332,12 @@ In all the above examples, the output of ATaRVa is saved to input.vcf unless -o 
 If you find ATaRVa useful for your research, please cite it as follows:
 
 ATaRVa: Analysis of Tandem Repeat Variation from Long Read Sequencing data  
-*Akshay Kumar Avvaru, Divya Tej Sowpati*  
-  
+_Abishek Kumar Sivakumar, Sriram Sudarsanam, Anukrati Sharma, Akshay Kumar Avvaru, Divya Tej Sowpati_
 doi:
 
 ## Contact
 For queries or suggestions, please contact:
 
-Divya Tej Sowpati - [tej@ccmb.res.in](tej@ccmb.res.in)  
-Akshay Kumar Avvaru - [avvaru@ccmb.res.in](avvaru@ccmb.res.in)
+Divya Tej Sowpati - tej at csirccmb dot org
+Abishek Kumar S - abishekks at csirccmb dot org
+Akshay Kumar Avvaru - avvaruakshay at gmail dot com
