@@ -95,7 +95,7 @@ def get_most_frequent_motif(sequence, motif_size):
     return primary_motif, secondary_motif
 
 def motif_decomposition(sequence, motif_size):
-    best_motif_size = motif_size  
+    best_motif_size = min(motif_size , shift_and_match(sequence, motif_size))  
     primary_motif, secondary_motif = get_most_frequent_motif(sequence, best_motif_size)
     
     positions = kmp_search_non_overlapping(sequence, primary_motif)

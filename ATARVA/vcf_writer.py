@@ -54,6 +54,7 @@ def vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, homozygous_a
         seqs = [seq for seq in [global_loci_variations[locus_key]['read_sequence'][read_id][0] for read_id in hap_reads] if seq!='']
         if len(seqs)>0:
             ALT = consensus_seq_poa(seqs, homozygous_allele)
+            alt_state = True
         else: ALT = '<DEL>'
 
     # INFO = 'AC=' + str(AC) + ';AN=' + str(AN) + ';DP=' + str(DP)+ ';END=' + str(locus_end)
