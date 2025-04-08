@@ -43,7 +43,7 @@ Repository = "https://github.com/sowpatilab/ATaRVa.git"
 packages = ["ATARVA"]
 
 [tool.setuptools.package-data]
-ATARVA = ["libssw.so"]
+ATARVA = ["*.so"]
 
 [project.scripts]
 atarva = "ATARVA.core:main"
