@@ -318,16 +318,20 @@ $ docker run -i -t --rm -v /path_of_necessary_files/:/folder_name atarva:latest 
 
 In all the above examples, the output of ATaRVa is saved to input.vcf unless -o is specified.
 
+<!--
 ## Citation
 If you find ATaRVa useful for your research, please cite it as follows:
 
 ATaRVa: Analysis of Tandem Repeat Variation from Long Read Sequencing data  
 _Abishek Kumar Sivakumar, Sriram Sudarsanam, Anukrati Sharma, Akshay Kumar Avvaru, Divya Tej Sowpati_
 doi:
+-->
 
 ## Contact
 For queries or suggestions, please contact:
 
 Divya Tej Sowpati - tej at csirccmb dot org
+
 Abishek Kumar S - abishekks at csirccmb dot org
+
 Akshay Kumar Avvaru - avvaruakshay at gmail dot com
