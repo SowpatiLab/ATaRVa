@@ -84,6 +84,7 @@ Optional arguments:
                         number of processor. [default: 1]
   -v, --version         show program's version number and exit
   -log, --debug_mode    write the debug messages to log file. [default: False]
+  --decompose           write the motif-decomposed sequence to the vcf. [default: False]
 ```
 
 The details of each option are given below:
@@ -263,6 +264,7 @@ The `FORMAT` fields and their values are provided in the last two columns of the
 | DP | Number of the supporting reads for the repeat locus |
 | SN | Number of SNPs used for phasing |
 | SQ | Phred-scale qualities of the SNPs used for phasing |  
+| DS | Motif decomposed sequence of the alternate alleles |
 
 **NOTE: Loci missing in the VCF either have no reads mapped to them, contain reads that do not fully enclose the repeat region, or have reads with low mapping quality (mapQ).**
 
@@ -318,16 +320,20 @@ $ docker run -i -t --rm -v /path_of_necessary_files/:/folder_name atarva:latest 
 
 In all the above examples, the output of ATaRVa is saved to input.vcf unless -o is specified.
 
+<!--
 ## Citation
 If you find ATaRVa useful for your research, please cite it as follows:
 
 ATaRVa: Analysis of Tandem Repeat Variation from Long Read Sequencing data  
 _Abishek Kumar Sivakumar, Sriram Sudarsanam, Anukrati Sharma, Akshay Kumar Avvaru, Divya Tej Sowpati_
 doi:
+-->
 
 ## Contact
 For queries or suggestions, please contact:
 
 Divya Tej Sowpati - tej at csirccmb dot org
+
 Abishek Kumar S - abishekks at csirccmb dot org
+
 Akshay Kumar Avvaru - avvaruakshay at gmail dot com

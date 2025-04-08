@@ -10,6 +10,13 @@ import sys
 import os.path as op
 import ctypes as ct
 
+if sys.platform.startswith('linux'):
+    sLibName = 'libssw.so'
+elif sys.platform == 'darwin':
+    sLibName = 'darwin_libssw.so'
+else:
+     raise OSError(f"Unsupported platform: {sys.platform}")
+
 sys.path.append(op.dirname(__file__))
 
 lBlosum50 = [
@@ -100,8 +107,7 @@ class CSsw(object):
         init all para
         @para   sLibpath    argparse object
         """
-# load libssw
-        sLibName = 'libssw.so'
+        
         if sLibPath:
 # user does give the path explicitly
             if not op.exists(op.join(sLibPath, sLibName)):

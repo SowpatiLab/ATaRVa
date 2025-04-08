@@ -258,8 +258,10 @@ def main():
         
             out = open(f'{out_file}.vcf', 'a')
             print('Concatenating thread outputs!', file=sys.stderr)
+            idx = out_file.rfind('/')
+            hid_outfile = out_file[:idx+1] + '.' + out_file[idx+1:]
             for tidx in range(threads)[1:]:
-                thread_out = f'{out_file}_thread_{tidx}.vcf'
+                thread_out = f'{hid_outfile}_thread_{tidx}.vcf'
                 with open(thread_out, 'r') as fh:
                     # if tidx!=0: next(fh)
                     for line in fh:
@@ -272,7 +274,7 @@ def main():
             if args.debug_mode:
                 out_log = open(f'{out_file}_debug.log', 'a')
                 for tidx in range(threads)[1:]:
-                    thread_log_out = f'{out_file}_debug_{tidx}.log'
+                    thread_log_out = f'{hid_outfile}_debug_{tidx}.log'
                     with open(thread_log_out, 'r') as fh:
                         for line in fh:
                             log_info = line.strip()

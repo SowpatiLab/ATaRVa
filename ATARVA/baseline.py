@@ -71,8 +71,10 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
         out_filename = f'{outfile}.vcf'
         log_name = f'{outfile}_debug.log'
     else:
-        out_filename = f'{outfile}_thread_{tidx}.vcf'
-        log_name = f'{outfile}_debug_{tidx}.log'
+        idx = outfile.rfind('/')
+        hid_outfile = outfile[:idx+1] + '.' + outfile[idx+1:]
+        out_filename = f'{hid_outfile}_thread_{tidx}.vcf'
+        log_name = f'{hid_outfile}_debug_{tidx}.log'
     
     # Open the output file
     out = open(out_filename, 'w')
@@ -327,8 +329,10 @@ def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshol
         out_filename = f'{outfile}.vcf'
         log_name = f'{outfile}_debug.log'
     else:
-        out_filename = f'{outfile}_thread_{tidx}.vcf'
-        log_name = f'{outfile}_debug_{tidx}.log'
+        idx = outfile.rfind('/')
+        hid_outfile = outfile[:idx+1] + '.' + outfile[idx+1:]
+        out_filename = f'{hid_outfile}_thread_{tidx}.vcf'
+        log_name = f'{hid_outfile}_debug_{tidx}.log'
     
     # Open the output file
     out = open(out_filename, 'w')
