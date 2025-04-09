@@ -76,8 +76,7 @@ Optional arguments:
   --phasing-read <FLOAT>
                         a positive float as the minimum fraction of total read contribution from the phased read clusters. [default: 0.4]
   -o <FILE>, --vcf <FILE>
-                        name of the output file, output is in vcf format. [default: sys.stdout]
-                        default: [simplex]
+                        name of the output file, output is in vcf format. [default: same as bam file name]
   --karyotype KARYOTYPE [KARYOTYPE ...]
                         karyotype of the samples [XY XX]
   -p <INT>, --processor <INT>
