@@ -320,6 +320,13 @@ $ docker run -i -t --rm -v /path_of_necessary_files/:/folder_name atarva:latest 
 
 In all the above examples, the output of ATaRVa is saved to input.vcf unless -o is specified.
 
+## Changelog
+### v0.1.1 (current)
+* Added a Mac OS compatible <code>.so</code> file
+
+### v0.1
+* First release
+
 <!--
 ## Citation
 If you find ATaRVa useful for your research, please cite it as follows:
