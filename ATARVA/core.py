@@ -254,8 +254,8 @@ def main():
         read_length = 0
         for read in aln_file.fetch():
             # ?? could you add a comment exmplaing the flags here
-            # 0x400 - 
-            # 0x100 - 
+            # 0x400 - read is PCR or optical duplicate
+            # 0x100 - not primary alignment
             if (read.flag & 0X400) or (read.flag & 0X100): continue 
             reads_sampled +=1
             cigar = read.cigarstring
