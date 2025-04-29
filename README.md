@@ -29,6 +29,8 @@ $ pip install .
 ```
 Both of the methods add a console command `atarva`, which can be executed from any directory
 
+**NOTE: This tool has been tested and is recommended to be used with Python versions between 3.9 and 3.12 (inclusive).**
+
 ### Docker installation
 ATaRVa can also be installed using the provided **Docker** image with the following steps:
 ```bash
