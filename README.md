@@ -49,9 +49,11 @@ $ atarva --help
 which gives the following output
 
 ```
-usage: atarva [-h] -fi <FILE> --bams <FILE> [<FILE> ...] -bed <FILE> [--format <STR>] [-q <INT>] [--contigs CONTIGS [CONTIGS ...]] [--min-reads <INT>] [--max-reads <INT>] [--snp-dist <INT>]
-               [--snp-count <INT>] [--snp-qual <INT>] [--flank <INT>] [--snp-read <FLOAT>] [--phasing-read <FLOAT>] [-o <FILE>] [--platform <STR>] [--karyotype KARYOTYPE [KARYOTYPE ...]] [-p <INT>]
-               [-v] [-log]
+usage: atarva [-h] -f <FILE> -b <FILE> [<FILE> ...] -r <FILE> [--format <STR>] [-q <INT>]
+              [--contigs CONTIGS [CONTIGS ...]] [--min-reads <INT>] [--max-reads <INT>]
+              [--snp-dist <INT>] [--snp-count <INT>] [--snp-qual <INT>] [--flank <INT>]
+              [--snp-read <FLOAT>] [--phasing-read <FLOAT>] [-o <FILE>]
+              [--karyotype KARYOTYPE [KARYOTYPE ...]] [-t <INT>] [-v] [-log] [--decompose]
 
 Required arguments:
   -f <FILE>, --fasta <FILE>
@@ -100,7 +102,7 @@ The `-f` or `--fasta` option is used to specify the input FASTA file. The corres
 ### `-b or --bam`
 **Expects**: *FILE*<br>
 **Default**: *None*<br>
-The `--bam` option is used to specify one or more input alignment files in the same format. ATaRVa accepts any of the three alignment formats: SAM, BAM, or CRAM. The alignment file should be sorted by coordinates. The format should be specified using the `--format` option. The corresponding index file (`.bai` or `.csi`) should be located in the same directory. An alignment file can be sorted and indexed using the following commands:
+The `-b` or `--bam` option is used to specify one or more input alignment files in the same format. ATaRVa accepts any of the three alignment formats: SAM, BAM, or CRAM. The alignment file should be sorted by coordinates. The format should be specified using the `--format` option. The corresponding index file (`.bai` or `.csi`) should be located in the same directory. An alignment file can be sorted and indexed using the following commands:
 
 ```bash
 # to sort the alignment file
@@ -336,7 +338,10 @@ $ docker run -i -t --rm -v /path_of_necessary_files/:/folder_name atarva:latest 
 In all the above examples, the output of ATaRVa is saved to input.vcf unless -o is specified.
 
 ## Changelog
-### v0.1.1 (current)
+### v0.1.2 (current)
+* Modified input arguments
+
+### v0.1.1
 * Added a Mac OS compatible <code>.so</code> file
 
 ### v0.1
