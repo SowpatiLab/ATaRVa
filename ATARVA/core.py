@@ -22,9 +22,9 @@ def parse_args():
     print("ATaRVa (atharva) - Analysis of Tandem Repeat Variants\nSowpati Lab\n")
 
     required = parser.add_argument_group('Required arguments')
-    required.add_argument('-fi',  '--fasta',   required=True, metavar='<FILE>', help='input reference fasta file')
-    required.add_argument('--bams', nargs='+', required=True, metavar='<FILE>', help='samples alignment files. allowed formats: SAM, BAM, CRAM')
-    required.add_argument('-bed', '--regions', required=True, metavar='<FILE>', help='input regions file. the regions file should be strictly in bgzipped tabix format. \
+    required.add_argument('-f',  '--fasta',   required=True, metavar='<FILE>', help='input reference fasta file')
+    required.add_argument('-b', '--bam', nargs='+', required=True, metavar='<FILE>', help='samples alignment files. allowed formats: SAM, BAM, CRAM')
+    required.add_argument('-r', '--regions', required=True, metavar='<FILE>', help='input regions file. the regions file should be strictly in bgzipped tabix format. \
                                                                   If the regions input file is in bed format. First sort it using bedtools. Compress it using bgzip. \
                                                                   Index the bgzipped file with tabix command from samtools package.')
 
@@ -42,7 +42,7 @@ def parse_args():
     optional.add_argument('--phasing-read', type=float, metavar='<FLOAT>', default=0.4, help='a positive float as the minimum fraction of total read contribution from the phased read clusters. [default: 0.4]')
     optional.add_argument('-o',  '--vcf', type=str, metavar='<FILE>', default='', help='name of the output file, output is in vcf format. [default: sys.stdout]')
     optional.add_argument('--karyotype', nargs='+', help='karyotype of the samples [XY XX]')
-    optional.add_argument('-p',  '--processor', type=int, metavar='<INT>', default=1, help='number of processor. [default: 1]')
+    optional.add_argument('-t',  '--threads', type=int, metavar='<INT>', default=1, help='number of threads. [default: 1]')
     optional.add_argument('-v', '--version', action='version', version=f'ATaRVa version {__version__}')
     optional.add_argument('-log', '--debug_mode', action='store_true', help="write the debug messages to log file. [default: False]")
     optional.add_argument('--decompose', action='store_true', help="write the motif-decomposed sequence to the vcf. [default: False]")
@@ -120,7 +120,7 @@ def main():
     elif args.format == 'sam':  aln_format = 'r'
     else:            aln_format = 'rb'
 
-    for each_bam in args.bams:
+    for each_bam in args.bam:
         b_check(each_bam, aln_format)
     t_check(args.regions)
 
@@ -149,11 +149,11 @@ def main():
                 total_loci += 1
 
     if not args.karyotype:
-        karyotype_list = [False]*len(args.bams)
+        karyotype_list = [False]*len(args.bam)
     else:
         karyotype_list = [i=='XY' for i in args.karyotype]
 
-    threads = args.processor
+    threads = args.threads
     split_point = total_loci // threads
     if split_point == 0:
         split_point = 1
@@ -187,10 +187,10 @@ def main():
     tbx.close()
 
     mbso = 0
-    if (len(args.bams)>1) and (args.vcf):
+    if (len(args.bam)>1) and (args.vcf):
         mbso = 1
     
-    for kidx, each_bam in enumerate(args.bams):
+    for kidx, each_bam in enumerate(args.bam):
         out_file = external_name
         print(f"Processing sample {each_bam.split('/')[-1]}\n")
 
