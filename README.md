@@ -82,7 +82,7 @@ Optional arguments:
   --karyotype KARYOTYPE [KARYOTYPE ...]
                         karyotype of the samples [XY XX]
   -t <INT>, --threads <INT>
-                        number of processor. [default: 1]
+                        number of threads. [default: 1]
   -v, --version         show program's version number and exit
   -log, --debug_mode    write the debug messages to log file. [default: False]
   --decompose           write the motif-decomposed sequence to the vcf. [default: False]
@@ -100,7 +100,7 @@ The `-f` or `--fasta` option is used to specify the input FASTA file. The corres
 ### `-b or --bam`
 **Expects**: *FILE*<br>
 **Default**: *None*<br>
-The `--bams` option is used to specify one or more input alignment files in the same format. ATaRVa accepts any of the three alignment formats: SAM, BAM, or CRAM. The alignment file should be sorted by coordinates. The format should be specified using the `--format` option. The corresponding index file (`.bai` or `.csi`) should be located in the same directory. An alignment file can be sorted and indexed using the following commands:
+The `--bam` option is used to specify one or more input alignment files in the same format. ATaRVa accepts any of the three alignment formats: SAM, BAM, or CRAM. The alignment file should be sorted by coordinates. The format should be specified using the `--format` option. The corresponding index file (`.bai` or `.csi`) should be located in the same directory. An alignment file can be sorted and indexed using the following commands:
 
 ```bash
 # to sort the alignment file
@@ -112,7 +112,7 @@ $ samtools index -b sorted_output.bam
 
 An alignment file containing at least one of the following tags is preferred for faster processing: `MD` tag, `CS` tag, or a `CIGAR` string with `=/X` operations.
 
-- The CS tag is generated using the --cs option when aligning reads with the [minimap2](https://github.com/lh3/minimap2) aligner. (`--cs==short` is prefered over `--cs=long`)
+- The CS tag is generated using the --cs option when aligning reads with the [minimap2](https://github.com/lh3/minimap2) aligner. (`--cs=short` is prefered over `--cs=long`)
 - The MD tag can be generated using the --MD option in minimap2.
 
 If the alignment files were generated without any of these tags, you can generate the `MD` tag by running the following command to 
@@ -125,10 +125,10 @@ If the alignment files were generated without any of these tags, you can generat
 $ samtools calmd -b aln.bam ref.fa > aln_md.bam
 ```
 ## Region file
-### `-b or --regions`
+### `-r or --regions`
 **Expects**: *FILE*<br>
 **Default**: *None*<br>
-The `-b` or `--regions` option is used to specify the input TR regions file. ATaRVa requires a sorted, bgzipped BED file of TR repeat regions, along with its corresponding tabix-indexed file. The BED file should contain the following columns:
+The `-r` or `--regions` option is used to specify the input TR regions file. ATaRVa requires a sorted, bgzipped BED file of TR repeat regions, along with its corresponding tabix-indexed file. The BED file should contain the following columns:
 
 1. Chromosome name where TR is located
 2. Start position of the TR
@@ -297,40 +297,40 @@ The following examples assume the input reference genome is in `FASTA` format an
 ### Basic usage
 To run ATaRVa with default parameters, use the following command:
 ```bash
-$ atarva -fi ref.fa --bams input.bam -bed regions.bed.gz
+$ atarva -f ref.fa --bam input.bam -r regions.bed.gz
 ```
 ### With karyotype
 To run ATaRVa with sex chromosome karyotype, use the following command:
 ```bash
-$ atarva -fi ref.fa --bams input.bam -bed regions.bed.gz --karyotype XY
+$ atarva -f ref.fa --bam input.bam -r regions.bed.gz --karyotype XY
 ```
 With multiple bams:
 ```bash
-$ atarva -fi ref.fa --bams input1.bam input2.bam -bed regions.bed.gz --karyotype XY XX
+$ atarva -f ref.fa --bam input1.bam input2.bam -r regions.bed.gz --karyotype XY XX
 ```
 ### Stringent parameter usage
 To run ATaRVa with stringent parameters, use the following command:
 ```bash
-$ atarva -q 20 --snp-count 5 --snp-qual 25 --min-reads 20 -p 32 -fi ref.fa --bams input.bam -bed regions.bed.gz
+$ atarva -q 20 --snp-count 5 --snp-qual 25 --min-reads 20 -t 32 -fi ref.fa --bam input.bam -r regions.bed.gz
 # The above command with --snp-count 5 will use a maximum of five heterozygous SNPs to provide accurate genotypes, but only when phasing is based on SNPs and not on length.
 ```
 ### Genotyping TRs from specific chromosome/s
 To genotype TRs from specific chromosomes only, run ATaRVa with the following command:
 ```bash
-$ atarva --contigs chr9 chr15 chr17 chrX -p 32 -fi ref.fa --bams input.bam -bed regions.bed.gz
+$ atarva --contigs chr9 chr15 chr17 chrX -t 32 -f ref.fa --bam input.bam -r regions.bed.gz
 ```
 ### For input alignment file other than `bam`
 ```bash
 # input cram file
-$ atarva --format cram -fi ref.fa --bams input.cram -bed regions.bed.gz
+$ atarva --format cram -f ref.fa --bam input.cram -r regions.bed.gz
 
 # input sam file
-$ atarva --format sam -fi ref.fa --bams input.sam -bed regions.bed.gz
+$ atarva --format sam -f ref.fa --bam input.sam -r regions.bed.gz
 ```
 ### Usage in docker
 To run ATaRVa in docker container, use the following command:
 ```bash
-$ docker run -i -t --rm -v /path_of_necessary_files/:/folder_name atarva:latest -fi /folder_name/ref.fa --bams /folder_name/input.bam -bed /folder_name/regions.bed.gz
+$ docker run -i -t --rm -v /path_of_necessary_files/:/folder_name atarva:latest -f /folder_name/ref.fa --bam /folder_name/input.bam -r /folder_name/regions.bed.gz
 ``` 
 
 In all the above examples, the output of ATaRVa is saved to input.vcf unless -o is specified.
