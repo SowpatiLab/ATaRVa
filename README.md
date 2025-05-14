@@ -54,11 +54,11 @@ usage: atarva [-h] -fi <FILE> --bams <FILE> [<FILE> ...] -bed <FILE> [--format <
                [-v] [-log]
 
 Required arguments:
-  -fi <FILE>, --fasta <FILE>
+  -f <FILE>, --fasta <FILE>
                         input reference fasta file
-  --bams <FILE> [<FILE> ...]
+  -b <FILE> [<FILE> ...], --bam <FILE> [<FILE> ...]
                         samples alignment files. allowed formats: SAM, BAM, CRAM
-  -bed <FILE>, --regions <FILE>
+  -r <FILE>, --regions <FILE>
                         input regions file. the regions file should be strictly in bgzipped tabix format. If the regions input file is in bed format. First sort it using bedtools. Compress it using
                         bgzip. Index the bgzipped file with tabix command from samtools package.
 
@@ -81,7 +81,7 @@ Optional arguments:
                         name of the output file, output is in vcf format. [default: same as bam file name]
   --karyotype KARYOTYPE [KARYOTYPE ...]
                         karyotype of the samples [XY XX]
-  -p <INT>, --processor <INT>
+  -t <INT>, --threads <INT>
                         number of processor. [default: 1]
   -v, --version         show program's version number and exit
   -log, --debug_mode    write the debug messages to log file. [default: False]
@@ -91,13 +91,13 @@ Optional arguments:
 The details of each option are given below:
 
 ## Reference genome
-### `-fi or --fasta`
+### `-f or --fasta`
 **Expects**: *FILE*<br>
 **Default**: *None*<br>
-The `-fi` or `--fasta` option is used to specify the input FASTA file. The corresponding index file (`.fai`) should be in the same directory. ATaRVa uses [pysam](https://github.com/pysam-developers/pysam)'s `FastaFile` parser to read the input FASTA file.
+The `-f` or `--fasta` option is used to specify the input FASTA file. The corresponding index file (`.fai`) should be in the same directory. ATaRVa uses [pysam](https://github.com/pysam-developers/pysam)'s `FastaFile` parser to read the input FASTA file.
 
 ## Alignment file
-### `--bams`
+### `-b or --bam`
 **Expects**: *FILE*<br>
 **Default**: *None*<br>
 The `--bams` option is used to specify one or more input alignment files in the same format. ATaRVa accepts any of the three alignment formats: SAM, BAM, or CRAM. The alignment file should be sorted by coordinates. The format should be specified using the `--format` option. The corresponding index file (`.bai` or `.csi`) should be located in the same directory. An alignment file can be sorted and indexed using the following commands:
@@ -125,10 +125,10 @@ If the alignment files were generated without any of these tags, you can generat
 $ samtools calmd -b aln.bam ref.fa > aln_md.bam
 ```
 ## Region file
-### `-bed or --regions`
+### `-b or --regions`
 **Expects**: *FILE*<br>
 **Default**: *None*<br>
-The `-bed` or `--regions` option is used to specify the input TR regions file. ATaRVa requires a sorted, bgzipped BED file of TR repeat regions, along with its corresponding tabix-indexed file. The BED file should contain the following columns:
+The `-b` or `--regions` option is used to specify the input TR regions file. ATaRVa requires a sorted, bgzipped BED file of TR repeat regions, along with its corresponding tabix-indexed file. The BED file should contain the following columns:
 
 1. Chromosome name where TR is located
 2. Start position of the TR
@@ -217,6 +217,11 @@ Maximum number of SNPs to be used for read clustering and phasing.
 **Default**: *13*<br>
 Minimum Q value of the SNPs to be used for phasing.
 
+### `--flank`
+**Expects**: *INTEGER*<br>
+**Default**: *10*<br>
+The number of base pairs in the flanking regions to be used for realignment.
+
 ### `--snp-read`
 **Expects**: *FLOAT*<br>
 **Default**: *0.2*<br>
@@ -269,10 +274,19 @@ The `FORMAT` fields and their values are provided in the last two columns of the
 
 **NOTE: Loci missing in the VCF either have no reads mapped to them, contain reads that do not fully enclose the repeat region, or have reads with low mapping quality (mapQ).**
 
-### `-p or --processor`
+### `--karyotype`
+**Expects**: *STRING*<br>
+**Default**: *XX*<br>
+Karyotype of the samples eg. XX or XY.
+
+### `-t or --threads`
 **Expects**: *INTEGER*<br>
 **Default**: *1*<br>
-Number of processors to use for the process.
+Number of threads to use for the process.
+
+### `--decompose`
+Performs motif-decomposition on ALT sequences.
+**NOTE: Only applicable for motif length <= 10**
 
 ### `-v or --version`
 Prints the version info of ATaRVa.
