@@ -1,5 +1,6 @@
 from ATARVA.realignment_utils import *
 import sys, bisect
+import statistics
 
 def count_alleles(locus_key, read_indices, global_loci_variations, allele_counter, hallele_counter):
     """
@@ -52,7 +53,7 @@ def inrepeat_ins(near_by_loci, ins_rpos, sorted_global_ins_rpos_set):
     return 0
 
 
-def process_locus(locus_key, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, global_loci_info, near_by_loci, sorted_global_ins_rpos_set, Chrom, locus_start, locus_end, ref, log_bool, logger, snp_dist, prev_locus_end):
+def process_locus(locus_key, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, global_loci_info, near_by_loci, sorted_global_ins_rpos_set, Chrom, locus_start, locus_end, ref, log_bool, logger, snp_dist, prev_locus_end, hp_code):
 
 
     ref_seq = ref.fetch(Chrom, locus_start, locus_end)
@@ -60,14 +61,14 @@ def process_locus(locus_key, global_loci_variations, global_read_variations, glo
     locus_tuple = (locus_start, locus_end)
     near_by_loci.remove(locus_tuple)
     
-    homozygous = False
-    ambiguous = False
+    read_tag = global_loci_variations[locus_key]['read_tag']
+    category, haplotypes = [None, None]
     homozygous_allele = 0
-    reads_of_homozygous = []
     read_indices = global_loci_variations[locus_key]['reads']   # the read indices which cover the locus
+    reads_of_homozygous = read_indices.copy()
     total_reads = len(read_indices)                             # total number of reads
     max_limit=0
-    motif = global_loci_info[locus_key][3]
+
     period = int(float(global_loci_info[locus_key][4]))
     new_ins_rpos_current_loci = set()
 
@@ -75,10 +76,11 @@ def process_locus(locus_key, global_loci_variations, global_read_variations, glo
     if total_reads < minR:
         # coverage of the locus is low
         prev_reads = set(read_indices)
-        return [prev_reads, homozygous, ambiguous, homozygous_allele, reads_of_homozygous, {}, 0, max_limit]
+        return [prev_reads, category, homozygous_allele, reads_of_homozygous, {}, 0, max_limit, haplotypes]
     elif total_reads > maxR:
         # coverage of the locus is high
         read_indices = read_indices[:maxR]
+        read_tag = read_tag[:maxR]
         max_limit=1
     
     current_reads = set(read_indices)
@@ -176,22 +178,43 @@ def process_locus(locus_key, global_loci_variations, global_read_variations, glo
     allele_counter = {};  hallele_counter = {}
     count_alleles(locus_key, read_indices, global_loci_variations, allele_counter, hallele_counter)
 
+    hap_status = False
+    if hp_code:
+        haplotypes = ([read_indices[i] for i in [idx for idx,i in enumerate(read_tag) if i == 1]], [read_indices[i] for i in [idx for idx,i in enumerate(read_tag) if i == 2]])
+        hap_status = all([len(hap)>0 for hap in haplotypes])
     
-    if len(hallele_counter) == 1:
-        homozygous = True
+    if hap_status & ((read_tag.count(None)/total_reads) <= 0.15): # processing haplotagged reads to write into vcf_heterozygous
+        category = 3 # phased
+        
+        # hap_alleles = ([locus_read_allele[idx][0] for idx in haplotypes[0]], [locus_read_allele[idx][0] for idx in haplotypes[1]])
+        # phased_read = [len(hap) for hap in haplotypes]
+        # genotypes = []
+        # for alleles_set in hap_alleles: # making the set of final alleles from two clusters
+        #     genotypes.append(statistics.mode(alleles_set))
+        # hap_reads = ([],[])
+        # for i,al in enumerate(genotypes):
+        #     hap_reads[i].extend([read_id for read_id in haplotypes[i] if locus_read_allele[read_id][0]==al])
+        # allele_count = {}
+        # for index, allele in enumerate(genotypes):
+        #     if allele not in allele_count:
+        #         allele_count[allele] = hap_alleles[index].count(allele)
+        #     else:
+        #         allele_count[str(allele)] = hap_alleles[index].count(allele)
+    
+    elif len(hallele_counter) == 1:
+        category = 1 # homozygous
         homozygous_allele = list(hallele_counter.keys())[0]
-        reads_of_homozygous = read_indices.copy()
     
     else:
         filtered_alleles = list(filter(lambda x: hallele_counter[x] > 1, hallele_counter.keys()))
         if len(filtered_alleles) == 1 and hallele_counter[filtered_alleles[0]]/total_reads >= 0.75:
-            homozygous = True
+            category = 1 # homozygous
             homozygous_allele = filtered_alleles[0]
             reads_of_homozygous = [rindex for rindex in global_loci_variations[locus_key]['read_allele'] if homozygous_allele == global_loci_variations[locus_key]['read_allele'][rindex][0]]
         else:
-            ambiguous = True
+            category = 2 # ambiguous
             
     record_snps(read_indices, old_reads, new_reads, global_read_variations, global_snp_positions, sorted_global_snp_list, locus_start, locus_end, snp_dist, prev_locus_end)
     
     prev_reads = current_reads.copy()
-    return [prev_reads, homozygous, ambiguous, homozygous_allele, reads_of_homozygous, hallele_counter, 10, max_limit]
+    return [prev_reads, category, homozygous_allele, reads_of_homozygous, hallele_counter, 10, max_limit, haplotypes]

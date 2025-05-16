@@ -1,6 +1,6 @@
 import pyabpoa as pa
 
-def consensus_seq_poa(seqs, alen):
+def consensus_seq_poa(seqs):
     if len(seqs)<7:
         cons_algrm='MF'
     else:

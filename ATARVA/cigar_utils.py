@@ -17,8 +17,17 @@ def subex(ref, que):
         
     return substitution_indices.tolist()
 
+def outside_locus(loci_coords, rpos):
+    """
+    Check if the position is outside the locus range
+    """
+    for each_coord in loci_coords:
+        if each_coord[0] <= rpos <= each_coord[1]:
+            return False
+    return True
+
 def parse_cigar_tag(read_index, cigar_tuples, read_start, loci_keys, loci_coords, read_loci_variations,
-                homopoly_positions, global_read_variations, global_snp_positions, read_sequence, read, ref, read_quality, sorted_global_snp_list, left_flank_list, right_flank_list, male):
+                homopoly_positions, global_read_variations, global_snp_positions, read_sequence, read, ref, read_quality, sorted_global_snp_list, left_flank_list, right_flank_list, male, hp):
     
     rpos = read_start   # NOTE: The coordinates are 1 based in SAM
     qpos = 0            # starts from 0 the sub string the read sequence in python
@@ -71,7 +80,7 @@ def parse_cigar_tag(read_index, cigar_tuples, read_start, loci_keys, loci_coords
             repeat_index += insertion_jump(insert_length, '', rpos, repeat_index, loci_keys,
                                            tracked, loci_coords, homopoly_positions, read_loci_variations, locus_qpos_range, qpos, loci_flank_qpos_range, flank_track, left_flank_list, right_flank_list, out_insertion_qpos_ranges_left, out_insertion_qpos_ranges_right, left_ins_rpos, right_ins_rpos)
         elif cigar[0] == 0: # match (both equals & difference)
-            if not md:
+            if (not md) & (not male) & (not hp):
                 ref_sequence = ref.fetch(chrom, rpos, rpos+cigar[1])
                 query_sequence = read_sequence[qpos:qpos+cigar[1]]
                 sub_pos = []
@@ -81,6 +90,8 @@ def parse_cigar_tag(read_index, cigar_tuples, read_start, loci_keys, loci_coords
                     print('Error in fetching in sequences of ref & read for substitution')
                     sys.exit()
                 for each_sub in sub_pos:
+                    if not outside_locus(loci_coords, each_sub):
+                        continue
                     sub_nuc = query_sequence[each_sub]
                     Q_value = read_quality[qpos+each_sub]
                     global_read_variations[read_index]['snps'].add(rpos+each_sub)
@@ -105,7 +116,7 @@ def parse_cigar_tag(read_index, cigar_tuples, read_start, loci_keys, loci_coords
 
         elif cigar[0] == 8: # substitution (difference)
             X_tag = True
-            if not male:
+            if (not male) and outside_locus(loci_coords, rpos) and (not hp):
                 sub_nuc = read_sequence[qpos]
                 Q_value = read_quality[qpos]
                 global_read_variations[read_index]['snps'].add(rpos)
@@ -127,7 +138,7 @@ def parse_cigar_tag(read_index, cigar_tuples, read_start, loci_keys, loci_coords
             if cigar_tuples[0][0] == 4: qpos = cigar_tuples[0][1]
             else: qpos=0
             MD_tag = read.get_tag('MD')
-            parse_mdtag(MD_tag, qpos, read_start, global_read_variations, global_snp_positions, read_index, read_quality, read_sequence, sorted_global_snp_list, insertion_point)
+            parse_mdtag(MD_tag, qpos, read_start, global_read_variations, global_snp_positions, read_index, read_quality, read_sequence, sorted_global_snp_list, insertion_point, loci_coords, male, hp)
 
     for idx,each_key in enumerate(loci_keys):
         s_pos = locus_qpos_range[idx][0]
