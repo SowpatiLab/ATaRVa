@@ -1,6 +1,6 @@
 # ATaRVa - a tandem repeat genotyper
 <p align=center>
-  <img src="lib/ATaRVa_logo.png" alt="Logo of ATaRVa" width="200"/>
+  <img src="lib/atarva_logo.png" alt="Logo of ATaRVa" width="200"/>
 </p>
 
 ATaRVa (pronounced uh-thur-va, IPA: /əθərvə/, Sanskrit: अथर्व) is a technology-agnostic tandem repeat genotyper, specially designed for long read data. The name expands to **A**nalysis of **Ta**ndem **R**epeat **Va**riation, and is derived from the the Sanskrit word _Atharva_ meaning knowledge.
