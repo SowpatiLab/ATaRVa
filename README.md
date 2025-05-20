@@ -95,7 +95,7 @@ Optional arguments:
                         karyotype of the samples [XY XX]
   -t <INT>, --threads <INT>
                         number of threads. [default: 1]
-  --haplotag <STR>      use haplotagged information for phasing. allowed options: [HP]. [default: None]
+  --haplotag <STR>      use haplotagged information for phasing. eg: [HP]. [default: None]
   --decompose           write the motif-decomposed sequence to the vcf. [default: False]
   -log, --debug_mode    write the debug messages to log file. [default: False]
   -v, --version         show program's version number and exit
