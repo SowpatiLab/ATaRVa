@@ -1,6 +1,6 @@
 from ATARVA.realignment_utils import *
 import sys, bisect
-import statistics
+# import statistics
 
 def count_alleles(locus_key, read_indices, global_loci_variations, allele_counter, hallele_counter):
     """
@@ -185,21 +185,6 @@ def process_locus(locus_key, global_loci_variations, global_read_variations, glo
     
     if hap_status & ((read_tag.count(None)/total_reads) <= 0.15): # processing haplotagged reads to write into vcf_heterozygous
         category = 3 # phased
-        
-        # hap_alleles = ([locus_read_allele[idx][0] for idx in haplotypes[0]], [locus_read_allele[idx][0] for idx in haplotypes[1]])
-        # phased_read = [len(hap) for hap in haplotypes]
-        # genotypes = []
-        # for alleles_set in hap_alleles: # making the set of final alleles from two clusters
-        #     genotypes.append(statistics.mode(alleles_set))
-        # hap_reads = ([],[])
-        # for i,al in enumerate(genotypes):
-        #     hap_reads[i].extend([read_id for read_id in haplotypes[i] if locus_read_allele[read_id][0]==al])
-        # allele_count = {}
-        # for index, allele in enumerate(genotypes):
-        #     if allele not in allele_count:
-        #         allele_count[allele] = hap_alleles[index].count(allele)
-        #     else:
-        #         allele_count[str(allele)] = hap_alleles[index].count(allele)
     
     elif len(hallele_counter) == 1:
         category = 1 # homozygous

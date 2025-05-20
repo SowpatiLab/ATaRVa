@@ -1,6 +1,6 @@
 # ATaRVa - a tandem repeat genotyper
 <p align=center>
-  <img src="lib/atarva_logo.png" alt="Logo of ATaRVa" width="200"/>
+  <img src="lib/ATaRVa_logo.png" alt="Logo of ATaRVa" width="200"/>
 </p>
 
 ATaRVa (pronounced uh-thur-va, IPA: /əθərvə/, Sanskrit: अथर्व) is a technology-agnostic tandem repeat genotyper, specially designed for long read data. The name expands to **A**nalysis of **Ta**ndem **R**epeat **Va**riation, and is derived from the the Sanskrit word _Atharva_ meaning knowledge.
@@ -53,7 +53,8 @@ usage: atarva [-h] -f <FILE> -b <FILE> [<FILE> ...] -r <FILE> [--format <STR>] [
               [--contigs CONTIGS [CONTIGS ...]] [--min-reads <INT>] [--max-reads <INT>]
               [--snp-dist <INT>] [--snp-count <INT>] [--snp-qual <INT>] [--flank <INT>]
               [--snp-read <FLOAT>] [--phasing-read <FLOAT>] [-o <FILE>]
-              [--karyotype KARYOTYPE [KARYOTYPE ...]] [-t <INT>] [-v] [-log] [--decompose]
+              [--karyotype KARYOTYPE [KARYOTYPE ...]] [-t <INT>] [--haplotag <STR>]
+              [--decompose] [-log] [-v]
 
 Required arguments:
   -f <FILE>, --fasta <FILE>
@@ -61,33 +62,43 @@ Required arguments:
   -b <FILE> [<FILE> ...], --bam <FILE> [<FILE> ...]
                         samples alignment files. allowed formats: SAM, BAM, CRAM
   -r <FILE>, --regions <FILE>
-                        input regions file. the regions file should be strictly in bgzipped tabix format. If the regions input file is in bed format. First sort it using bedtools. Compress it using
-                        bgzip. Index the bgzipped file with tabix command from samtools package.
+                        input regions file. the regions file should be strictly in bgzipped
+                        tabix format. If the regions input file is in bed format. First sort it
+                        using bedtools. Compress it using bgzip. Index the bgzipped file with
+                        tabix command from samtools package.
 
 Optional arguments:
   --format <STR>        format of input alignment file. allowed options: [cram, bam, sam]. default: [bam]
   -q <INT>, --map-qual <INT>
                         minimum mapping quality of the reads to be considered. [default: 5]
   --contigs CONTIGS [CONTIGS ...]
-                        contigs to get genotyped [chr1 chr12 chr22 ..]. If not mentioned every contigs in the region file will be genotyped.
+                        contigs to get genotyped [chr1 chr12 chr22 ..]. If not mentioned every
+                        contigs in the region file will be genotyped.
   --min-reads <INT>     minimum read coverage after quality cutoff at a locus to be genotyped. [default: 10]
   --max-reads <INT>     maximum number of reads to be used for genotyping a locus. [default: 100]
-  --snp-dist <INT>      maximum distance of the SNP from repeat region to be considered for phasing. [default: 5000]
-  --snp-count <INT>     number of SNPs to be considered for phasing (minimum value = 1). [default: 3]
-  --snp-qual <INT>      minimum basecall quality at the SNP position to be considered for phasing. [default: 13]
-  --flank <INT>         length of the flanking region (in base pairs) to search for insertion with a repeat in it. [default: 10]
-  --snp-read <FLOAT>    a positive float as the minimum fraction of snp's read contribution to be used for phasing. [default: 0.25]
+  --snp-dist <INT>      maximum distance of the SNP from repeat region to be considered for
+                        phasing. [default: 3000]
+  --snp-count <INT>     number of SNPs to be considered for phasing (minimum value = 1).
+                        [default: 3]
+  --snp-qual <INT>      minimum basecall quality at the SNP position to be considered for
+                        phasing. [default: 13]
+  --flank <INT>         length of the flanking region (in base pairs) to search for insertion
+                        with a repeat in it. [default: 10]
+  --snp-read <FLOAT>    a positive float as the minimum fraction of snp's read contribution to
+                        be used for phasing. [default: 0.25]
   --phasing-read <FLOAT>
-                        a positive float as the minimum fraction of total read contribution from the phased read clusters. [default: 0.4]
+                        a positive float as the minimum fraction of total read contribution from
+                        the phased read clusters. [default: 0.4]
   -o <FILE>, --vcf <FILE>
-                        name of the output file, output is in vcf format. [default: same as bam file name]
+                        name of the output file, output is in vcf format. [default: sys.stdout]
   --karyotype KARYOTYPE [KARYOTYPE ...]
                         karyotype of the samples [XY XX]
   -t <INT>, --threads <INT>
                         number of threads. [default: 1]
-  -v, --version         show program's version number and exit
-  -log, --debug_mode    write the debug messages to log file. [default: False]
+  --haplotag <STR>      use haplotagged information for phasing. allowed options: [HP]. [default: None]
   --decompose           write the motif-decomposed sequence to the vcf. [default: False]
+  -log, --debug_mode    write the debug messages to log file. [default: False]
+  -v, --version         show program's version number and exit
 ```
 
 The details of each option are given below:
@@ -268,7 +279,7 @@ The `FORMAT` fields and their values are provided in the last two columns of the
 | GT | Genotype of the sample |
 | AL | Length of the alleles in base pairs |
 | SD | Number of supporting reads for each alleles |
-| PC | Number of reads in the phased cluster for each allele |
+<!-- | PC | Number of reads in the phased cluster for each allele | -->
 | DP | Number of the supporting reads for the repeat locus |
 | SN | Number of SNPs used for phasing |
 | SQ | Phred-scale qualities of the SNPs used for phasing |  
@@ -286,8 +297,13 @@ Karyotype of the samples eg. XX or XY.
 **Default**: *1*<br>
 Number of threads to use for the process.
 
+### `--haplotag`
+**Expects**: *STRING*<br>
+**Default**: *None*<br>
+Specify the haplotype tag to utilize phased information for genotyping. eg `HP`
+
 ### `--decompose`
-Performs motif-decomposition on ALT sequences.
+Performs motif-decomposition on ALT sequences.<br>
 **NOTE: Only applicable for motif length <= 10**
 
 ### `-v or --version`
@@ -309,6 +325,11 @@ $ atarva -f ref.fa --bam input.bam -r regions.bed.gz --karyotype XY
 With multiple bams:
 ```bash
 $ atarva -f ref.fa --bam input1.bam input2.bam -r regions.bed.gz --karyotype XY XX
+```
+### With haplotag
+To run ATaRVa on haplotagged alignment file, use the folowing command:
+```bash
+$ atarva -f ref.fa --bam input.bam -r regions.bed.gz --haplotag HP
 ```
 ### Stringent parameter usage
 To run ATaRVa with stringent parameters, use the following command:
@@ -338,14 +359,20 @@ $ docker run -i -t --rm -v /path_of_necessary_files/:/folder_name atarva:latest 
 In all the above examples, the output of ATaRVa is saved to input.vcf unless -o is specified.
 
 ## Changelog
-### v0.1.2 (current)
-* Modified input arguments
+### v0.2.0 (current)
+* Added `--haplotag` argument to enable the use of haplotag information for genotyping.
+* Fixed bugs in SNP-based clustering.
+* Replaced the use of the mode function with a consensus-based approach for final allele derivation.
+* Removed `PC` tag from the FORMAT field of the output VCF.
+
+### v0.1.2
+* Modified input arguments.
 
 ### v0.1.1
-* Added a Mac OS compatible <code>.so</code> file
+* Added a Mac OS compatible <code>.so</code> file.
 
 ### v0.1
-* First release
+* First release.
 
 <!--
 ## Citation

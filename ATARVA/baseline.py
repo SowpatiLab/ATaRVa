@@ -157,15 +157,7 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
         end_coord = End[1]
         prev_locus_end = 0
 
-        # total_loci = 0
-        # end_coord = 0
         genotyped_loci_count = 0
-        # for row in tbx.fetch(Chrom, Start[0], End[1]):
-        #     row = row.split('\t')
-        #     if (total_loci == 0) and (int(row[2]) != Start[1]): continue
-        #     total_loci += 1
-        #     end_coord = int(row[2])
-        #     if End[0] == int(row[1]): break
 
         if not dwrite: tqdm.write(f"> {Chrom} {Start} {End} Total loci =  {tot_loci_list[cidx]}")
 
@@ -311,8 +303,6 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
             global_read_indices.append(read_index)
             global_read_variations[read_index] = {'s': read_start, 'e': read_end, 'snps': set(), 'dels': []}
 
-            # for each_coords in loci_coords:
-            #     update_homopolymer_coords(ref.fetch(Chrom, each_coords[0]-100, each_coords[1]+100), each_coords[0]-100, homopoly_positions)
 
             if hp_code: hp = read.has_tag(hp_code)
             else: hp = False

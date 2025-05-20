@@ -1,4 +1,4 @@
-import sys
+# import sys
 
 def haplocluster_reads(snp_allelereads, ordered_snp_on_cov, read_indices, snpQ, snpC, snpR, phasingR):
 

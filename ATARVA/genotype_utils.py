@@ -2,7 +2,7 @@ from ATARVA.snp_utils import haplocluster_reads
 from ATARVA.vcf_writer import *
 from ATARVA.consensus import *
 import numpy as np
-import statistics
+# import statistics
 from sklearn.cluster import KMeans
 import warnings
 from threadpoolctl import threadpool_limits
@@ -60,32 +60,14 @@ def length_genotyper(hallele_counter, global_loci_info, global_loci_variations, 
         cidx = cluster_len.index(max( cluster_len ))
         if cluster_len[cidx]>=cutoff:
             mac = haplotypes[cidx]
-            # hap_al1 = [alen_data[i] for i in [c1,c2][cidx]]
-            # genotypes = statistics.mode(hap_al1)
-            # hap_reads = [read_id for read_id in mac if locus_read_allele[read_id][0]==genotypes]
+
             ALT, allele_length = alt_sequence(read_seqs, mac)
             vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, allele_length, global_loci_variations, len(mac), out, ALT, log_bool, 'kmeans', decomp)
     
     elif (c1!=[] and len(c1)>=cutoff) and (c2!=[] and len(c2)>=cutoff):
         phased_read = ['.','.']
         chosen_snpQ = '.'
-        snp_num = '.'
-        hap_al1 = [alen_data[i] for i in c1]
-        hap_al2 = [alen_data[i] for i in c2]
-        haplo_alleles = (hap_al1,hap_al2)
-        
-
-        # genotypes = []
-        # for alleles_set in haplo_alleles: # making the set of final alleles from two clusters
-        #     genotypes.append(statistics.mode(alleles_set))
-
-        # hap_reads = ([],[])
-        # for i,al in enumerate(genotypes):
-        #     hap_reads[i].extend([read_id for read_id in haplotypes[i] if locus_read_allele[read_id][0]==al])
-
-        # allele_count = {}
-        # for al in genotypes:
-        #     allele_count[al] = hallele_counter[al]
+        snp_num = '.'        
 
         genotypes = []
         allele_count = {}
@@ -102,17 +84,13 @@ def length_genotyper(hallele_counter, global_loci_info, global_loci_variations, 
         vcf_heterozygous_writer(contig, genotypes, locus_start, global_loci_variations, locus_end, allele_count, len(read_indices), global_loci_info, ref, out, chosen_snpQ, phased_read, snp_num, ALT_seqs, log_bool, 'kmeans', decomp)
 
     elif c1!=[] and len(c1)>=cutoff:
-        # hap_al1 = [alen_data[i] for i in c1]
-        # genotypes = statistics.mode(hap_al1)
-        # hap_reads = [read_id for read_id in haplotypes[0] if locus_read_allele[read_id][0]==genotypes]
+
         ALT, allele_length = alt_sequence(read_seqs, haplotypes[0])
         vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, allele_length, global_loci_variations, len(haplotypes[0]), out, ALT, log_bool, 'kmeans', decomp)
         
 
     elif c2!=[] and len(c2)>=cutoff:
-        # hap_al2 = [alen_data[i] for i in c2]
-        # genotypes = statistics.mode(hap_al2)
-        # hap_reads = [read_id for read_id in haplotypes[1] if locus_read_allele[read_id][0]==genotypes]
+
         ALT, allele_length = alt_sequence(read_seqs, haplotypes[1])
         vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, allele_length, global_loci_variations, len(haplotypes[1]), out, ALT, log_bool, 'kmeans', decomp)
         
@@ -203,28 +181,6 @@ def analyse_genotype(contig, locus_key, global_loci_info,
         for pos in del_snps:
             del global_snp_positions[pos]
 
-    
-    # locus_read_allele = global_loci_variations[locus_key]['read_allele'] # extracting allele info from global_loci_variation
-    # hap_alleles = ([], [])
-    # for idx, haplo_tuple in enumerate(haplotypes): # Getting the mode value of alleles from clusters
-    #     for each_read in haplo_tuple:
-    #         hap_alleles[idx].append(locus_read_allele[each_read][0])
-
-    # genotypes = []
-    # for alleles_set in hap_alleles: # making the set of final alleles from two clusters
-    #     genotypes.append(statistics.mode(alleles_set))
-
-    
-    # hap_reads = ([],[])
-    # for i,al in enumerate(genotypes):
-    #     hap_reads[i].extend([read_id for read_id in haplotypes[i] if locus_read_allele[read_id][0]==al])
-
-    # allele_count = {}
-    # for index, allele in enumerate(genotypes):
-    #     if allele not in allele_count:
-    #         allele_count[allele] = hap_alleles[index].count(allele)
-    #     else:
-    #         allele_count[str(allele)] = hap_alleles[index].count(allele)
 
     genotypes = []
     allele_count = {}
