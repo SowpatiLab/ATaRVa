@@ -1,6 +1,6 @@
 # ATaRVa - a tandem repeat genotyper
 <p align=center>
-  <img src="lib/ATaRVa_logo.png" alt="Logo of ATaRVa" width="200"/>
+  <img src="lib/atrv_logo.png" alt="Logo of ATaRVa" width="200"/>
 </p>
 
 ATaRVa (pronounced uh-thur-va, IPA: /əθərvə/, Sanskrit: अथर्व) is a technology-agnostic tandem repeat genotyper, specially designed for long read data. The name expands to **A**nalysis of **Ta**ndem **R**epeat **Va**riation, and is derived from the the Sanskrit word _Atharva_ meaning knowledge.
@@ -279,7 +279,6 @@ The `FORMAT` fields and their values are provided in the last two columns of the
 | GT | Genotype of the sample |
 | AL | Length of the alleles in base pairs |
 | SD | Number of supporting reads for each alleles |
-<!-- | PC | Number of reads in the phased cluster for each allele | -->
 | DP | Number of the supporting reads for the repeat locus |
 | SN | Number of SNPs used for phasing |
 | SQ | Phred-scale qualities of the SNPs used for phasing |  
