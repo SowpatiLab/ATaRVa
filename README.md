@@ -1,4 +1,7 @@
 # ATaRVa - a tandem repeat genotyper
+https://img.shields.io/badge/PyPI-v0.2.0-brightgreen
+https://img.shields.io/badge/License-MIT-blue
+
 <p align=center>
   <img src="lib/atrv_logo.png" alt="Logo of ATaRVa" width="200"/>
 </p>
@@ -373,14 +376,12 @@ In all the above examples, the output of ATaRVa is saved to input.vcf unless -o 
 ### v0.1
 * First release.
 
-<!--
 ## Citation
 If you find ATaRVa useful for your research, please cite it as follows:
 
 ATaRVa: Analysis of Tandem Repeat Variation from Long Read Sequencing data  
 _Abishek Kumar Sivakumar, Sriram Sudarsanam, Anukrati Sharma, Akshay Kumar Avvaru, Divya Tej Sowpati_
-doi:
--->
+_BioRxiv_, **doi:** https://doi.org/10.1101/2025.05.13.653434
 
 ## Contact
 For queries or suggestions, please contact:
