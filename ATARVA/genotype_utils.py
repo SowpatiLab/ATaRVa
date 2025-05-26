@@ -17,12 +17,15 @@ def alt_sequence(read_seqs, hap_reads):
         allele_length = 0
     return [ALT, allele_length]
     
-def length_genotyper(hallele_counter, global_loci_info, global_loci_variations, locus_key, read_indices, contig, locus_start, locus_end, ref, out, male, log_bool, decomp, read_seqs):
+def length_genotyper(hallele_counter, global_loci_info, global_loci_variations, locus_key, read_indices, contig, locus_start, locus_end, ref, out, male, log_bool, decomp, read_seqs, amplicon):
 
     read_indices = sorted(read_indices)
     locus_read_allele = global_loci_variations[locus_key]['read_allele']
     
-    alen_with_1read = [item[0] for item in hallele_counter.items() if item[1]==1] # allele with 1 read contribution
+    if not amplicon:
+        alen_with_1read = [item[0] for item in hallele_counter.items() if item[1]==1] # allele with 1 read contribution
+    else:
+        alen_with_1read = []
     alen_with_gread = set(hallele_counter.keys()) - set(alen_with_1read) # allele with more than 1 read contribution
     main_read_id = []
     alen_data = []
@@ -62,7 +65,7 @@ def length_genotyper(hallele_counter, global_loci_info, global_loci_variations, 
             mac = haplotypes[cidx]
 
             ALT, allele_length = alt_sequence(read_seqs, mac)
-            vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, allele_length, global_loci_variations, len(mac), out, ALT, log_bool, 'kmeans', decomp)
+            vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, allele_length, global_loci_variations, len(mac), out, ALT, log_bool, 'kmeans', decomp, hallele_counter)
     
     elif (c1!=[] and len(c1)>=cutoff) and (c2!=[] and len(c2)>=cutoff):
         phased_read = ['.','.']
@@ -81,18 +84,18 @@ def length_genotyper(hallele_counter, global_loci_info, global_loci_variations, 
             else:
                 allele_count[str(allele_length)] = len(hap_reads)
 
-        vcf_heterozygous_writer(contig, genotypes, locus_start, global_loci_variations, locus_end, allele_count, len(read_indices), global_loci_info, ref, out, chosen_snpQ, phased_read, snp_num, ALT_seqs, log_bool, 'kmeans', decomp)
+        vcf_heterozygous_writer(contig, genotypes, locus_start, global_loci_variations, locus_end, allele_count, len(read_indices), global_loci_info, ref, out, chosen_snpQ, phased_read, snp_num, ALT_seqs, log_bool, 'kmeans', decomp, hallele_counter)
 
     elif c1!=[] and len(c1)>=cutoff:
 
         ALT, allele_length = alt_sequence(read_seqs, haplotypes[0])
-        vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, allele_length, global_loci_variations, len(haplotypes[0]), out, ALT, log_bool, 'kmeans', decomp)
+        vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, allele_length, global_loci_variations, len(haplotypes[0]), out, ALT, log_bool, 'kmeans', decomp, hallele_counter)
         
 
     elif c2!=[] and len(c2)>=cutoff:
 
         ALT, allele_length = alt_sequence(read_seqs, haplotypes[1])
-        vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, allele_length, global_loci_variations, len(haplotypes[1]), out, ALT, log_bool, 'kmeans', decomp)
+        vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, allele_length, global_loci_variations, len(haplotypes[1]), out, ALT, log_bool, 'kmeans', decomp, hallele_counter)
         
     else:
         return [False, 6] # write allele distribution with only one read supporting to it in vcf
@@ -102,7 +105,7 @@ def length_genotyper(hallele_counter, global_loci_info, global_loci_variations, 
 
 def analyse_genotype(contig, locus_key, global_loci_info,
                      global_loci_variations, global_read_variations, global_snp_positions, hallele_counter,
-                     ref, out, sorted_global_snp_list, snpQ, snpC, snpD, snpR, phasingR, maxR, max_limit, male, log_bool, decomp):
+                     ref, out, sorted_global_snp_list, snpQ, snpC, snpD, snpR, phasingR, maxR, max_limit, male, log_bool, decomp, amplicon):
             
     locus_start = int(global_loci_info[locus_key][1])
     locus_end = int(global_loci_info[locus_key][2])
@@ -116,8 +119,8 @@ def analyse_genotype(contig, locus_key, global_loci_info,
 
     read_seqs = global_loci_variations[locus_key]['read_sequence']
 
-    if male: 
-        state, skip_point = length_genotyper(hallele_counter, global_loci_info, global_loci_variations, locus_key, read_indices, contig, locus_start, locus_end, ref, out, male, log_bool, decomp, read_seqs)
+    if male or amplicon: 
+        state, skip_point = length_genotyper(hallele_counter, global_loci_info, global_loci_variations, locus_key, read_indices, contig, locus_start, locus_end, ref, out, male, log_bool, decomp, read_seqs, amplicon)
         return [state, skip_point]
 
 
@@ -168,7 +171,7 @@ def analyse_genotype(contig, locus_key, global_loci_info,
     haplotypes, min_snp, skip_point, chosen_snpQ, phased_read, snp_num = haplocluster_reads(snp_allelereads, ordered_snp_on_cov, read_indices, snpQ, snpC, snpR, phasingR) # SNP ifo and supporting reads for specific locus are given to the phasing function
 
     if haplotypes == (): # if the loci has no significant snps
-        state, skip_point = length_genotyper(hallele_counter, global_loci_info, global_loci_variations, locus_key, read_indices, contig, locus_start, locus_end, ref, out, male, log_bool, decomp, read_seqs)
+        state, skip_point = length_genotyper(hallele_counter, global_loci_info, global_loci_variations, locus_key, read_indices, contig, locus_start, locus_end, ref, out, male, log_bool, decomp, read_seqs, None)
         del read_seqs
         return [state, skip_point]
     
@@ -196,7 +199,7 @@ def analyse_genotype(contig, locus_key, global_loci_info,
 
     del read_seqs
 
-    vcf_heterozygous_writer(contig, genotypes, locus_start, global_loci_variations, locus_end, allele_count, len(read_indices), global_loci_info, ref, out, chosen_snpQ, phased_read, snp_num, ALT_seqs, log_bool, 'SNP', decomp)
+    vcf_heterozygous_writer(contig, genotypes, locus_start, global_loci_variations, locus_end, allele_count, len(read_indices), global_loci_info, ref, out, chosen_snpQ, phased_read, snp_num, ALT_seqs, log_bool, 'SNP', decomp, hallele_counter)
     state = True
     return [state, skip_point]
     

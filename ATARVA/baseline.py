@@ -11,7 +11,7 @@ import pysam
 import sys
 import logging
 
-def locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, snpQ, snpC, snpD, snpR, phasingR, tbx, flank, sorted_global_ins_rpos_set, log_bool, logger, male, prev_locus_end, decomp, hp_code):
+def locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, snpQ, snpC, snpD, snpR, phasingR, tbx, flank, sorted_global_ins_rpos_set, log_bool, logger, male, prev_locus_end, decomp, hp_code, amplicon):
 
     genotyped_loci = 0
     popped    = global_loci_ends.pop(0)
@@ -30,7 +30,7 @@ def locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, 
             sorted_global_snp_list = sorted(global_snp_positions.keys())
         
 
-        prev_reads, category, homozygous_allele, reads_of_homozygous, hallele_counter, skip_point, max_limit, haplotypes = process_locus(locus_key, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, global_loci_info, near_by_loci, sorted_global_ins_rpos_set, Chrom, lstart, lend, ref, log_bool, logger, snpD, prev_locus_end, hp_code)
+        prev_reads, category, homozygous_allele, reads_of_homozygous, hallele_counter, skip_point, max_limit, haplotypes = process_locus(locus_key, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, global_loci_info, near_by_loci, sorted_global_ins_rpos_set, Chrom, lstart, lend, ref, log_bool, logger, snpD, prev_locus_end, hp_code, amplicon)
 
         read_seqs = global_loci_variations[locus_key]['read_sequence']
         if category == 1:
@@ -45,10 +45,10 @@ def locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, 
                     homozygous_allele = 0
             else:
                 ALT = '.'
-            vcf_homozygous_writer(ref, Chrom, locus_key, global_loci_info, homozygous_allele, global_loci_variations, len(reads_of_homozygous), out, ALT, log_bool, '.', decomp)
+            vcf_homozygous_writer(ref, Chrom, locus_key, global_loci_info, homozygous_allele, global_loci_variations, len(reads_of_homozygous), out, ALT, log_bool, '.', decomp, hallele_counter)
             genotyped_loci += 1
         elif category == 2:
-            state, skip_point = analyse_genotype(Chrom, locus_key, global_loci_info, global_loci_variations, global_read_variations, global_snp_positions, hallele_counter, ref, out, sorted_global_snp_list, snpQ, snpC, snpD, snpR, phasingR, maxR, max_limit, male, log_bool, decomp)
+            state, skip_point = analyse_genotype(Chrom, locus_key, global_loci_info, global_loci_variations, global_read_variations, global_snp_positions, hallele_counter, ref, out, sorted_global_snp_list, snpQ, snpC, snpD, snpR, phasingR, maxR, max_limit, male, log_bool, decomp, amplicon)
             if state: genotyped_loci += 1
             else:
                 skip_messages = {
@@ -80,7 +80,7 @@ def locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, 
                     allele_count[allele_length] = len(hap_reads)
                 else:
                     allele_count[str(allele_length)] = len(hap_reads)
-            vcf_heterozygous_writer(Chrom, genotypes, lstart, global_loci_variations, lend, allele_count, len(reads_of_homozygous), global_loci_info, ref, out, '.', phased_read, 0, ALT_seqs, log_bool, 'HP', decomp)
+            vcf_heterozygous_writer(Chrom, genotypes, lstart, global_loci_variations, lend, allele_count, len(reads_of_homozygous), global_loci_info, ref, out, '.', phased_read, 0, ALT_seqs, log_bool, 'HP', decomp, hallele_counter)
             genotyped_loci += 1
         else:
             if skip_point == 0:
@@ -95,7 +95,7 @@ def locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, 
     return genotyped_loci, prev_locus_end
 
 
-def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, outfile, snpQ, snpC, snpD, maxR, minR, snpR, phasingR, tidx, flank, log_bool, karyotype, decomp, hp_code):
+def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, outfile, snpQ, snpC, snpD, maxR, minR, snpR, phasingR, tidx, flank, log_bool, karyotype, decomp, hp_code, amplicon):
     # this function iterates through each contig and processes the genotypes for each locus
     tbx  = pysam.Tabixfile(tbx_file)
     bam  = pysam.AlignmentFile(bam_file, aln_format)
@@ -190,7 +190,7 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
 
             while global_loci_ends and read_start > global_loci_ends[0]:
 
-                genotype_status = locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, snpQ, snpC, snpD, snpR, phasingR, tbx, flank, sorted_global_ins_rpos_set, log_bool, logger, male, prev_locus_end, decomp, hp_code)
+                genotype_status = locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, snpQ, snpC, snpD, snpR, phasingR, tbx, flank, sorted_global_ins_rpos_set, log_bool, logger, male, prev_locus_end, decomp, hp_code, amplicon)
                 genotyped_loci_count += genotype_status[0]
                 prev_locus_end = genotype_status[1]
                 progress_bar.update(1)
@@ -233,7 +233,7 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
             # if the read is beyond the last locus in the bed file the loop stops
             if read_start > end_coord:
                 while global_loci_ends:
-                    genotype_status = locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, snpQ, snpC, snpD, snpR, phasingR, tbx, flank, sorted_global_ins_rpos_set, log_bool, logger, male, prev_locus_end, decomp, hp_code)
+                    genotype_status = locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, snpQ, snpC, snpD, snpR, phasingR, tbx, flank, sorted_global_ins_rpos_set, log_bool, logger, male, prev_locus_end, decomp, hp_code, amplicon)
                     genotyped_loci_count += genotype_status[0]
                     prev_locus_end = genotype_status[1]
                     progress_bar.update(1)
@@ -308,6 +308,8 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
             else: hp = False
             if hp: hp_tag = read.get_tag(hp_code)
             else: hp_tag = None
+
+            if amplicon: hp = True
                 
             if read.has_tag('cs'):
                 del cigar_tuples
@@ -324,7 +326,7 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
                 global_loci_variations[locus_key]['read_tag'].append(hp_tag)
 
         while global_loci_ends:
-            genotype_status = locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, snpQ, snpC, snpD, snpR, phasingR, tbx, flank, sorted_global_ins_rpos_set, log_bool, logger, male, prev_locus_end, decomp, hp_code)
+            genotype_status = locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, snpQ, snpC, snpD, snpR, phasingR, tbx, flank, sorted_global_ins_rpos_set, log_bool, logger, male, prev_locus_end, decomp, hp_code, amplicon)
             genotyped_loci_count += genotype_status[0]
             prev_locus_end = genotype_status[1]
             progress_bar.update(1)
@@ -348,7 +350,7 @@ def cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, ou
     out.close()
 
 
-def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, outfile, snpQ, snpC, snpD, maxR, minR, snpR, phasingR, tidx, flank, log_bool, karyotype, decomp, hp_code):
+def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshold, outfile, snpQ, snpC, snpD, maxR, minR, snpR, phasingR, tidx, flank, log_bool, karyotype, decomp, hp_code, amplicon):
     # this function iterates through each contig and processes the genotypes for each locus
     tbx  = pysam.Tabixfile(tbx_file)
     tbx2  = pysam.Tabixfile(tbx_file)
@@ -503,6 +505,8 @@ def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshol
                 else: hp = False
                 if hp: hp_tag = read.get_tag(hp_code)
                 else: hp_tag = None
+
+                if amplicon: hp = True
     
                 if read.has_tag('cs'):
                     del cigar_tuples
@@ -520,7 +524,7 @@ def mini_cooper(bam_file, tbx_file, ref_file, aln_format, contigs, mapq_threshol
             
             while global_loci_ends:
 
-                genotype_status = locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, snpQ, snpC, snpD, snpR, phasingR, tbx2, flank, sorted_global_ins_rpos_set, log_bool, logger, male, prev_locus_end, decomp, hp_code)
+                genotype_status = locus_processor(global_loci_keys, global_loci_ends, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, ref, Chrom, global_loci_info, out, snpQ, snpC, snpD, snpR, phasingR, tbx2, flank, sorted_global_ins_rpos_set, log_bool, logger, male, prev_locus_end, decomp, hp_code, amplicon)
                 genotyped_loci_count += genotype_status[0]
                 prev_locus_end = genotype_status[1]
                 progress_bar.update(1)

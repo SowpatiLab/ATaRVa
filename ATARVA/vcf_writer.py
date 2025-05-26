@@ -34,7 +34,7 @@ def vcf_writer(out, bam, bam_name):
 
     out.write(str(vcf_header))
 
-def vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, homozygous_allele, global_loci_variations, reads_len, out, ALT_read, log_bool, tag, decomp):
+def vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, homozygous_allele, global_loci_variations, reads_len, out, ALT_read, log_bool, tag, decomp, hallele_counter):
 
     locus_start = int(global_loci_info[locus_key][1])
     locus_end = int(global_loci_info[locus_key][2])
@@ -56,7 +56,8 @@ def vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, homozygous_a
 
 
     if log_bool:
-        INFO = 'AC=' + str(AC) + ';AN=' + str(AN) + ';MOTIF=' + str(global_loci_info[locus_key][3]) + ';END=' + str(locus_end) + ';CT=' + tag
+        eac = sorted(hallele_counter.items(), key = lambda x: x[1], reverse=True)
+        INFO = 'AC=' + str(AC) + ';AN=' + str(AN) + ';MOTIF=' + str(global_loci_info[locus_key][3]) + ';END=' + str(locus_end) + ';CT=' + tag + ';EAC=' + str(eac)
     else:
         INFO = 'AC=' + str(AC) + ';AN=' + str(AN) + ';MOTIF=' + str(global_loci_info[locus_key][3]) + ';END=' + str(locus_end)
 
@@ -82,7 +83,7 @@ def vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, homozygous_a
     del global_loci_info[locus_key]
 
 
-def vcf_heterozygous_writer(contig, genotypes, locus_start, global_loci_variations, locus_end, allele_count, DP, global_loci_info, ref, out, chosen_snpQ, phased_read, snp_num, ALT_reads, log_bool, tag, decomp):
+def vcf_heterozygous_writer(contig, genotypes, locus_start, global_loci_variations, locus_end, allele_count, DP, global_loci_info, ref, out, chosen_snpQ, phased_read, snp_num, ALT_reads, log_bool, tag, decomp, hallele_counter):
 
     locus_key = f'{contig}:{locus_start}-{locus_end}'
     final_allele = set(genotypes)
@@ -153,7 +154,8 @@ def vcf_heterozygous_writer(contig, genotypes, locus_start, global_loci_variatio
 
     if PC == '.,.': PC = '.' # due  to length genotyper
     if log_bool:
-        INFO = 'AC='+str(AC)+';AN='+str(AN)+';MOTIF=' + str(global_loci_info[locus_key][3]) + ';END='+str(locus_end) + ';CT=' + tag
+        eac = sorted(hallele_counter.items(), key = lambda x: x[1], reverse=True)
+        INFO = 'AC='+str(AC)+';AN='+str(AN)+';MOTIF=' + str(global_loci_info[locus_key][3]) + ';END='+str(locus_end) + ';CT=' + tag + ';EAC=' + str(eac)
     else:
         INFO = 'AC='+str(AC)+';AN='+str(AN)+';MOTIF=' + str(global_loci_info[locus_key][3]) + ';END='+str(locus_end)
 
