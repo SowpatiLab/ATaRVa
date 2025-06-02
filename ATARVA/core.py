@@ -5,7 +5,7 @@
     from long/short read whole genome sequencing data.
 """
 
-import sys, os
+import sys, os, gzip
 import pysam
 import timeit as ti
 import argparse as ap
@@ -14,6 +14,7 @@ from tqdm import tqdm
 
 from ATARVA.version import __version__
 from ATARVA.baseline import *
+from ATARVA.vcf_writer import set_info_opt_tag
 
 def parse_args():
     parser = ap.ArgumentParser(prog="atarva")
@@ -138,6 +139,14 @@ def main():
             out_file = f'{args.vcf}'
     # else: out_file = f'{".".join(args.bams.split(".")[:-1])}'
     external_name = out_file
+
+    with gzip.open(args.regions, 'rt') as f:
+        first_row = f.readline().strip().split('\t')
+        if (first_row[0][0]=='#') & (len(first_row)>5):
+            info_opt_tag = first_row[5]
+        else:
+            info_opt_tag = 'ID'
+    set_info_opt_tag(info_opt_tag)
 
     tbx  = pysam.Tabixfile(args.regions)
     total_loci = 0
