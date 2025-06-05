@@ -27,6 +27,7 @@ def vcf_writer(out, bam, bam_name):
     vcf_header.info.add("MOTIF", number=1, type="String", description="Repeat motif")
     vcf_header.info.add("END", number=1, type="Integer", description="End position of the repeat region")
     vcf_header.info.add("CT", number=1, type="String", description="Cluster type")
+    vcf_header.info.add("EAC", number=1, type="String", description="Each Allele Count")
     # FORMAT
     vcf_header.formats.add("GT", number=1, type="String", description="Genotype")
     vcf_header.formats.add("AL", number=2, type="Integer", description="Allele length in base pairs")
@@ -100,7 +101,7 @@ def vcf_heterozygous_writer(contig, genotypes, locus_start, global_loci_variatio
         optional_tag = f';{info_opt_tag}={global_loci_info[locus_key][5]}'
     else:
         optional_tag = ''
-        
+
     final_allele = set(genotypes)
     heterozygous_allele = ''
     AC = 'AC'
