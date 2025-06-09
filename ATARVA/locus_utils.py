@@ -53,7 +53,7 @@ def inrepeat_ins(near_by_loci, ins_rpos, sorted_global_ins_rpos_set):
     return 0
 
 
-def process_locus(locus_key, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, global_loci_info, near_by_loci, sorted_global_ins_rpos_set, Chrom, locus_start, locus_end, ref, log_bool, logger, snp_dist, prev_locus_end, hp_code):
+def process_locus(locus_key, global_loci_variations, global_read_variations, global_snp_positions, prev_reads, sorted_global_snp_list, maxR, minR, global_loci_info, near_by_loci, sorted_global_ins_rpos_set, Chrom, locus_start, locus_end, ref, log_bool, logger, snp_dist, prev_locus_end, hp_code, amplicon):
 
 
     ref_seq = ref.fetch(Chrom, locus_start, locus_end)
@@ -178,28 +178,32 @@ def process_locus(locus_key, global_loci_variations, global_read_variations, glo
     allele_counter = {};  hallele_counter = {}
     count_alleles(locus_key, read_indices, global_loci_variations, allele_counter, hallele_counter)
 
-    hap_status = False
-    if hp_code:
-        haplotypes = ([read_indices[i] for i in [idx for idx,i in enumerate(read_tag) if i == 1]], [read_indices[i] for i in [idx for idx,i in enumerate(read_tag) if i == 2]])
-        hap_status = all([len(hap)>0 for hap in haplotypes])
-    
-    if hap_status & ((read_tag.count(None)/total_reads) <= 0.15): # processing haplotagged reads to write into vcf_heterozygous
-        category = 3 # phased
-    
-    elif len(hallele_counter) == 1:
-        category = 1 # homozygous
-        homozygous_allele = list(hallele_counter.keys())[0]
-    
-    else:
-        filtered_alleles = list(filter(lambda x: hallele_counter[x] > 1, hallele_counter.keys()))
-        if len(filtered_alleles) == 1 and hallele_counter[filtered_alleles[0]]/total_reads >= 0.75:
+    if not amplicon:
+        hap_status = False
+        if hp_code:
+            haplotypes = ([read_indices[i] for i in [idx for idx,i in enumerate(read_tag) if i == 1]], [read_indices[i] for i in [idx for idx,i in enumerate(read_tag) if i == 2]])
+            hap_status = all([len(hap)>0 for hap in haplotypes])
+        
+        if hap_status & ((read_tag.count(None)/total_reads) <= 0.15): # processing haplotagged reads to write into vcf_heterozygous
+            category = 3 # phased
+        
+        elif len(hallele_counter) == 1:
             category = 1 # homozygous
-            homozygous_allele = filtered_alleles[0]
-            reads_of_homozygous = [rindex for rindex in global_loci_variations[locus_key]['read_allele'] if homozygous_allele == global_loci_variations[locus_key]['read_allele'][rindex][0]]
+            homozygous_allele = list(hallele_counter.keys())[0]
+        
         else:
-            category = 2 # ambiguous
-            
-    record_snps(read_indices, old_reads, new_reads, global_read_variations, global_snp_positions, sorted_global_snp_list, locus_start, locus_end, snp_dist, prev_locus_end)
+            filtered_alleles = list(filter(lambda x: hallele_counter[x] > 1, hallele_counter.keys()))
+            if len(filtered_alleles) == 1 and hallele_counter[filtered_alleles[0]]/total_reads >= 0.75:
+                category = 1 # homozygous
+                homozygous_allele = filtered_alleles[0]
+                reads_of_homozygous = [rindex for rindex in global_loci_variations[locus_key]['read_allele'] if homozygous_allele == global_loci_variations[locus_key]['read_allele'][rindex][0]]
+            else:
+                category = 2 # ambiguous
+
+        record_snps(read_indices, old_reads, new_reads, global_read_variations, global_snp_positions, sorted_global_snp_list, locus_start, locus_end, snp_dist, prev_locus_end)
+
+    else:
+        category = 2 # ambiguous
     
     prev_reads = current_reads.copy()
     return [prev_reads, category, homozygous_allele, reads_of_homozygous, hallele_counter, 10, max_limit, haplotypes]

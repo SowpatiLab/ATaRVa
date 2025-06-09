@@ -5,7 +5,7 @@
     from long/short read whole genome sequencing data.
 """
 
-import sys, os
+import sys, os, gzip
 import pysam
 import timeit as ti
 import argparse as ap
@@ -14,6 +14,7 @@ from tqdm import tqdm
 
 from ATARVA.version import __version__
 from ATARVA.baseline import *
+from ATARVA.vcf_writer import set_info_opt_tag
 
 def parse_args():
     parser = ap.ArgumentParser(prog="atarva")
@@ -45,6 +46,7 @@ def parse_args():
     optional.add_argument('-t',  '--threads', type=int, metavar='<INT>', default=1, help='number of threads. [default: 1]')
     optional.add_argument('--haplotag', type=str, metavar='<STR>', default=None, help='use haplotagged information for phasing. eg: [HP]. [default: None]')
     optional.add_argument('--decompose', action='store_true', help="write the motif-decomposed sequence to the vcf. [default: False]")
+    optional.add_argument('--amplicon', action='store_true', help="genotype mode for targeted-sequenced samples. [default: False]")
     optional.add_argument('-log', '--debug_mode', action='store_true', help="write the debug messages to log file. [default: False]")
     optional.add_argument('-v', '--version', action='version', version=f'ATaRVa version {__version__}')
     
@@ -137,6 +139,14 @@ def main():
             out_file = f'{args.vcf}'
     # else: out_file = f'{".".join(args.bams.split(".")[:-1])}'
     external_name = out_file
+
+    with gzip.open(args.regions, 'rt') as f:
+        first_row = f.readline().strip().split('\t')
+        if (first_row[0][0]=='#') & (len(first_row)>5):
+            info_opt_tag = first_row[5]
+        else:
+            info_opt_tag = 'ID'
+    set_info_opt_tag(info_opt_tag)
 
     tbx  = pysam.Tabixfile(args.regions)
     total_loci = 0
@@ -241,11 +251,11 @@ def main():
                 if srs:
                     thread_x = Process(
                         target = mini_cooper,
-                        args = (each_bam, args.regions, args.fasta, aln_format, contig, args.map_qual, out_file, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, tidx, args.flank, args.debug_mode, karyotype_list[kidx], args.decompose, args.haplotag))
+                        args = (each_bam, args.regions, args.fasta, aln_format, contig, args.map_qual, out_file, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, tidx, args.flank, args.debug_mode, karyotype_list[kidx], args.decompose, args.haplotag, args.amplicon))
                 else:
                     thread_x = Process(
                         target = cooper,
-                        args = (each_bam, args.regions, args.fasta, aln_format, contig, args.map_qual, out_file, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, tidx, args.flank, args.debug_mode, karyotype_list[kidx], args.decompose, args.haplotag))
+                        args = (each_bam, args.regions, args.fasta, aln_format, contig, args.map_qual, out_file, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, tidx, args.flank, args.debug_mode, karyotype_list[kidx], args.decompose, args.haplotag, args.amplicon))
                 thread_x.start()
                 thread_pool.append(thread_x)
 
@@ -285,9 +295,9 @@ def main():
                 out_log.close()
         else:
             if srs:
-                mini_cooper(each_bam, args.regions, args.fasta, aln_format, fetcher[0], args.map_qual, out_file, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, -1, args.flank, args.debug_mode, karyotype_list[kidx], args.decompose, args.haplotag)
+                mini_cooper(each_bam, args.regions, args.fasta, aln_format, fetcher[0], args.map_qual, out_file, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, -1, args.flank, args.debug_mode, karyotype_list[kidx], args.decompose, args.haplotag, args.amplicon)
             else:
-                cooper(each_bam, args.regions, args.fasta, aln_format, fetcher[0], args.map_qual, out_file, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, -1, args.flank, args.debug_mode, karyotype_list[kidx], args.decompose, args.haplotag)
+                cooper(each_bam, args.regions, args.fasta, aln_format, fetcher[0], args.map_qual, out_file, args.snp_qual, args.snp_count, args.snp_dist, args.max_reads, args.min_reads, args.snp_read, args.phasing_read, -1, args.flank, args.debug_mode, karyotype_list[kidx], args.decompose, args.haplotag, args.amplicon)
 
     time_now = ti.default_timer()
     sys.stderr.write('CPU time: {} seconds\n'.format(time_now - start_time))

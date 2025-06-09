@@ -3,6 +3,11 @@ import pysam
 # from ATARVA.consensus import consensus_seq_poa
 from ATARVA.decomp_utils import motif_decomposition
 
+info_opt_tag = 'ID'
+def set_info_opt_tag(tag):
+    global info_opt_tag
+    info_opt_tag = tag
+
 def vcf_writer(out, bam, bam_name):
 
     vcf_header = pysam.VariantHeader()
@@ -22,6 +27,7 @@ def vcf_writer(out, bam, bam_name):
     vcf_header.info.add("MOTIF", number=1, type="String", description="Repeat motif")
     vcf_header.info.add("END", number=1, type="Integer", description="End position of the repeat region")
     vcf_header.info.add("CT", number=1, type="String", description="Cluster type")
+    vcf_header.info.add("EAC", number=1, type="String", description="Each Allele Count")
     # FORMAT
     vcf_header.formats.add("GT", number=1, type="String", description="Genotype")
     vcf_header.formats.add("AL", number=2, type="Integer", description="Allele length in base pairs")
@@ -34,11 +40,15 @@ def vcf_writer(out, bam, bam_name):
 
     out.write(str(vcf_header))
 
-def vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, homozygous_allele, global_loci_variations, reads_len, out, ALT_read, log_bool, tag, decomp):
+def vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, homozygous_allele, global_loci_variations, reads_len, out, ALT_read, log_bool, tag, decomp, hallele_counter):
 
     locus_start = int(global_loci_info[locus_key][1])
     locus_end = int(global_loci_info[locus_key][2])
     
+    if len(global_loci_info[locus_key]) > 5:
+        optional_tag = f';{info_opt_tag}={global_loci_info[locus_key][5]}'
+    else:
+        optional_tag = ''
 
     # if type(reads_len) == list:
     #     reads_len = len(reads_len) #removable
@@ -56,9 +66,10 @@ def vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, homozygous_a
 
 
     if log_bool:
-        INFO = 'AC=' + str(AC) + ';AN=' + str(AN) + ';MOTIF=' + str(global_loci_info[locus_key][3]) + ';END=' + str(locus_end) + ';CT=' + tag
+        eac = sorted(hallele_counter.items(), key = lambda x: x[1], reverse=True)
+        INFO = 'AC=' + str(AC) + ';AN=' + str(AN) + ';MOTIF=' + str(global_loci_info[locus_key][3]) + ';END=' + str(locus_end) + optional_tag + ';CT=' + tag + ';EAC=' + str(eac)
     else:
-        INFO = 'AC=' + str(AC) + ';AN=' + str(AN) + ';MOTIF=' + str(global_loci_info[locus_key][3]) + ';END=' + str(locus_end)
+        INFO = 'AC=' + str(AC) + ';AN=' + str(AN) + ';MOTIF=' + str(global_loci_info[locus_key][3]) + ';END=' + str(locus_end) + optional_tag
 
     if decomp:
         motif_size = int(float(global_loci_info[locus_key][4]))
@@ -82,9 +93,15 @@ def vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, homozygous_a
     del global_loci_info[locus_key]
 
 
-def vcf_heterozygous_writer(contig, genotypes, locus_start, global_loci_variations, locus_end, allele_count, DP, global_loci_info, ref, out, chosen_snpQ, phased_read, snp_num, ALT_reads, log_bool, tag, decomp):
+def vcf_heterozygous_writer(contig, genotypes, locus_start, global_loci_variations, locus_end, allele_count, DP, global_loci_info, ref, out, chosen_snpQ, phased_read, snp_num, ALT_reads, log_bool, tag, decomp, hallele_counter):
 
     locus_key = f'{contig}:{locus_start}-{locus_end}'
+
+    if len(global_loci_info[locus_key]) > 5:
+        optional_tag = f';{info_opt_tag}={global_loci_info[locus_key][5]}'
+    else:
+        optional_tag = ''
+        
     final_allele = set(genotypes)
     heterozygous_allele = ''
     AC = 'AC'
@@ -153,9 +170,10 @@ def vcf_heterozygous_writer(contig, genotypes, locus_start, global_loci_variatio
 
     if PC == '.,.': PC = '.' # due  to length genotyper
     if log_bool:
-        INFO = 'AC='+str(AC)+';AN='+str(AN)+';MOTIF=' + str(global_loci_info[locus_key][3]) + ';END='+str(locus_end) + ';CT=' + tag
+        eac = sorted(hallele_counter.items(), key = lambda x: x[1], reverse=True)
+        INFO = 'AC='+str(AC)+';AN='+str(AN)+';MOTIF=' + str(global_loci_info[locus_key][3]) + ';END='+str(locus_end) + optional_tag + ';CT=' + tag + ';EAC=' + str(eac)
     else:
-        INFO = 'AC='+str(AC)+';AN='+str(AN)+';MOTIF=' + str(global_loci_info[locus_key][3]) + ';END='+str(locus_end)
+        INFO = 'AC='+str(AC)+';AN='+str(AN)+';MOTIF=' + str(global_loci_info[locus_key][3]) + ';END='+str(locus_end) + optional_tag
 
     if decomp:
         motif_size = int(float(global_loci_info[locus_key][4]))
@@ -190,10 +208,15 @@ def vcf_fail_writer(contig, locus_key, global_loci_info, ref, out, DP, skip_poin
     locus_start = int(global_loci_info[locus_key][1])
     locus_end = int(global_loci_info[locus_key][2])
 
+    if len(global_loci_info[locus_key]) > 5:
+        optional_tag = f';{info_opt_tag}={global_loci_info[locus_key][5]}'
+    else:
+        optional_tag = ''
+
     if skip_point == 0:
         FILTER = 'LESS_READS'    
     locus_key = f'{contig}:{locus_start}-{locus_end}'
-    INFO = 'AC=0;AN=0;MOTIF=' + str(global_loci_info[locus_key][3]) + ';END=' + str(locus_end)
+    INFO = 'AC=0;AN=0;MOTIF=' + str(global_loci_info[locus_key][3]) + ';END=' + str(locus_end) + optional_tag
     # FORMAT = 'GT:AL:SD:PC:DP:SN:SQ'
     FORMAT = 'GT:AL:SD:DP:SN:SQ'
     # SAMPLE = '.:.:.:.:.:.:.'
