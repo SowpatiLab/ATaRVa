@@ -204,7 +204,7 @@ def insertion_jump(insertion_length, insert, rpos, repeat_index, loci_keys, trac
 
         # for storing repeat qpos ranges
         if not flank_track[r+repeat_index][0]:
-            if coord_start+left_flank[r+repeat_index] <= rpos:
+            if coord_start+left_flank[r+repeat_index]-1 <= rpos:
                 loci_flank_qpos_range[r+repeat_index][0] = qpos-insertion_length
                 flank_track[r+repeat_index][0] = True 
             if coord_end-right_flank[r+repeat_index] <= rpos:
