@@ -101,7 +101,7 @@ def vcf_heterozygous_writer(contig, genotypes, locus_start, global_loci_variatio
         optional_tag = f';{info_opt_tag}={global_loci_info[locus_key][5]}'
     else:
         optional_tag = ''
-        
+
     final_allele = set(genotypes)
     heterozygous_allele = ''
     AC = 'AC'

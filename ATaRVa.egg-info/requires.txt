@@ -1,0 +1,8 @@
+numpy>=1.26.4
+pyabpoa>=1.5.3
+pysam>=0.22.1
+scikit-learn>=1.4.1
+scipy>=1.12.0
+threadpoolctl>=3.3.0
+tqdm>=4.66.1
+bitarray>=3.0.0
