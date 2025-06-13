@@ -25,8 +25,8 @@ def length_genotyper(hallele_counter, global_loci_info, global_loci_variations, 
     if not amplicon:
         alen_with_1read = [item[0] for item in hallele_counter.items() if item[1]==1] # allele with 1 read contribution
         # if more than 10% of the reads support, empty the alen_with_1read list
-        if (len(alen_with_1read) / len(read_indices)) >= 0.1:
-            alen_with_1read = []
+        # if (len(alen_with_1read) / len(read_indices)) >= 0.15:
+        #     alen_with_1read = []
     else:
         alen_with_1read = []
     alen_with_gread = set(hallele_counter.keys()) - set(alen_with_1read) # allele with more than 1 read contribution
@@ -36,8 +36,10 @@ def length_genotyper(hallele_counter, global_loci_info, global_loci_variations, 
     for id in read_indices:
         if locus_read_allele[id][0] in alen_with_1read: # checking if the '1 read - allele' is nearby any of other 'good read - allele'
             num = locus_read_allele[id][0]
-            for i in alen_with_gread:
-                if (num-10 <= i <= num+10) or (num-(0.1*i) <= i <= num+(0.1*i)): # '1 read - allele' is considered if other allele are within 10 bp on either of the side
+            for i in set(hallele_counter.keys()): #for i in alen_with_gread:
+                if i == num: continue
+                window = 0.1*i
+                if (i-window) <= num <= (i+window): # '1 read - allele' is considered if other allele are within 10% on either of the side
                     alen_data.append(num)
                     main_read_id.append(id)
                     break
@@ -58,8 +60,34 @@ def length_genotyper(hallele_counter, global_loci_info, global_loci_variations, 
     c1 = [i for i, x in enumerate(cluster_labels) if x == 0]
     c2 = [i for i, x in enumerate(cluster_labels) if x == 1]
 
+    alen_c1 = [alen_data[i] for i in c1]
+    alen_c2 = [alen_data[i] for i in c2]
+
     haplotypes = ([main_read_id[idx] for idx in c1], [main_read_id[idx] for idx in c2])
-    cutoff = 0.1*len(alen_data) # 15%
+    cutoff = 0.15*len(alen_data) # 15%
+
+    br = False
+    if c1 and c2:
+        def process_conditions(alen_x, alen_y):
+            nonlocal br, cutoff
+            max_val = max(alen_y)
+            slide = max(max_val*0.1, 10)
+            min_bound = min(alen_y)-slide
+            max_bound = max_val+slide
+            for min_al in alen_x:
+                if min_bound <= min_al <= max_bound:
+                    br = True
+                    break
+
+            if not br:
+                cutoff = len(alen_x) / len(alen_data)
+
+        if len(c1) < cutoff and len(c2) >= cutoff:
+            process_conditions(alen_c1, alen_c2)
+                               
+        elif len(c2) < cutoff and len(c1) >= cutoff:
+            process_conditions(alen_c2, alen_c1)
+
 
     if male:
         cluster_len = [len(c1), len(c2)]

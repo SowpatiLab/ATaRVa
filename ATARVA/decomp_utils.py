@@ -106,8 +106,8 @@ def motif_decomposition(sequence, motif_size):
     decomposed_parts = []
     count = 1  
 
-    if positions[0] != 0:
-        decomposed_parts.append(sequence[:positions[0]])  
+    # if positions[0] != 0:
+    #     decomposed_parts.append(sequence[:positions[0]])  
     
     for i in range(1, len(positions)):
         if positions[i] == positions[i - 1] + len(primary_motif):
