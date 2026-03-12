@@ -1,5 +1,5 @@
-from Complete_Striped_Smith_Waterman_Library.src import pyssw
-from Complete_Striped_Smith_Waterman_Library.src import ssw_lib
+import ATARVA.pyssw as pyssw
+import ATARVA.ssw_lib as ssw_lib
 import ctypes as ct
 import os, sys
 
@@ -22,7 +22,7 @@ def restore_stderr(original_stderr):
 class Inputs:
     def __init__(self, target, query):
         # self.sLibPath = 'Complete_Striped_Smith_Waterman_Library/src'  # Set your libssw.so path
-        self.sLibPath = False #"./"  # Set your libssw.so path
+        self.sLibPath = False # Set your libssw.so path
         self.nMatch = 2
         self.nMismatch = 2
         self.nOpen = 3
@@ -37,7 +37,7 @@ class Inputs:
         self.target = target  # Set your target file path
         self.query = query  # Set your query file path
 
-def stripSW(args):
+def stripSW(args, case):
     lEle = []
     dEle2Int = {}
     dInt2Ele = {}
@@ -56,7 +56,6 @@ def stripSW(args):
             else:
                 lScore[i*nEleNum+j] = -args.nMismatch
     
-    # print(so_path)
     ssw = ssw_lib.CSsw(args.sLibPath)
     
     sRSeq = args.target
@@ -78,4 +77,8 @@ def stripSW(args):
     else:
         res = pyssw.align_one(ssw, qProfile, rNum, len(sRSeq), args.nOpen, args.nExt, nFlag, nMaskLen)
     sCigar, sQ, sA, sR = pyssw.buildPath(sQSeq, sRSeq, res[4], res[2], res[8])
-    return sA, [res[4], res[5]]
+    
+    if case:
+        return sA, [res[4], res[5]]
+    else:
+        return [res[0], res[2], res[3], res[4], res[5], sCigar]

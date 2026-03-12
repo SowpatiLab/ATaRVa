@@ -1,55 +1,53 @@
 import bisect
+from ATARVA.structures import SNP
 
-def update_global_snpPos(ref_start, pos, global_read_variations, global_snp_positions, read_index, read_sequence, read_quality, sorted_global_snp_list, insertion_point, qpos):
+def update_snps(cooper, read, pos, qpos, insertion_point):
 
-    rpos = ref_start+pos
+    rpos = read.reference_start + pos
     for ins in insertion_point:
-        if ins<rpos:
-            qpos+=insertion_point[ins]
+        if ins < rpos:
+            qpos += insertion_point[ins]
         elif ins>rpos: break
 
-    Q_value = read_quality[qpos]
-    sub_char = read_sequence[qpos]
-    global_read_variations[read_index]['snps'].add(rpos)
-    if rpos not in global_snp_positions:
-        global_snp_positions[rpos] = { 'cov': 1, sub_char: {read_index}, 'Qval': {read_index:Q_value} }
-        bisect.insort(sorted_global_snp_list, rpos)
+    Q_value = read.query_qualities[qpos]
+    sub_char = read.query_sequence[qpos]
+    cooper.cooper_read_data[read.index].snps.add(rpos)
+    if rpos not in cooper.cooper_snp_data:
+        cooper.cooper_snp_data[rpos] = SNP(cov = 1, sub = { sub_char: {read.index} }, qual={ read.index: Q_value })
+        bisect.insort(cooper.cooper_sorted_snps, rpos)
     else:
-        global_snp_positions[rpos]['cov'] += 1
-        global_snp_positions[rpos]['Qval'][read_index] = Q_value
-        if sub_char in global_snp_positions[rpos]: 
-            global_snp_positions[rpos][sub_char].add(read_index)
+        cooper.cooper_snp_data[rpos].cov += 1
+        cooper.cooper_snp_data[rpos].qual[read.index] = Q_value
+        if sub_char in cooper.cooper_snp_data[rpos].sub: 
+            cooper.cooper_snp_data[rpos].sub[sub_char].add(read.index)
 
-        else: global_snp_positions[rpos][sub_char] = {read_index}
+        else: cooper.cooper_snp_data[rpos].sub[sub_char] = {read.index}
 
 
-
-def parse_mdtag(MD_tag, qpos, ref_start, global_read_variations, global_snp_positions, read_index, read_quality, read_sequence, sorted_global_snp_list, insertion_point):
+def parse_mdtag(cooper, read, qpos, insertion_point):
         
-    if sorted_global_snp_list == None:
-        sorted_global_snp_list = []
+    if cooper.cooper_sorted_snps == None: cooper.cooper_sorted_snps = []
 
     base = 0
-    sub_base='0'
-    sub_char=''
-    pos=0
+    sub_base = '0'
+    sub_char = ''
+    pos = 0
 
-    deletion = False
+    deletion  = False
     replacing = False
     
-    for i in MD_tag:
+    for i in read.get_tag('MD'):
     
         if deletion:
             if i.isalpha():
-                base+=1
+                base += 1
                 continue
             else: deletion = False
-                
-        
+
         if i.isnumeric():
-            sub_base+=i
+            sub_base += i
             if sub_char != '':
-                update_global_snpPos(ref_start, pos, global_read_variations, global_snp_positions, read_index, read_sequence, read_quality, sorted_global_snp_list, insertion_point, qpos)
+                update_snps(cooper, read, pos, qpos, insertion_point)
                 replacing = False
                 qpos+=1
                 sub_char = ''
@@ -63,7 +61,7 @@ def parse_mdtag(MD_tag, qpos, ref_start, global_read_variations, global_snp_posi
                 qpos+=int(sub_base)
             else:
                 base+=1
-                update_global_snpPos(ref_start, pos, global_read_variations, global_snp_positions, read_index, read_sequence, read_quality, sorted_global_snp_list, insertion_point, qpos)
+                update_snps(cooper, read, pos, qpos, insertion_point)
                 pos = base - 1
                 qpos+=1
                 sub_char = ''
@@ -77,7 +75,7 @@ def parse_mdtag(MD_tag, qpos, ref_start, global_read_variations, global_snp_posi
 
             if replacing:
                 if sub_char != '':
-                    update_global_snpPos(ref_start, pos, global_read_variations, global_snp_positions, read_index, read_sequence, read_quality, sorted_global_snp_list, insertion_point, qpos)
+                    update_snps(cooper, read, pos, qpos, insertion_point)
                     replacing = False
                     qpos+=1
                     sub_char = ''
@@ -88,4 +86,4 @@ def parse_mdtag(MD_tag, qpos, ref_start, global_read_variations, global_snp_posi
 
                 
     if sub_char != '':
-        update_global_snpPos(ref_start, pos, global_read_variations, global_snp_positions, read_index, read_sequence, read_quality, sorted_global_snp_list, insertion_point, qpos)
+        update_snps(cooper, read, pos, qpos, insertion_point)
