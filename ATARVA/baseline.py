@@ -15,6 +15,7 @@ from ATARVA.cigar_utils import parse_cigar
 from ATARVA.sub_operation_utils import mm_tag_extract
 from ATARVA.locus_utils import process_locus
 from ATARVA.consensus import consensus_seq_poa
+from ATARVA.genotype_utils import analyse_genotype
 # , methylation_calc
 
 
@@ -391,8 +392,8 @@ class Cooper:
                 else:
                     allele_range = f'{lower}-{upper},{lower}-{upper}'
 
-                vcf_homozygous_writer(ref, Chrom, locus_key, global_loci_info, homozygous_allele, len(reads_of_homozygous), len(reads_of_homozygous),
-                                      out, ALT, log_bool, '.', decomp, hallele_counter, male, allele_range, None, meth_info)
+                vcf_homozygous_writer(self, locus_key, homozygous_allele, len(reads_of_homozygous), len(reads_of_homozygous),
+                                      ALT, '.', hallele_counter, allele_range, None, meth_info)
                 genotyped_loci += 1
             elif category == 2:
                 state, skip_point = analyse_genotype(Chrom, locus_key, global_loci_info, global_loci_variations, global_read_variations, global_snp_positions,

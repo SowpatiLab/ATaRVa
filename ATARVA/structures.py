@@ -49,6 +49,7 @@ class SNP:
     cov:  int   = 0
     sub:  dict  = field(default_factory=dict)
     qual: dict  = field(default_factory=dict)
+    ref:  set   = field(default_factory=set)
 
 
 class ExtendedRead(pysam.AlignedSegment):

@@ -1,5 +1,7 @@
 import bisect
+
 from ATARVA.realignment import *
+
 
 def break_locuskey(locus_key):
     """
@@ -16,7 +18,7 @@ def break_locuskey(locus_key):
 
 def count_alleles(locus_key, read_indices, global_loci_variations, allele_counter, hallele_counter, alen_list):
     """
-    Frequency of each allele length across all reads for a locus
+    frequency of each allele length across all reads for a locus
 
     :param locus_key: string in the format chrom:start-end
     :param read_indices: list of read indices covering the locus
@@ -39,30 +41,37 @@ def count_alleles(locus_key, read_indices, global_loci_variations, allele_counte
         except KeyError: hallele_counter[halen] = 1
 
 
-def record_snps(read_indices, old_reads, new_reads, global_read_variations, global_snp_positions, sorted_global_snp_list, locus_start, locus_end, snp_dist):
+def record_ref_snps(cooper, new_reads, locus_start, locus_end):
+    """
+    update ref allele and coverage for all reads with no SNPs
 
-    read_indices = set(read_indices)
+    :param cooper: ATaRVa object
+    :param read_indices: list of read indices covering the locus
+    :param new_reads: set of read indices which are new to the locus
+    :param locus_start: start coordinate of the locus
+    :param locus_end: end coordinate of the locus
+    :param snp_dist: distance from the locus to consider for recording SNPs
+    :return: None (updates the cooper.cooper_snp_data in place)
+    """
+
+    snp_dist = cooper.args.snp_dist
     snp_start = locus_start - snp_dist
-    snp_end = locus_end + snp_dist
+    snp_end   = locus_end + snp_dist
 
-    for read_index in read_indices:
-        if read_index not in new_reads: continue 
+    for read_index in new_reads:
 
-        read_variation = global_read_variations[read_index]
-        rstart = read_variation['s']
-        rend   = read_variation['e']
-        snps   = read_variation['snps']
-        dels   = read_variation['dels']
+        read_data = cooper.cooper_read_data[read_index]
 
-        for pos in sorted_global_snp_list:
+        for pos in cooper.cooper_sorted_snps:
+            # if snp not in range skip
             if not (snp_start <= pos <= snp_end): continue
-            if pos < rstart: continue
-            if pos > rend: break
             
-            if (pos not in snps) and (bisect.bisect(dels, pos) % 2 == 0):
-                if 'r' in global_snp_positions[pos]: global_snp_positions[pos]['r'].add(read_index)
-                else: global_snp_positions[pos]['r'] = { read_index }
-                global_snp_positions[pos]['cov'] += 1
+            if pos < read_data.start: continue
+            if pos > read_data.end: break
+            
+            if (pos not in read_data.snps) and (bisect.bisect(read_data.dels, pos) % 2 == 0):
+                cooper.cooper_snp_data[pos].ref.add(read_index)
+                cooper.cooper_snp_data[pos].cov += 1
 
 
 def inrepeat_ins(near_by_loci, ins_rpos, sorted_ins_rpos):
@@ -107,216 +116,208 @@ def subset_reads(cooper, read_indices: list, read_haplotags: list) -> tuple:
     return sorted(read_indices), list(read_haplotags)
 
 
+def process_flank_insertions(flank_insertions, ref_allele, ref_length, query, locus, locus_neighbors, insert_positions, is_left):
+    """
+    process insertions in flanks and adjusts locus boundaries if needed
+
+    :param flank_insertions: list of tuples with insertion reference position and query start and end positions
+    :param ref_allele: reference allele sequence for the locus
+    :param ref_length: reference allele length for the locus
+    :param query: read sequence for the locus
+    :param locus: locus object containing locus information
+    :param locus_neighbors: list of neighboring loci coordinates
+    :param insert_positions: set of reference positions of insertions across all loci
+    :param is_left: boolean value indicating if the flank is left or right
+    :return: adjusted query start or end position, set of pending insertions, counts of larger, partial and complete insertions
+    """
+    
+    ILR = PI = CI = 0
+    pending = set()
+    adj_pos = None
+
+    ref_75 = round(0.75 * ref_length)
+    ref_20 = round(0.2  * ref_length)
+
+    for fid, (ins_rpos, ins_qs, ins_qe) in enumerate(flank_insertions):
+        ins_len = ins_qe - ins_qs
+        if ins_len < locus.motif_length and ins_len < 10: continue
+        if ins_rpos in insert_positions:                  continue
+        if inrepeat_ins(locus_neighbors, ins_rpos, insert_positions): continue
+
+        insert          = query[ins_qs:ins_qe]
+        alignment, coords = stripSW(Inputs(ref_allele, insert), True)
+        align_len       = len(alignment)
+        matches         = alignment.count('|')
+        min_len         = min(ins_len, ref_length)
+
+        if align_len <= round(0.2 * min_len): continue
+
+        if align_len >= ref_75 and matches >= round(0.75 * align_len):
+            ILR  += 1
+            adj_pos = ins_qs if is_left else ins_qe
+            pending.update(ins[0] for ins in flank_insertions[fid:])
+            break
+
+        elif (matches   >= round(0.75 * align_len) and
+              align_len >= round(0.45 * ins_len)):
+            if is_left and coords[1] >= round(0.7 * ins_len):
+                adj_pos = ins_qs + coords[0]
+            elif not is_left and coords[0] <= round(0.3 * ins_len):
+                adj_pos = ins_qe + coords[1]
+            else:
+                continue
+            PI += 1 if align_len <= 0.5 * ins_len else 0
+            CI += 1 if align_len >  0.5 * ins_len else 0
+            pending.update(ins[0] for ins in flank_insertions[fid:])
+            break
+
+    return adj_pos, pending, ILR, PI, CI
+
+
+def assign_category(hap_status, read_haplotags, total_reads, hallele_counter):
+    """
+    assign category for the locus based on haplotype status and allele distribution
+
+    :param hap_status: boolean value indicating if haplotagging is available and informative
+    :param read_haplotags: list of haplotype tags for the reads
+    :param total_reads: total number of reads covering the locus
+    :param hallele_counter: dict with haplotype-wise allele length counts
+    :return: category (1 for homozygous, 2 for ambiguous, 3 for phased), homozygous allele length if applicable
+    """
+
+    if hap_status and (read_haplotags.count(None) / total_reads) <= 0.15:
+        return 3, None                          # phased
+
+    if len(hallele_counter) == 1:
+        return 1, next(iter(hallele_counter))   # homozygous
+
+    filtered = [a for a, c in hallele_counter.items() if c > 1]
+    if len(filtered) == 1 and hallele_counter[filtered[0]] / total_reads >= 0.75:
+        return 1, filtered[0]                   # homozygous
+
+    return 2, None                              # ambiguous
+
+
+
 def process_locus(cooper, locus_key, locus_neighbors):
     """
     process the reads for a locus
 
     :param cooper:        cooper object containing read data and args
     :param locus_key:     string in the format chrom:start-end
-    :param chrom:         chromosome name
-    :param locus_start:   start coordinate of the locus
-    :param locus_end:     end coordinate of the locus
-    :param neighboring_loci:  list of neighboring loci coordinates
-    :return: prev_reads, category, homozygous_allele, reads_of_homozygous, hallele_counter, skip_point, haplotypes, homozygous_alens
+    :param locus_neighbors:  list of neighboring loci coordinates
+    :return: category, homozygous_allele, reads_of_homozygous, hallele_counter, skip_point, haplotypes, homozygous_alens
     """
 
-    locus = cooper.cooper_loci_info[locus_key]
+    locus      = cooper.cooper_loci_info[locus_key]
+    locus_data = cooper.cooper_loci_data[locus_key]
 
     ref_allele = cooper.ref.fetch(cooper.chrom, locus.start, locus.end)
     ref_length = locus.length
     locus_neighbors.remove((locus.start, locus.end))
-    
-    read_haplotags = cooper.cooper_loci_data[locus_key].read_haplotags
-    category, haplotypes = [None, None]
-    is_homozygous = False
-    read_indices = cooper.cooper_loci_data[locus_key].reads   # the read indices which cover the locus
-    total_reads = len(read_indices)                           # total number of reads
 
-    pending_insertions = set()
+    read_indices   = locus_data.reads
+    read_haplotags = locus_data.read_haplotags
+    total_reads    = len(read_indices)
 
-    # remove if the locus has poor coverage
+    category, haplotypes   = None, None
+    homozygous_allele      = None
+    is_homozygous          = False
+    pending_insertions     = set()
+    ILR = PI = CI          = 0
+
+    # --- coverage check ---
     if total_reads < cooper.args.min_reads:
         cooper.prev_reads = set(read_indices)
-        return [category, is_homozygous, {}, 0, haplotypes, []]
-    elif total_reads > cooper.args.max_reads:
+        return [None, False, {}, 0, None, []]
+
+    if total_reads > cooper.args.max_reads:
         read_indices, read_haplotags = subset_reads(cooper, cooper.args.max_reads, read_indices, read_haplotags)
-    
+
     current_reads = set(read_indices)
-    old_reads = cooper.prev_reads - current_reads
-    new_reads = current_reads - cooper.prev_reads
+    new_reads     = current_reads - cooper.prev_reads
 
-    locus_read_allele = cooper.cooper_loci_data[locus_key].read_alens # extracting allele info from global_loci_variation
-    locus_read_seq = cooper.cooper_loci_data[locus_key].read_seqs
+    locus_read_allele = locus_data.read_alens
+    locus_read_seq    = locus_data.read_seqs
+    locus_read_meth   = locus_data.read_meth
 
-    ILR=0; PI=0; CI=0
+    upper_bound = cooper.args.meth_prob
+    lower_bound = 1 - upper_bound
 
+    # --- per read processing ---
     for read_index in read_indices:
+        query, relative_range, left_ins, right_ins, fqs, fqe = locus_read_seq[read_index]
+        adj_qs, adj_qe = relative_range
 
-        # relative_range is locus coordinates with respect to flank start
-        query, relative_range, left_flank_insertions, right_flank_insertions, flank_query_start, flank_query_end = locus_read_seq[read_index]
-    
-        relative_start, relative_end = relative_range[0], relative_range[1]
-        
-        # sort based on reference position
-        left_flank_insertions.sort(key=lambda x: x[0])
-        right_flank_insertions.sort(key=lambda x: x[0], reverse=True)
+        left_ins.sort( key=lambda x: x[0])
+        right_ins.sort(key=lambda x: x[0], reverse=True)
 
-        adj_locus_query_start, adj_locus_query_end = relative_range
+        # process flanks
+        new_qs, pend_l, ilr, pi, ci = process_flank_insertions(
+            left_ins,  ref_allele, ref_length, query, locus,
+            locus_neighbors, cooper.cooper_insert_positions, is_left=True)
+        new_qe, pend_r, ilr2, pi2, ci2 = process_flank_insertions(
+            right_ins, ref_allele, ref_length, query, locus,
+            locus_neighbors, cooper.cooper_insert_positions, is_left=False)
 
-        for lid, flank_insertion in enumerate(left_flank_insertions): # checking the insertion on left, whether its a repeats or not
-            ins_rpos, ins_query_start, ins_query_end = flank_insertion
-            insert_length = ins_query_end - ins_query_start
+        if new_qs is not None: adj_qs = new_qs
+        if new_qe is not None: adj_qe = new_qe
 
-            if insert_length < locus.motif_length:
-                if insert_length >= 10: pass # process if the the flank insert is larger than 10bp
-                else: continue
+        ILR += ilr + ilr2
+        PI  += pi  + pi2
+        CI  += ci  + ci2
+        pending_insertions |= pend_l | pend_r
 
-            # insertion already recorded from a neighboring repeat
-            if ins_rpos in cooper.cooper_insert_positions: continue
+        locus_read_seq[read_index][0]   = query[adj_qs:adj_qe]
+        locus_read_allele[read_index][0] = adj_qe - adj_qs
 
-            # if the insert falls in the neighoring repeats; continue
-            elif inrepeat_ins(locus_neighbors, ins_rpos, cooper.cooper_insert_positions): continue
+        # methylation
+        subseq_len    = fqe - fqs
+        adj_fqs       = fqs + adj_qs
+        adj_fqe       = fqe - (subseq_len - adj_qe)
+        read_mod_bases = cooper.cooper_read_data[read_index].methyl
 
+        meth_pos = []; meth_encode = []; meth_count = meth_qual = 0
+        for pos, raw_prob in read_mod_bases:
+            if not (adj_fqs <= pos <= adj_fqe): continue
+            prob = raw_prob / 255
+            meth_pos.append(pos - adj_fqs)
+            if lower_bound < prob < upper_bound:
+                meth_encode.append(-1)
             else:
-                insert = query[ins_query_start: ins_query_end]
-                alignment, align_coords = stripSW(Inputs(ref_allele, insert), True)
-                alignment_length = len(alignment)
-                matches = alignment.count('|')
-
-                # not even 20% of the short sequence is covered in the alignment; skip the insert
-                if alignment_length <= round(0.2*min([insert_length, ref_length])): continue
-
-                # atleast 75% of ref is aligned and has 75% matches; adjust the coordinate of the locus
-                elif (alignment_length >= round(0.75 * ref_length)) and \
-                     (matches >= round(0.75 * alignment_length)):
-                    ILR += 1
-                    adj_locus_query_start = ins_query_start
-                    for ins in left_flank_insertions[lid:]:
-                        pending_insertions.add(ins)
-                    break
-
-                # atleast 75% of the aligned sequence has matches and the alignment starts within the first 30% of the insert; adjust the coordinate of the locus
-                elif (matches >= round(0.75 * alignment_length)) and \
-                     (align_coords[1] >= round(0.7*insert_length)) and \
-                     (alignment_length >= round(0.45*insert_length)):
-                    if alignment_length <= 0.5*insert_length: PI += 1
-                    else: CI += 1
-                    adj_locus_query_start = ins_query_start + align_coords[0]
-                    for ins in left_flank_insertions[lid:]:
-                        pending_insertions.add(ins[0])
-                    break
-
-        for rid, flank_insertion in enumerate(right_flank_insertions):
-            ins_rpos, ins_query_start, ins_query_end = flank_insertion
-            ins_len = ins_query_end - ins_query_start
-
-            if ins_len < locus.motif_length:
-                if ins_len >= 10: pass
-                else: continue
-
-            if ins_rpos in cooper.cooper_insert_positions: continue
-
-            elif inrepeat_ins(locus_neighbors, ins_rpos, cooper.cooper_insert_positions): continue
-            else:
-                insert = query[ins_query_start: ins_query_end]
-                alignment, align_coords = stripSW(Inputs(ref_allele, insert), True)
-                alignment_length = len(alignment)
-                matches = alignment.count('|')
-
-                # not even 20% of the short sequence is covered in the alignment; skip the insert
-                if alignment_length <= round(0.2 * min([ins_len, ref_length])): continue
-
-                # atleast 75% of ref is aligned and has 75% matches; adjust the coordinate of the locus
-                elif (alignment_length >= round(0.75 * ref_length)) and \
-                     (matches >= round(0.75 * alignment_length)): # when insertion is larger then the ref seq
-                    ILR += 1
-                    adj_locus_query_end = ins_query_end
-                    for ins in right_flank_insertions[rid:]:
-                        pending_insertions.add(ins[0])
-                    break
-                elif (matches >= round(0.75 * alignment_length)) and \
-                     (align_coords[0] <= round(0.3 * ins_len)) and \
-                     (alignment_length >= round(0.45 * ins_len)):
-                    if alignment_length <= 0.5 * ins_len: PI += 1
-                    else: CI += 1
-                    adj_locus_query_end = ins_query_end + align_coords[1]
-                    for ins in right_flank_insertions[rid:]:
-                        pending_insertions.add(ins[0])
-                    break
-
-        locus_read_seq[read_index][0] = query[adj_locus_query_start:adj_locus_query_end] # over-writing the query seq with modified seq with/without ins
-        locus_read_allele[read_index][0] = adj_locus_query_end - adj_locus_query_start # over-writing the allele length after modification
-
-        # Extracting the methylation probability for each read at the locus
-        subseq_len = flank_query_end - flank_query_start
-        adj_flank_query_start  = flank_query_start + adj_locus_query_start #( adjusted_query_start - rep_range[0] ) # adjusting the start position with respect to original read coordinates by adding the diff(after local-alignment)
-        adj_flank_query_end    = flank_query_end - (subseq_len - adj_locus_query_end) # adjusting the start position with respect to original read coordinates by adding the diff(after local-alignment)
-
-        read_mod_bases  = cooper.cooper_read_data[read_index].methyl   # modified_bases data
-        locus_read_meth = cooper.cooper_loci_data[locus_key].read_meth # read_wise methylation data at the locus
-
-        # calculating average methylation probability at the locus for each read
-        meth_count = 0
-        meth_qual  = 0
-        meth_pos   = []
-        meth_encode = []
-        upper_bound = cooper.args.meth_prob
-        lower_bound = 1 - cooper.args.meth_prob
-        for each_pos in read_mod_bases:
-            if adj_flank_query_start <= each_pos[0] <= adj_flank_query_end:
-                repeat_base_pos = each_pos[0] - adj_flank_query_start # position of the CG wrt the repeat start
-                current_prob = each_pos[1]/255
-                if lower_bound < current_prob < upper_bound: # skip the MM if it is within the lower and upper bound; only store the extremies
-                    meth_pos.append(repeat_base_pos)
-                    meth_encode.append(-1) # to indicate skipped positions
-                    continue
-
                 meth_count += 1
-                if current_prob >= cooper.args.meth_prob:
-                    meth_pos.append(repeat_base_pos)
-                    meth_encode.append(1) # encoding the probability as binary
-                    meth_qual += 1
-                else:
-                    meth_pos.append(repeat_base_pos)
-                    meth_encode.append(0) # encoding the probability as binary
-            
-        if meth_count > 0:
-            avg_qual = meth_qual/meth_count
-            locus_read_meth[read_index] = (round(avg_qual, 2), meth_encode, meth_pos) # storing meth level, position meth prob encoding and meth occurrence positions
-        else:
-            locus_read_meth[read_index] = None                
+                is_meth     = prob >= upper_bound
+                meth_encode.append(int(is_meth))
+                meth_qual  += is_meth
 
-    if cooper.args.debug_mode: cooper.logger.debug(f"{locus_key};Larger_ins={ILR};Partial_ins={PI};Complete_ins={CI}")
+        locus_read_meth[read_index] = (
+            round(meth_qual / meth_count, 2), meth_encode, meth_pos
+        ) if meth_count else None
+
+    if cooper.args.debug_mode:
+        cooper.logger.debug(f"{locus_key};Larger_ins={ILR};Partial_ins={PI};Complete_ins={CI}")
+
     cooper.cooper_insert_positions |= pending_insertions
-    # recording the counts of each allele length across all reads
-    allele_counter = {};  hallele_counter = {}; alen_list = []
-    count_alleles(locus_key, read_indices, cooper.cooper_loci_data, allele_counter, hallele_counter, alen_list)
 
+    allele_counter = {}; hallele_counter = {}; alen_list = []
+    count_alleles(locus_key, read_indices, cooper.cooper_loci_data,
+                  allele_counter, hallele_counter, alen_list)
+
+    hap_status = False
     if not cooper.args.amplicon:
-        record_snps(read_indices, old_reads, new_reads, cooper, locus.start, locus.end)
+        record_ref_snps(cooper, new_reads, locus.start, locus.end)
 
-        hap_status = False
-        if cooper.args.haplotype:
-            haplotypes = ([read_indices[i] for i in [idx for idx,i in enumerate(read_haplotags) if i == 1]], [read_indices[i] for i in [idx for idx,i in enumerate(read_haplotags) if i == 2]])
-            hap_status = all([len(hap)>0 for hap in haplotypes])
-        
-        if hap_status & ((read_haplotags.count(None)/total_reads) <= 0.15): # processing haplotagged reads to write into vcf_heterozygous
-            category = 3 # phased
-        
-        elif len(hallele_counter) == 1:
-            category = 1 # homozygous
-            homozygous_allele = list(hallele_counter.keys())[0]
-        
-        else:
-            filtered_alleles = list(filter(lambda x: hallele_counter[x] > 1, hallele_counter.keys()))
-            if len(filtered_alleles) == 1 and hallele_counter[filtered_alleles[0]]/total_reads >= 0.75:
-                category = 1 # homozygous
-                homozygous_allele = filtered_alleles[0]
-                # reads_of_homozygous = [rindex for rindex in global_loci_variations[locus_key]['read_allele'] if homozygous_allele == global_loci_variations[locus_key]['read_allele'][rindex][0]]
-            else:
-                category = 2 # ambiguous
+        if cooper.args.haplotag:
+            hap1, hap2 = [], []
+            for read_idx, tag in zip(read_indices, read_haplotags):
+                if tag == 1: hap1.append(read_idx)
+                if tag == 2: hap2.append(read_idx)
+            haplotypes = (hap1, hap2)
+            hap_status = all(haplotypes)
+
+        category, homozygous_allele = assign_category(hap_status, read_haplotags, total_reads, hallele_counter)
     else:
-        category = 2 # ambiguous
-    
-    cooper.prev_reads = current_reads.copy()
+        category = 2
+
+    cooper.prev_reads = current_reads
     return [category, homozygous_allele, read_indices, hallele_counter, 10, haplotypes, alen_list]

@@ -66,13 +66,13 @@ def hetero_vcf_call(haplotypes, read_seqs, amplicon, motif_size, new_alen, conti
     return [True, 10]
 
     
-def length_genotyper(hallele_counter, global_loci_info, global_loci_variations, locus_key, read_indices, contig, locus_start, locus_end, ref, out, male, log_bool, decomp, read_seqs, amplicon):
+def length_genotyper(cooper, hallele_counter, locus_key, read_indices, contig, locus_start, locus_end, read_seqs):
 
     read_indices = sorted(read_indices)
     locus_read_allele = global_loci_variations[locus_key]['read_allele']
     unique_alen = list(hallele_counter.keys())
     motif_size = int(float(global_loci_info[locus_key][4])) # <= 10 # boolean for motif-decomp check
-    
+
 
     alen_with_1read = [item[0] for item in hallele_counter.items() if item[1]==1] # allele with 1 read contribution
 
@@ -192,13 +192,11 @@ def length_genotyper(hallele_counter, global_loci_info, global_loci_variations, 
     return [True, 10]
 
 
-def analyse_genotype(cooper, locus_key,contig, locus_key, global_loci_info,
+def analyse_genotype(cooper, locus_key, contig, locus_key, global_loci_info,
                      global_loci_variations, global_read_variations, global_snp_positions, hallele_counter,
                      ref, out, sorted_global_snp_list, snpQ, snpC, snpD, snpR, phasingR, read_indices, male, log_bool, decomp, amplicon, somatic):
             
     locus = cooper.cooper_loci_info[locus_key]
-
-
     status = False
 
     read_seqs = cooper.cooper_loci_data[locus_key].read_seqs
@@ -210,7 +208,8 @@ def analyse_genotype(cooper, locus_key,contig, locus_key, global_loci_info,
         return [state, skip_point]
     
     elif cooper.haploid: # for haploid and amplicon genotyping
-        state, skip_point = length_genotyper(hallele_counter, global_loci_info, global_loci_variations, locus_key, read_indices, contig, locus_start, locus_end, ref, out, male, log_bool, decomp, read_seqs, amplicon)
+        state, skip_point = length_genotyper(hallele_counter, global_loci_info, global_loci_variations, locus_key, read_indices, contig,
+                                             locus_start, locus_end, ref, out, male, log_bool, decomp, read_seqs, amplicon)
         return [state, skip_point]
 
     snp_positions = set()
