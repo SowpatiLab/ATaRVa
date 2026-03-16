@@ -7,6 +7,7 @@ CLUSTER_JOIN_HIGH     = 0.7    # min intersection to join a cluster
 CLUSTER_JOIN_LOW      = 0.05   # max intersection to confirm non-membership
 FAIL_RESULT           = [(), -1, 0, '', '', 0]
 
+
 def haplocluster_reads(snp_allele_reads, ordered_snps_by_coverage, read_indices, qual_threshold, num_snps,
                        snp_cov_threshold, phased_fraction_threshold):
     """
@@ -62,7 +63,7 @@ def haplocluster_reads(snp_allele_reads, ordered_snps_by_coverage, read_indices,
          phased_reads,
          snp_count) = merge_snpreadsets(sig_snp_data, ordered_sig_snps, read_indices, qual_threshold, num_snps,
                                         snp_cov_threshold, phased_fraction_threshold)
-
+        print(f'Final haplotypes: {final_haplotypes}')
         if success or tier_idx == 2:
             break
 

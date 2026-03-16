@@ -2,450 +2,457 @@ import numpy as np
 import pysam
 import logging
 
-from weakref import ref
+from pathlib import Path
 from tqdm import tqdm
 from sortedcontainers import SortedList
 from collections import deque
 
-from ATARVA.structures import ReadLocusInfo, LocusInfo, ReadInfo, LocusVariation, ExtendedRead
-from ATARVA.vcf_writer import vcf_writer, write_homozygous_call, vcf_heterozygous_writer, write_fail_call
-from ATARVA.operation_utils import record_homopolymers, clean_eqsign_readseq
-from ATARVA.cstag_utils import parse_cstag
-from ATARVA.cigar_utils import parse_cigar
+from ATARVA.structures        import ReadLocusInfo, LocusInfo, ReadInfo, LocusVariation, ExtendedRead
+from ATARVA.vcf_writer        import vcf_writer, write_homozygous_call, vcf_heterozygous_writer, write_fail_call
+from ATARVA.operation_utils   import record_homopolymers, clean_eqsign_readseq
+from ATARVA.cstag_utils       import parse_cstag
+from ATARVA.cigar_utils       import parse_cigar
 from ATARVA.sub_operation_utils import mm_tag_extract, calculate_methylation
-from ATARVA.locus_utils import process_locus
-from ATARVA.consensus import consensus_seq_poa
-from ATARVA.genotype_utils import analyse_genotype
-# , methylation_calc
+from ATARVA.locus_utils       import process_locus
+from ATARVA.consensus         import consensus_seq_poa
+from ATARVA.genotype_utils    import analyse_genotype
+
+
+SKIP_MESSAGES = {
+    0: 'Locus skipped — insignificant SNPs at read-split level.',
+    1: 'Locus skipped — low read contribution from significant SNPs.',
+    2: 'Locus skipped — insufficient reads in phased clusters.',
+    6: 'Locus skipped — wide allele distribution with single-read support.',
+}
 
 
 class Cooper:
     """
-    Object to independently handle genotyping a set of regions in a single bam
+    Independently handles genotyping a set of regions from a single BAM file.
     """
 
-    tbx = None
-    bam = None
-    ref = None
-    args = None
-    logger = None
-    thread_idx = None
-    sample_idx = None
-    karyotype = None
-    haploid = None
-    chrom = None
-    somatic = False
-
-    outfile = None; outhandle = None
-    logfile = None; loghandle = None
-
-    cooper_nloci = 0
-    range_nloci = []
-    disable_progress = False
-
-    cooper_snp_data = dict()       # tracking the encountered SNPs
-    cooper_read_data = dict()      # tracking the variations on each read
-    cooper_loci_data = dict()      # tracking the variation for each locus
-    cooper_loci_info = dict()   # saving the information of each loci
-
-    # tracking the loci
-    cooper_loci_ends = deque()
-    cooper_loci_keys = deque()
-    
-    cooper_read_ends    = deque()
-    cooper_read_indices = deque()
-    prev_reads = set()
-
-    cooper_sorted_snps = SortedList()
-    cooper_insert_positions = set() # tracking the repeat insertion positions globally to avoiding same insertion into multiple loci
-
-
-    def reinitialize_globals(self):
-        self.cooper_snp_data = dict()       # tracking the encountered SNPs
-        self.cooper_read_data = dict()      # tracking the variations on each read
-        self.cooper_loci_data = dict()      # tracking the variation for each locus
-        self.cooper_loci_info = dict()      # saving the information of each loci
-
-        # tracking the loci
-        self.cooper_loci_ends = deque()
-        self.cooper_loci_keys = deque()
-
-        self.cooper_read_ends    = deque()
-        self.cooper_read_indices = deque()
-        self.prev_reads = set()
-
-        self.cooper_sorted_snps = SortedList()
-        self.cooper_insert_positions = set()
-
-        self.chrom = None
-
-
-    def __init__(self, bam_file, region_ranges, args, out_file, sample_idx, thread_idx):
+    def __init__(self, bam_file: str, region_ranges: list,
+                 args, out_file: str,
+                 sample_idx: int, thread_idx: int):
         """
-        initialize cooper object
-        :param bam_file: path to the bam file
-        :param region_ranges: list of tuples of the form (chrom, (start1, end1), (start2, end2))
-        :param args: arguments from the command line
-        :param out_file: path to the output file
-        :param sample_idx: index of the sample in the bam list
-        :param thread_idx: index of the thread for parallel processing
+        initialise Cooper and run genotyping.
+
+        :param bam_file:      path to BAM/CRAM/SAM file
+        :param region_ranges: list of (chrom, (start1,end1), (start2,end2)) tuples
+        :param args:          parsed command-line arguments
+        :param out_file:      output file base path
+        :param sample_idx:    index of sample in BAM list
+        :param thread_idx:    thread index (-1 = single-thread mode)
         """
 
         self.tbx = pysam.Tabixfile(args.regions)
         self.bam = pysam.AlignmentFile(bam_file, args.format)
         self.ref = pysam.FastaFile(args.fasta)
 
-        self.args = args
+        self.args       = args
         self.sample_idx = sample_idx
         self.thread_idx = thread_idx
-        self.karyotype = args.karyotype[sample_idx]
+        self.karyotype  = args.karyotype[sample_idx]
+        self.chrom      = None
+        self.haploid    = False
+        self.somatic    = False
+        self.logger     = None
 
-        if thread_idx == -1 or thread_idx == 0:
+        # --- output paths ---
+        is_primary = thread_idx in (-1, 0)
+        if is_primary:
             self.outfile = f'{out_file}.vcf'
             self.logfile = f'{out_file}_debug.log'
         else:
-            idx = args.outfile.rfind('/')
-            hid_outfile = args.outfile[:idx+1] + '.' + args.outfile[idx+1:]
-            self.outfile = f'{hid_outfile}_thread_{thread_idx}.vcf'
-            self.logfile = f'{hid_outfile}_debug_{thread_idx}.log'
+            hidden = _hidden_path(out_file)
+            self.outfile = f'{hidden}_thread_{thread_idx}.vcf'
+            self.logfile = f'{hidden}_debug_{thread_idx}.log'
 
         self.outhandle = open(self.outfile, 'w')
 
-        if thread_idx == -1 or thread_idx == 0:
-            vcf_writer(self.outhandle, self.bam, bam_file.split("/")[-1].split('.')[0])
-        
-        if args.debug_mode:
-            with open(self.logfile , 'w'): pass
-            logging.basicConfig(filename=self.logfile, level=logging.DEBUG,
-                                format='%(levelname)s - %(message)s')
-            self.logger = logging.getLogger("ATaRVa_logger")
+        if is_primary:
+            vcf_writer(self.outhandle, self.bam,
+                       Path(bam_file).stem)
 
-        if args.amplicon: args.haplotag = None
+        # --- logging ---
+        if args.debug_mode:
+            Path(self.logfile).touch()
+            logging.basicConfig(
+                filename = self.logfile,
+                level    = logging.DEBUG,
+                format   = '%(levelname)s - %(message)s'
+            )
+            self.logger = logging.getLogger('ATaRVa_logger')
+
+        if args.amplicon:
+            args.haplotag = None
 
         self.disable_progress = thread_idx != -1
 
-        self.range_nloci = []
+        # --- count loci per region ---
+        self.cooper_nloci  = 0
+        self.range_nloci   = []
+
         for region_range in region_ranges:
             chrom, first_coords, last_coords = region_range
-
-            range_nloci = 0
+            count = 0
             for row in self.tbx.fetch(chrom, first_coords[0], last_coords[1]):
-                row = row.split('\t')
-                row_start, row_end = int(row[1]), int(row[2])
-                if range_nloci == 0 and row_start != first_coords[0]: continue
-                range_nloci += 1
-                if last_coords[0] == row_start:
-                    self.range_nloci.append(range_nloci)
-                    self.cooper_nloci += 1
+                fields     = row.split('\t')
+                row_start  = int(fields[1])
+                if count == 0 and row_start != first_coords[0]:
+                    continue
+                count += 1
+                if int(fields[1]) == last_coords[0]:
                     break
+            self.range_nloci.append(count)
+            self.cooper_nloci += count
 
-        self.progress_bar = tqdm(total= self.cooper_nloci, disable = self.disable_progress,
-                                 desc="Processing ", ascii="_>", ncols=75,
-                                 bar_format="{l_bar}{bar}{n_fmt}/{total_fmt}")
+        # --- progress bar ---
+        self.progress_bar = tqdm(
+            total      = self.cooper_nloci,
+            disable    = self.disable_progress,
+            desc       = 'Processing ',
+            ascii      = '_>',
+            ncols      = 75,
+            bar_format = '{l_bar}{bar}{n_fmt}/{total_fmt}'
+        )
+
+        # --- run genotyping ---
         for cidx, region_range in enumerate(region_ranges):
-            print(f"Processing region {region_range} in sample {bam_file.split('/')[-1]} and thread {thread_idx}\n\n")
-            self.reinitialize_globals()
+            chrom = region_range[0]
+            bam_stem = Path(bam_file).stem
+            print(f'Processing region {region_range} — sample {bam_stem} — thread {thread_idx}\n')
+            self._reinitialise()
             self.cooper_readmode(region_range, cidx)
 
+    # --- state management ---
 
-    def cooper_readmode(self, region_range, cidx):
+    def _reinitialise(self):
+        """Reset per-region tracking state."""
+        self.cooper_snp_data         = {}
+        self.cooper_read_data        = {}
+        self.cooper_loci_data        = {}
+        self.cooper_loci_info        = {}
+        self.cooper_loci_ends        = deque()
+        self.cooper_loci_keys        = deque()
+        self.cooper_read_ends        = deque()
+        self.cooper_read_indices     = deque()
+        self.prev_reads              = set()
+        self.cooper_sorted_snps      = SortedList()
+        self.cooper_insert_positions = set()
+
+    # --- read processing ---
+
+    def cooper_readmode(self, region_range: tuple, cidx: int):
         """
-        Genotyping range of loci (limited to a chromosome) by looping through reads. 
+        Genotype a range of loci by streaming through reads.
 
-        :param region_range: tuple of the form (chrom, (start1, end1), (start2, end2))
-        :param cidx: index of the region range in the list of region ranges
+        :param region_range: (chrom, (start1,end1), (start2,end2))
+        :param cidx:         index of this region in region_ranges
         """
-
         chrom, first_coords, last_coords = region_range
-        self.chrom = chrom
-        self.haploid = (chrom in {'chrX', 'chrY', 'X', 'Y'}) and self.karyotype
-        region_range_start = first_coords[0]
-        region_range_end = last_coords[1]
+        self.chrom   = chrom
+        self.haploid = chrom in {'chrX', 'chrY', 'X', 'Y'} and self.karyotype
 
-        genotyped_loci_count = 0
+        region_start = first_coords[0]
+        region_end   = last_coords[1]
+
+        genotyped_count = 0
+        read_index      = 0
 
         if not self.disable_progress:
-            tqdm.write(f"> {chrom} {region_range_start} {region_range_end} Total loci =  {self.range_nloci[cidx]}")
+            tqdm.write(f'> {chrom} {region_start} {region_end} '
+                       f'Total loci = {self.range_nloci[cidx]}')
 
-        read_index = 0      # custom index for reads
+        for raw_read in self.bam.fetch(chrom, region_start, region_end):
 
-        # try realigning the read with the sofclips included
-
-        for read in self.bam.fetch(chrom, region_range_start, region_range_end):
-
-            # skip read with low mapping quality
-            if read.mapping_quality < self.args.map_qual:
+            if raw_read.mapping_quality < self.args.map_qual:
                 continue
 
-            read = ExtendedRead.from_read(read)
+            read = ExtendedRead.from_read(raw_read)
 
+            # --- flush completed loci ---
             while self.cooper_loci_ends and read.ref_start > self.cooper_loci_ends[0]:
-                genotype_status = self.locus_processor()
-                genotyped_loci_count += genotype_status
+                genotyped_count  += self.locus_processor()
                 self.progress_bar.update(1)
 
-            while self.cooper_read_ends and read.ref_start > self.cooper_read_ends[0]:
-                # if the read is beyond the end of the first read that was tracked
-                if self.cooper_loci_ends and self.cooper_read_ends[0] > self.cooper_loci_ends[0]:
-                    # if the initial read useful for the first locus being tracked then it is retained
+            # --- evict stale reads ---
+            while self.cooper_read_ends:
+                if read.ref_start <= self.cooper_read_ends[0]:
+                    break
+                if (self.cooper_loci_ends and
+                        self.cooper_read_ends[0] > self.cooper_loci_ends[0]):
                     break
 
-                else:
-                    # remove the read information if the current read is beyond the first read and the locus
-                    read_end = self.cooper_read_ends.popleft()
-                    rindex   = self.cooper_read_indices.popleft()
-                    if rindex in self.cooper_read_data:
-                        for pos in self.cooper_read_data[rindex].snps:
-                            if pos in self.cooper_snp_data:
-                                self.cooper_snp_data[pos].cov -= 1
-                                if self.cooper_snp_data[pos].cov == 0:
-                                    del self.cooper_snp_data[pos]
-                                    self.cooper_sorted_snps.remove(pos)
-                        del self.cooper_read_data[rindex]
-                        self.prev_reads.discard(rindex)
+                read_end = self.cooper_read_ends.popleft()
+                rindex   = self.cooper_read_indices.popleft()
 
-                    del_ins_pos_idx = 0
-                    list_rpos = sorted(self.cooper_insert_positions)
-                    for i in list_rpos:
-                        del_ins_pos_idx+=1
-                        if i > read_end: break
-                    del list_rpos[:del_ins_pos_idx]
-                    self.cooper_insert_positions = set(list_rpos)                    
+                if rindex in self.cooper_read_data:
+                    for pos in self.cooper_read_data[rindex].snps:
+                        if pos in self.cooper_snp_data:
+                            self.cooper_snp_data[pos].cov -= 1
+                            if self.cooper_snp_data[pos].cov == 0:
+                                del self.cooper_snp_data[pos]
+                                self.cooper_sorted_snps.remove(pos)
+                    del self.cooper_read_data[rindex]
+                    self.prev_reads.discard(rindex)
 
+                # evict expired insert positions
+                self.cooper_insert_positions = {
+                    p for p in self.cooper_insert_positions if p > read_end
+                }
 
-            # if the read is beyond the last locus in the bed file the loop stops
-            if read.ref_start > region_range_end:
+            # --- region end reached ---
+            if read.ref_start > region_end:
                 while self.cooper_loci_ends:
-                    genotype_status = self.locus_processor()
-                    genotyped_loci_count += genotype_status
+                    genotyped_count  += self.locus_processor()
                     self.progress_bar.update(1)
                 break
 
+            # --- assign loci to read ---
             for row in self.tbx.fetch(chrom, read.ref_start, read.ref_end):
+                fields      = row.split('\t')
+                locus_start = int(fields[1])
+                locus_end   = int(fields[2])
+                locus_len   = locus_end - locus_start
 
-                # adjust read start and end based on soft and hard clippings
-                # soft and hard clippings do not consume the reference bases
+                locus_name  = fields[5] if len(fields) > 5 else None
 
-                row = row.split('\t')
-                locus_start = int(row[1])
-                locus_end = int(row[2])
-                locus_len = locus_end - locus_start
-
-                # this just stores the loci encountered in the read
                 read.loci.append((locus_start, locus_end))
 
-                if (locus_start >= first_coords[0]) and (locus_end <= last_coords[1]):
-                    if locus_start == first_coords[0]:
-                        if locus_end == first_coords[1]: pass
-                        else: continue
-                    pass
-                elif locus_start < first_coords[0]:
+                # region boundary checks
+                if locus_start < first_coords[0]:
                     continue
-                elif locus_start >= last_coords[0]: break
-
-                passed_loci = False # if the loci passed in normal or amplicon mode, then write it in global variables
-
-                # if only the read completely covers the repeat
-                if read.ref_start <= locus_start and locus_end <= read.ref_end:
-                    passed_loci = True
-
-                    left_flank  = min(self.args.flank, locus_start - read.ref_start)
-                    right_flank = min(self.args.flank, read.ref_end - locus_end)
-
-                    read.left_flanks.append(left_flank)
-                    read.right_flanks.append(right_flank)
-
-                    # NOTE: storing the locus coordinates with flanks included
-                    read.loci_coords.append((locus_start - left_flank, locus_end + right_flank))
-
-                if passed_loci:
-                    locus_key = f'{chrom}:{locus_start}-{locus_end}'
-                    read.loci_keys.append(locus_key)
-                    read.loci_data[locus_key] = ReadLocusInfo(halen=0, alen=0, rlen = locus_len, seq=[])
-
-                    if locus_key not in self.cooper_loci_data:
-                        self.cooper_loci_data[locus_key] = LocusVariation()
-                        self.cooper_loci_info[locus_key] = LocusInfo(chrom=chrom, start=locus_start, end=locus_end, motif=row[3])
-
-                        # adding the locus key when it is first encountered
-                        self.cooper_loci_ends.append(locus_end)
-                        self.cooper_loci_keys.append(locus_key)
-
-
-            # if no repeats are covered by the read
-            if len(read.loci_coords) == 0: continue
-
-            read_index += 1
-            read.index = read_index
-
-            tmp_qpos = 0
-            for op, length in read.cigartuples:
-                if (op == 0) or (op == 7):
-                    tmp_seq = read.sequence[tmp_qpos :tmp_qpos + length] 
+                if locus_start >= last_coords[0]:
                     break
-                elif (op == 1) or (op == 4) or (op == 8): tmp_qpos += length 
-                
-            if '=' in tmp_seq:
-                read_sequence = clean_eqsign_readseq(read.chrom, read.ref_start, read.cigartuples, read_sequence, ref)
+                if not (first_coords[0] <= locus_start and locus_end <= last_coords[1]):
+                    continue
+
+                # read must fully span the locus
+                if not (read.ref_start <= locus_start and locus_end <= read.ref_end):
+                    continue
+
+                left_flank  = min(self.args.flank, locus_start - read.ref_start)
+                right_flank = min(self.args.flank, read.ref_end  - locus_end)
+
+                read.left_flanks.append(left_flank)
+                read.right_flanks.append(right_flank)
+                read.loci_coords.append((locus_start - left_flank,
+                                         locus_end   + right_flank))
+
+                locus_key = f'{chrom}:{locus_start}-{locus_end}'
+                read.loci_keys.append(locus_key)
+                read.loci_data[locus_key] = ReadLocusInfo(
+                    halen=0, alen=0, rlen=locus_len, seq=[])
+
+                if locus_key not in self.cooper_loci_data:
+                    self.cooper_loci_data[locus_key] = LocusVariation()
+                    self.cooper_loci_info[locus_key] = LocusInfo(chrom=chrom, start=locus_start,
+                                                                 end=locus_end, motif=fields[3],
+                                                                 name=locus_name)
+                    self.cooper_loci_ends.append(locus_end)
+                    self.cooper_loci_keys.append(locus_key)
+
+            if not read.loci_coords:
+                continue
+
+            # --- EQX normalisation ---
+            read_sequence = read.sequence
+            for op, length in read.cigartuples:
+                if op in (0, 7):
+                    break
+                if op in (1, 4, 8):
+                    pass
+
+            if '=' in read_sequence:
+                read_sequence = clean_eqsign_readseq(read.chrom, read.ref_start, read.cigartuples,
+                                                     read_sequence, self.ref)
+
+            # --- register read ---
+            read_index   += 1
+            read.index    = read_index
 
             self.cooper_read_ends.append(read.ref_end)
             self.cooper_read_indices.append(read.index)
-            self.cooper_read_data[read.index] = ReadInfo(start = read.ref_start,
-                                                         end = read.ref_end, snps=set(),
-                                                         dels = [], methylation = [],
-                                                         qual = read.mean_qual,
-                                                         left_flank = read.left_flanks,
-                                                         right_flank = read.right_flanks)
+            self.cooper_read_data[read.index] = ReadInfo(
+                start       = read.ref_start,
+                end         = read.ref_end,
+                snps        = set(),
+                dels        = [],
+                methylation = [],
+                qual        = read.mean_qual,
+                left_flank  = read.left_flanks,
+                right_flank = read.right_flanks
+            )
 
-            if self.args.haplotag:
-                read.haplotag[0] = read.has_tag(self.args.haplotag)
-            if read.haplotag[0]: read.haplotag[1] = read.get_tag(self.args.haplotag)
+            # --- haplotag extraction ---
+            read.haplotag = [False, None]
+            if self.args.haplotag and read.has_tag(self.args.haplotag):
+                read.haplotag = [True, read.get_tag(self.args.haplotag)]
+
+            # --- methylation extraction ---
+            mod_bases = (list(read.modified_bases.items()) if read.modified_bases else [])
 
             if read.has_tag('cs'):
-                read_modified_bases = list(read.modified_bases.items()) if read.modified_bases is not None else []
-                if len(read_modified_bases)>0:
-                    for mods in read_modified_bases:
-                        if (mods[0][0]=='C') and (mods[0][2]=='m'):
-                            mm_tag_extract(read, mods[1]) # last arg is bool value for strand state; forward = True, reverse = False
-                            self.cooper_read_data[read_index].methylation = read.methylation_calls
-                            break
-            else :
+                parse_cstag(self, read)
+            else:
                 parse_cigar(self, read)
-                read_modified_bases = list(read.modified_bases.items()) if read.modified_bases is not None else []
-                if len(read_modified_bases) > 0:
-                    for mods in read_modified_bases:
-                        if (mods[0][0]=='C') and (mods[0][2]=='m'):
-                            mm_tag_extract(read, mods[1]) # last arg is bool value for strand state; forward = True, reverse = False
-                            self.cooper_read_data[read_index].methylation = read.methylation_calls
-                            break
 
-            for locus_key in read.loci_data:
+            for mods in mod_bases:
+                if mods[0][0] == 'C' and mods[0][2] == 'm':
+                    mm_tag_extract(read, mods[1])
+                    self.cooper_read_data[read_index].methylation = \
+                        read.methylation_calls
+                    break
 
-                if self.args.amplicon:
-                    if not read.loci_data[locus_key].seq:
-                        continue
+            # --- populate loci data ---
+            for locus_key, locus_read_info in read.loci_data.items():
+                if self.args.amplicon and not locus_read_info.seq:
+                    continue
+                ldata = self.cooper_loci_data[locus_key]
+                ldata.reads.append(read.index)
+                ldata.read_alens[read.index]    = [locus_read_info.halen,
+                                                   locus_read_info.alen]
+                ldata.read_seqs[read.index]     = locus_read_info.seq
+                ldata.read_haplotags.append(read.haplotag[1])
 
-                self.cooper_loci_data[locus_key].reads.append(read.index)
-                self.cooper_loci_data[locus_key].read_alens[read.index] = [read.loci_data[locus_key].halen, read.loci_data[locus_key].alen]
-                self.cooper_loci_data[locus_key].read_seqs[read.index] = read.loci_data[locus_key].seq
-                self.cooper_loci_data[locus_key].read_haplotags.append(read.haplotag[1])
-
+        # --- flush remaining loci ---
         while self.cooper_loci_ends:
-            genotype_status = self.locus_processor()
-            genotyped_loci_count += genotype_status
+            genotyped_count  += self.locus_processor()
             self.progress_bar.update(1)
-                
-        # if not dwrite: tqdm.write(f'\nTotal genotyped loci = {genotyped_loci_count} out of {tot_loci_list[cidx]} in {Chrom} {first_coords[0]}-{last_coords[1]}\n')
-    
-        self.reinitialize_globals() # reinitialize the global variables for the next region
+
+        self._reinitialise()
         self.bam.close()
         self.ref.close()
         self.tbx.close()
-        self.out.close()
+        self.outhandle.close()
 
 
     def locus_processor(self):
         """
-        Genotypes loci based on the read data collected
+        Genotype the next queued locus using collected read data.
+
+        :return: 1 if locus was successfully genotyped, 0 otherwise
         """
-
-        genotyped_loci = 0
-        popped    = self.cooper_loci_ends.popleft()
-        
+        self.cooper_loci_ends.popleft()
         locus_key = self.cooper_loci_keys.popleft()
-        locus = self.cooper_loci_info[locus_key]
+        locus     = self.cooper_loci_info[locus_key]
 
-        neighbors = []
-        for row in self.tbx.fetch(self.chrom, locus.start - self.args.flank, locus.end + self.args.flank):
-            row = row.split('\t')
-            neighbors.append( ( int(row[1]), int(row[2]) ) )
+        if locus_key not in self.cooper_loci_data:
+            print(f'No reads for locus {locus_key} — skipping.')
+            return 0
 
-        if locus_key in self.cooper_loci_data:
+        # --- fetch neighbouring loci ---
+        neighbours = [
+            (int(r.split('\t')[1]), int(r.split('\t')[2]))
+            for r in self.tbx.fetch(self.chrom, locus.start - self.args.flank, locus.end + self.args.flank)
+        ]
 
-            if len(self.cooper_sorted_snps) == 0:
-                for snp_pos in self.cooper_snp_data.keys():
-                    self.cooper_sorted_snps.add(snp_pos)
+        # --- ensure sorted SNPs are populated ---
+        if not self.cooper_sorted_snps:
+            for pos in self.cooper_snp_data:
+                self.cooper_sorted_snps.add(pos)
 
-            # [category, homozygous_allele, read_indices, hallele_counter, 10, haplotypes, allele_lengths]
-            category, homozygous_allele, read_indices, hallele_counter, skip_point, haplotypes, allele_lengths = process_locus(self, locus_key, neighbors)
-            read_seqs = self.cooper_loci_data[locus_key].read_seqs
+        # --- process locus ---
+        (category, homozygous_allele, read_indices,
+         hallele_counter, skip_point,
+         haplotypes, allele_lengths) = process_locus(self, locus_key, neighbours)
 
-            if category == 1:
-                ALT = '<DEL>'
-                if homozygous_allele != locus.length:
-                    homozygous_allele = 0
-                    seqs = [seq for seq in [read_seqs[id][0] for id in read_indices] if seq != '']
-                    if seqs:
-                        ALT = consensus_seq_poa(seqs)
-                        homozygous_allele = len(ALT)
-                else: ALT = '.'
+        read_seqs     = self.cooper_loci_data[locus_key].read_seqs
+        genotyped     = 0
 
-                lower, upper = [round(x) for x in np.percentile(np.array(allele_lengths), [2.5, 97.5])]
+        print(category)
+        # --- category 1 — homozygous ---
+        if category == 1:
+            seqs = [read_seqs[rid][0] for rid in read_indices if read_seqs[rid][0]]
 
-                if ALT != '.':
-                    meth_info = calculate_methylation(read_indices, self.cooper_loci_data[locus_key].read_methylation, ALT)
-                else:
-                    meth_info = calculate_methylation(read_indices, self.cooper_loci_data[locus_key].read_methylation, self.ref.fetch(locus.chrom, locus.start, locus.end))
-
-                if self.haploid:
-                    allele_range = f'{lower}-{upper}'
-                else:
-                    allele_range = f'{lower}-{upper},{lower}-{upper}'
-
-                write_homozygous_call(self, locus_key, homozygous_allele, hallele_counter, allele_range, meth_info, '.', ALT, len(read_indices), len(read_indices))
-                genotyped_loci += 1
-            elif category == 2:
-                state, skip_point = analyse_genotype(self, locus_key, hallele_counter, read_indices)
-                if state: genotyped_loci += 1
-                else:
-                    skip_messages = {
-                        0: 'Locus skipped due to insignificant snps at the level of read split.',
-                        1: 'Locus skipped due to less read contribution of Significant snps.',
-                        2: 'Locus skipped due to less read contribution in the phased clusters.',
-                        6: f'Locus {locus_key} skipped due to wide distribution of alleles with one read supporting to it.',
-                    }
-                    tqdm.write(skip_messages.get(skip_point, 'Locus skipped due to less number of significant snps based on user\'s parameter.'))
-            elif category == 3:
-                genotypes = []
-                allele_count = {}
-                ALT_seqs = []
-                phased_read = []
-                alen_list = []
-                meth_info = []
-                for hap_reads in haplotypes:
-                    phased_read.append(len(hap_reads))
-                    seqs = [seq for seq in [read_seqs[read_id][0] for read_id in hap_reads] if seq!='']
-                    alen_list.append([len(read_seqs[read_id][0]) for read_id in hap_reads])
-                    if len(seqs)>0:
-                        ALT = consensus_seq_poa(seqs)
-                        allele_length = len(ALT)
-                    else:
-                        ALT = '<DEL>'
-                        allele_length = 0
-
-                    ALT_seqs.append(ALT)
-                    genotypes.append(allele_length)
-
-                    if allele_length not in allele_count:
-                        allele_count[allele_length] = len(hap_reads)
-                    else:
-                        allele_count[str(allele_length)] = len(hap_reads)
-
-                    # meth_info.append(methylation_calc(hap_reads, global_loci_variations, locus_key))
-
-                lower1,upper1 = np.percentile(alen_list[0], [2.5, 97.5])
-                lower2,upper2 = np.percentile(alen_list[1], [2.5, 97.5])
-                allele_range = f'{lower1}-{upper1},{lower2}-{upper2}'
-
-                vcf_heterozygous_writer(Chrom, genotypes, lstart, lend, allele_count, len(reads_of_homozygous), global_loci_info,
-                                        ref, out, '.', phased_read, 0, ALT_seqs, log_bool, 'HP', decomp, hallele_counter,
-                                        allele_range, [None], meth_info)
-                genotyped_loci += 1
+            if homozygous_allele != locus.length and seqs:
+                ALT              = consensus_seq_poa(seqs)
+                homozygous_allele = len(ALT)
             else:
-                if skip_point == 0:
-                    write_fail_call(self, locus_key, skip_point)
+                ALT = '.' if homozygous_allele == locus.length else '<DEL>'
 
-            del self.cooper_loci_data[locus_key]
-            del self.cooper_loci_info[locus_key]
+            lower, upper = (round(x) for x in np.percentile(np.array(allele_lengths), [2.5, 97.5]))
 
-        return genotyped_loci
+            ref_seq   = self.ref.fetch(locus.chrom, locus.start, locus.end)
+            meth_src  = ALT if ALT != '.' else ref_seq
+            meth_info = calculate_methylation(read_indices, self.cooper_loci_data[locus_key].read_methylation, meth_src)
+
+            allele_range = f'{lower}-{upper}' if self.haploid else f'{lower}-{upper},{lower}-{upper}'
+
+            write_homozygous_call(self, locus_key, homozygous_allele, hallele_counter, allele_range, meth_info,
+                                  '.', ALT, len(read_indices), len(read_indices))
+            genotyped = 1
+
+        # --- category 2 — ambiguous ---
+        elif category == 2:
+            state, skip_point = analyse_genotype(self, locus_key, hallele_counter, read_indices)
+            if state:
+                genotyped = 1
+            else:
+                msg = SKIP_MESSAGES.get(
+                    skip_point,
+                    "Locus skipped — insufficient significant SNPs.")
+                tqdm.write(msg)
+
+        # --- category 3 — phased / heterozygous ---
+        elif category == 3:
+            genotypes    = []
+            allele_count = {}
+            ALT_seqs     = []
+            phased_reads = []
+            alen_lists   = []
+            meth_info    = []
+
+            for hap_reads in haplotypes:
+                phased_reads.append(len(hap_reads))
+                seqs      = [read_seqs[rid][0] for rid in hap_reads
+                             if read_seqs[rid][0]]
+                alen_list = [len(read_seqs[rid][0]) for rid in hap_reads]
+                alen_lists.append(alen_list)
+
+                if seqs:
+                    ALT           = consensus_seq_poa(seqs)
+                    allele_length = len(ALT)
+                else:
+                    ALT           = '<DEL>'
+                    allele_length = 0
+
+                ALT_seqs.append(ALT)
+                genotypes.append(allele_length)
+                key = allele_length if allele_length not in allele_count \
+                      else str(allele_length)
+                allele_count[key] = len(hap_reads)
+
+            (l1, u1) = np.percentile(alen_lists[0], [2.5, 97.5])
+            (l2, u2) = np.percentile(alen_lists[1], [2.5, 97.5])
+            allele_range = f'{l1}-{u1},{l2}-{u2}'
+
+            vcf_heterozygous_writer(
+                self.chrom, genotypes,
+                locus.start, locus.end,
+                allele_count, len(read_indices),
+                self.cooper_loci_info, self.ref,
+                self.outhandle, '.', phased_reads,
+                0, ALT_seqs, self.args.debug_mode,
+                'HP', '.', hallele_counter,
+                allele_range, [None], meth_info
+            )
+            genotyped = 1
+
+        # --- no category — write fail if needed ---
+        else:
+            if skip_point == 0:
+                write_fail_call(self, locus_key, skip_point)
+
+        # --- cleanup ---
+        del self.cooper_loci_data[locus_key]
+        del self.cooper_loci_info[locus_key]
+
+        return genotyped
+
+
+def _hidden_path(out_file: str) -> str:
+    """Return a hidden-file-prefixed path for thread output files."""
+    path = Path(out_file)
+    return str(path.parent / f'.{path.name}')
