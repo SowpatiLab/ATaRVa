@@ -136,7 +136,6 @@ def process_flank_insertions(flank_insertions, ref_allele, ref_length, query, lo
     adj_pos = None
 
     ref_75 = round(0.75 * ref_length)
-    ref_20 = round(0.2  * ref_length)
 
     for fid, (ins_rpos, ins_qs, ins_qe) in enumerate(flank_insertions):
         ins_len = ins_qe - ins_qs
@@ -229,7 +228,7 @@ def process_locus(cooper, locus_key, locus_neighbors):
     # --- coverage check ---
     if total_reads < cooper.args.min_reads:
         cooper.prev_reads = set(read_indices)
-        return [None, False, {}, 0, None, []]
+        return [None, False, {}, {}, 0, None, []]
 
     if total_reads > cooper.args.max_reads:
         read_indices, read_haplotags = subset_reads(cooper, cooper.args.max_reads, read_indices, read_haplotags)
@@ -237,28 +236,23 @@ def process_locus(cooper, locus_key, locus_neighbors):
     current_reads = set(read_indices)
     new_reads     = current_reads - cooper.prev_reads
 
-    locus_read_allele = locus_data.read_alens
-    locus_read_seq    = locus_data.read_seqs
-    locus_read_meth   = locus_data.read_meth
-
     upper_bound = cooper.args.meth_prob
     lower_bound = 1 - upper_bound
 
     # --- per read processing ---
     for read_index in read_indices:
-        query, relative_range, left_ins, right_ins, fqs, fqe = locus_read_seq[read_index]
-        adj_qs, adj_qe = relative_range
+        read_data = cooper.cooper_read_data[read_index]
+        query, relative_qrange, left_ins, right_ins, fqs, fqe = locus_data.read_seqs[read_index]
+        adj_qs, adj_qe = relative_qrange
 
         left_ins.sort( key=lambda x: x[0])
         right_ins.sort(key=lambda x: x[0], reverse=True)
 
         # process flanks
-        new_qs, pend_l, ilr, pi, ci = process_flank_insertions(
-            left_ins,  ref_allele, ref_length, query, locus,
-            locus_neighbors, cooper.cooper_insert_positions, is_left=True)
-        new_qe, pend_r, ilr2, pi2, ci2 = process_flank_insertions(
-            right_ins, ref_allele, ref_length, query, locus,
-            locus_neighbors, cooper.cooper_insert_positions, is_left=False)
+        new_qs, pend_l, ilr, pi, ci    = process_flank_insertions(left_ins,  ref_allele, ref_length, query, locus,
+                                                                  locus_neighbors, cooper.cooper_insert_positions, is_left=True)
+        new_qe, pend_r, ilr2, pi2, ci2 = process_flank_insertions(right_ins, ref_allele, ref_length, query, locus,
+                                                                  locus_neighbors, cooper.cooper_insert_positions, is_left=False)
 
         if new_qs is not None: adj_qs = new_qs
         if new_qe is not None: adj_qe = new_qe
@@ -268,14 +262,14 @@ def process_locus(cooper, locus_key, locus_neighbors):
         CI  += ci  + ci2
         pending_insertions |= pend_l | pend_r
 
-        locus_read_seq[read_index][0]   = query[adj_qs:adj_qe]
-        locus_read_allele[read_index][0] = adj_qe - adj_qs
+        locus_data.read_seqs[read_index][0]   = query[adj_qs:adj_qe]
+        locus_data.read_alens[read_index][0] = adj_qe - adj_qs
 
         # methylation
         subseq_len    = fqe - fqs
         adj_fqs       = fqs + adj_qs
         adj_fqe       = fqe - (subseq_len - adj_qe)
-        read_mod_bases = cooper.cooper_read_data[read_index].methyl
+        read_mod_bases = read_data.methylation
 
         meth_pos = []; meth_encode = []; meth_count = meth_qual = 0
         for pos, raw_prob in read_mod_bases:
@@ -290,18 +284,16 @@ def process_locus(cooper, locus_key, locus_neighbors):
                 meth_encode.append(int(is_meth))
                 meth_qual  += is_meth
 
-        locus_read_meth[read_index] = (
-            round(meth_qual / meth_count, 2), meth_encode, meth_pos
-        ) if meth_count else None
+        locus_data.read_methylation[read_index] = (round(meth_qual / meth_count, 2), meth_pos, meth_encode) if meth_count else None
 
     if cooper.args.debug_mode:
         cooper.logger.debug(f"{locus_key};Larger_ins={ILR};Partial_ins={PI};Complete_ins={CI}")
 
     cooper.cooper_insert_positions |= pending_insertions
 
-    allele_counter = {}; hallele_counter = {}; alen_list = []
+    allele_counter = {}; hallele_counter = {}; allele_lengths = []
     count_alleles(locus_key, read_indices, cooper.cooper_loci_data,
-                  allele_counter, hallele_counter, alen_list)
+                  allele_counter, hallele_counter, allele_lengths) # updates allele_counter, hallele_counter and alen_list in place
 
     hap_status = False
     if not cooper.args.amplicon:
@@ -320,4 +312,4 @@ def process_locus(cooper, locus_key, locus_neighbors):
         category = 2
 
     cooper.prev_reads = current_reads
-    return [category, homozygous_allele, read_indices, hallele_counter, 10, haplotypes, alen_list]
+    return [category, homozygous_allele, read_indices, hallele_counter, 10, haplotypes, allele_lengths]

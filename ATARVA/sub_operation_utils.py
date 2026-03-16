@@ -1,9 +1,8 @@
-import hdbscan
 import numpy as np
-import warnings
-import statistics
-import regex as re
+from scipy import stats
 import string
+import hdbscan
+import warnings
 
 from ATARVA.consensus import *
 from ATARVA.decompose import motif_decomposition
@@ -15,9 +14,14 @@ def set_methviz_tag(value):
 
 
 # base64 encodings
-BASE64_CHAR = string.ascii_uppercase + string.ascii_lowercase + string.digits + '+//'
+BASE64_CHARS = string.ascii_uppercase + string.ascii_lowercase + string.digits + '+//'
+NO_MATCH  = -2   # sentinel for unmatched position
+AMBIGUOUS = -1   # sentinel for ambiguous methylation call
+METH_ENCODING = { NO_MATCH  : '*',   # error / missing call
+                 AMBIGUOUS : '-' }   # ambiguous call
 
-def mm_tag_extract(read, mod_probs, meth_cutoff, frwd_strand):
+
+def mm_tag_extract(read, mod_probs):
     """
     record the positions with methylation calls
     
@@ -25,115 +29,159 @@ def mm_tag_extract(read, mod_probs, meth_cutoff, frwd_strand):
     :param mod_probs: list of tuples with modified base positions and their respective probabilities
     :param meth_cutoff: score cutoff for calling methylation
     :param frwd_strand: boolean value for strand state; forward = True, reverse = False
-    :return: none; the methylation positions are recorded in the read.methyl_range attribute
+    :return: none; the methylation positions are recorded in the read.methylation_calls attribute
     """
 
     last_index = len(read.query_sequence) - 1
     if (read.methyl_start != None) and (read.methyl_end != None):
         for pos, prob in mod_probs:
-            meth_chunk_start = pos     if frwd_strand else pos - 1 # to check the meth context, start index
-            meth_chunk_end   = pos + 2 if frwd_strand else pos + 1 # to check the meth context, end index
+            meth_chunk_start = pos if read.is_forward else pos - 1 # to check the meth context, start index
             if read.methyl_start <= pos <= read.methyl_end:
-                if (pos + 1 <= last_index) and (read.query_sequence[meth_chunk_start : meth_chunk_end]=='CG'):
-                    read.methyl_range.append((pos, prob))
+                if (pos + 1 <= last_index) and (read.query_sequence[meth_chunk_start : meth_chunk_start + 2]=='CG'):
+                    read.methylation_calls.append((pos, prob))
 
 
-def pos_align(cg_positions, methyl_positions):
-    
-    cg_gaps = np.diff(cg_positions, prepend=0)
-    methyl_gaps = np.diff(methyl_positions, prepend=0)
-    remainder = 0
-    crossed_read_pos = 0
-    final_read_idx = [] # position index to take from read_pos
-    
-    methyl_npositions = len(methyl_gaps)
-    longer_read_pos = methyl_positions >= len(cg_positions)
+def align_cg_positions(consensus_cg_pos, read_cg_pos):
+    """
+    Align CpG positions from a read to consensus CpG positions.
+    Returns indices into read_cg_pos that best match each consensus position.
+    -2 indicates no match found for a consensus position.
 
-    for idx, cg_gap in enumerate(cg_gaps):
-        tmp_len = len(final_read_idx)
-        
-        # Finding the start pos to begin aligning
-        if longer_read_pos and (idx == 0) and (crossed_read_pos == 0): # when the read_pos are more in nu. compared to true pos
-            tmp_diff = methyl_gaps[crossed_read_pos] - cg_gap
+    :param consensus_cg_pos: CpG positions in the consensus sequence
+    :param read_cg_pos:      CpG positions in the read sequence
+    :return:                 list of read indices aligned to each consensus position
+    """
+    consensus_gaps  = np.diff(consensus_cg_pos, prepend=0)
+    read_gaps       = np.diff(read_cg_pos,       prepend=0)
 
-            if abs(tmp_diff) < 4: # Initial tagging of true & read meth pos can have a tolerance of 3bp on either direction
-                final_read_idx.append(idx) # idx is zero here
-                remainder = tmp_diff
-                crossed_read_pos += 1
+    n_read_gaps     = len(read_gaps)
+    read_exceeds    = n_read_gaps >= len(consensus_cg_pos)  # read has more CGs than consensus
+
+    aligned_read_idx  = []   # matched read index for each consensus position
+    read_cursor       = 0    # current position in read_gaps
+    gap_remainder     = 0    # carry-over gap difference between iterations
+
+    TOLERANCE         = 4    # max bp tolerance for initial position matching
+    LAST_POS_WINDOW   = 10   # max bp tolerance for last position matching
+    NO_MATCH          = -2   # sentinel for unmatched consensus position
+
+    for cons_idx, cons_gap in enumerate(consensus_gaps):
+        n_matched_before = len(aligned_read_idx)
+
+        # --- find optimal start position ---
+        if read_exceeds and cons_idx == 0 and read_cursor == 0:
+            gap_diff = read_gaps[read_cursor] - cons_gap
+
+            if abs(gap_diff) < TOLERANCE:
+                # gaps are close enough — direct match
+                aligned_read_idx.append(cons_idx)
+                gap_remainder = gap_diff
+                read_cursor  += 1
             else:
-                jump_dist = cons_pos[idx] - read_pos[idx] # adjusting position by sliding the values from the initial position
-                tmp_read_pos = [i - jump_dist for i in read_pos]
+                # slide read positions to find better alignment start
+                slide_dist    = consensus_cg_pos[cons_idx] - read_cg_pos[cons_idx]
+                shifted_pos   = read_cg_pos - slide_dist
 
-                distance_ins = [abs(cons_pos[idx] - i) for i in tmp_read_pos] # adjusted pos
-                distance_nor = [abs(cons_pos[idx] - i) for i in read_pos] # normal pos
-                min_dist_list = [sum(distance_nor), sum(distance_ins)]
-                
-                if min_dist_list.index(min(min_dist_list)) == 0: # checkpoint for finding optimal start position
-                    crossed_read_pos = distance_nor.index(min(distance_nor))
+                dist_original = np.abs(consensus_cg_pos[cons_idx] - read_cg_pos)
+                dist_shifted  = np.abs(consensus_cg_pos[cons_idx] - shifted_pos)
+
+                # pick whichever alignment has lower total distance
+                if dist_original.sum() <= dist_shifted.sum():
+                    read_cursor = int(np.argmin(dist_original))
                 else:
-                    crossed_read_pos = distance_ins.index(min(distance_ins))
+                    read_cursor = int(np.argmin(dist_shifted))
 
-                final_read_idx.append(crossed_read_pos)
-                
-                crossed_read_pos += 1
+                aligned_read_idx.append(read_cursor)
+                read_cursor += 1
+
             continue
-            
-        check_pos = remainder
-        check_diff = [100000] # list of diffs
-        while crossed_read_pos < read_pos_len:
-            check_pos += read_diff[crossed_read_pos] # incrementing to compare the diffs
-            
-            if abs(check_pos - true_diff) > min(check_diff): # choose the previous pos, if the current diff started to increase
-                if crossed_read_pos-1 not in final_read_idx:
-                    final_read_idx.append(crossed_read_pos-1)
-                    remainder = (check_pos - read_diff[crossed_read_pos]) - true_diff
+
+        # --- scan read gaps to find best match for current consensus gap ---
+        cumulative_gap = gap_remainder
+        min_diffs      = [100_000]
+
+        while read_cursor < n_read_gaps:
+            cumulative_gap += read_gaps[read_cursor]
+            current_diff    = abs(cumulative_gap - cons_gap)
+
+            # diff increasing — previous position was better match
+            if current_diff > min(min_diffs):
+                best_cursor = read_cursor - 1
+                if best_cursor not in aligned_read_idx:
+                    aligned_read_idx.append(best_cursor)
+                    gap_remainder = (cumulative_gap - read_gaps[read_cursor]) - cons_gap
                 break
-            elif (crossed_read_pos+1 == read_pos_len) and abs(true_diff-read_diff[crossed_read_pos]) < 10: # for adding last pos
-                if crossed_read_pos not in final_read_idx:
-                    final_read_idx.append(crossed_read_pos)
-                crossed_read_pos += 1
-            else:
-                check_diff.append(abs(check_pos - true_diff))
-                crossed_read_pos += 1
-                
-        if tmp_len == len(final_read_idx):
-            final_read_idx.append(-2)
-            
-    return final_read_idx
+
+            # last position check
+            is_last     = read_cursor + 1 == n_read_gaps
+            last_in_win = abs(cons_gap - read_gaps[read_cursor]) < LAST_POS_WINDOW
+            if is_last and last_in_win:
+                if read_cursor not in aligned_read_idx:
+                    aligned_read_idx.append(read_cursor)
+                read_cursor += 1
+                break
+
+            min_diffs.append(current_diff)
+            read_cursor += 1
+
+        # --- no match found for this consensus position ---
+        if len(aligned_read_idx) == n_matched_before:
+            aligned_read_idx.append(NO_MATCH)
+
+    return aligned_read_idx
 
 
-def encode_methylation(score_matrix, pos_matrix, cg_positions):
-    
-    encoded_meth = ''
+def encode_methylation(score_matrix, pos_matrix, consensus_cgs):
+    """
+    encode methylation scores at consensus CpG positions into a compact string for visualization
 
-    # Extracting only those positions which are within 2bp of true CG positions
-    new_pos_matrix = []
-    for methyl_positions in pos_matrix:
-        new_pos_matrix.append(pos_align(cg_positions, methyl_positions))
+    :param score_matrix: list of lists with methylation scores for each read at their respective CpG positions
+    :param pos_matrix: list of lists with read CpG positions aligned to consensus CpG
+    :param consensus_cgs: list of CpG positions in the consensus sequence
+    :return: encoded methylation string where each character represents the consensus CpG position and its methylation status across reads
+    """
 
-    # Creating new matrix with only those positions
-    new_matrix = []
-    for idx,each_meth_cat in enumerate(matrix):
-        pos_list = new_pos_matrix[idx]
-        new_matrix.append([each_meth_cat[pos] if pos!=-2 else -2 for pos in pos_list])
+    # --- align each read's CG positions to consensus ---
+    aligned_pos_matrix = [
+        align_cg_positions(consensus_cgs, np.array(read_cgs))
+        for read_cgs in pos_matrix
+    ]
 
-    for col in zip(*new_matrix):
+    # --- build score matrix using aligned positions ---
+    aligned_score_matrix = [
+        [meth_scores[pos] if pos != NO_MATCH else NO_MATCH
+         for pos in aligned_pos]
+        for meth_scores, aligned_pos in zip(score_matrix, aligned_pos_matrix)
+    ]
+
+    # --- encode each consensus CG position ---
+    encoded_meth = []
+    for col in zip(*aligned_score_matrix):
         col_array = np.array(col)
-        mode = statistics.mode(col_array)
-        if mode == -2:
-            encryted_meth += '*' # adding * for skipping the positions where there is error call in few reads
-        elif mode == -1:
-            encryted_meth += '-' #adding - for ambiguous calls
-        else:
-            col_array = col_array[col_array != -1]
-            col_array = col_array[col_array != -2]
-            col_mean = round(np.mean(col_array), 2) * 100
-            col_mean= round(col_mean/1.5625) # scaling to 0-64
-            encryted_meth += BASE64_CHAR[col_mean]
-    return encryted_meth
+        mode      = stats.mode(col_array, keepdims=True).mode[0]
+
+        if mode in METH_ENCODING:
+            encoded_meth.append(METH_ENCODING[mode])
+            continue
+
+        # filter sentinels and compute mean
+        valid     = col_array[(col_array != AMBIGUOUS) & (col_array != NO_MATCH)]
+        col_mean  = round(np.mean(valid) * 100)
+        col_scaled = round(col_mean / 1.5625)    # scale to 0-64
+        encoded_meth.append(BASE64_CHARS[col_scaled])
+
+    return ''.join(encoded_meth)
 
 
-def methylation_calc(reads, read_methyl_scores, ALT_seq):
+def calculate_methylation(read_indices, read_methylation, ALT_seq):
+    """
+    calculate the methylation level at CG positions for at the locus based on reads
+
+    :param read_indices: list of read ids supporting the locus
+    :param methyl_probabilities: list of tuples with modified base positions and their respective probabilities for each read
+    :param ALT_seq: the consensus alternate sequence
+    :return: average methylation level, number of reads with methylation information, encrypted methylation string for visualization
+    """
 
     arr  = np.frombuffer(ALT_seq.upper().encode(), dtype=np.uint8)
     c_mask = arr[:-1] == ord('C')
@@ -143,94 +191,51 @@ def methylation_calc(reads, read_methyl_scores, ALT_seq):
     if cg_positions.size == 0:
         return [None, None, None]
 
-    methyl_nreads = 0
-    methyl_score   = 0
-    encoded_string = None
+    methyl_nreads       = 0
+    haplotype_avgmeth   = 0
+    encoded_methylation = None
     score_matrix = []
     pos_matrix = []
-    for read_index in reads:
-        if read_methyl_scores[read_index] is not None:
+    for read_index in read_indices:
+        if read_methylation[read_index] is not None:
             methyl_nreads += 1
-            methyl_score   += read_methyl_scores[read_index][0]
-            methyl_scores  = read_methyl_scores[read_index][1]
+            haplotype_avgmeth += read_methylation[read_index][0]
             # for meth visualization
             if methviz_tag:
-                score_matrix.append(methyl_scores)
-                pos_matrix.append(read_methyl_scores[read_index][2])
+                pos_matrix.append(read_methylation[read_index][1])
+                score_matrix.append(read_methylation[read_index][2])
             
     if methyl_nreads > 0:
         if methviz_tag:
-            encrypted_meth = encode_methylation(score_matrix, pos_matrix, cg_positions)
-        return [round(methyl_score/methyl_nreads, 2), methyl_nreads, encrypted_meth]
+            encoded_methylation = encode_methylation(score_matrix, pos_matrix, cg_positions)
+        return [round(haplotype_avgmeth/methyl_nreads, 2), methyl_nreads, encoded_methylation]
     else:
         return [None, None, None]
 
 
-def dbscan(data, hap_reads):
-    data = np.array(data).reshape(-1, 1)
-    min_samples = max(10, round(0.2*len(data))) # min 20% of the data or 10 reads
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=FutureWarning)
-        clusterer = hdbscan.HDBSCAN(min_cluster_size=min_samples)
-        cluster_labels = clusterer.fit_predict(data)
-    unique_labels = set(cluster_labels)
-    
-    if len(unique_labels)==1: # cluster case = (0), (-1)
-        return [False,None,None] # proceed with Kmeans
-        
-    elif (len(unique_labels)==2) and (-1 in unique_labels): # cluster case = (0,-1)
-        return [False,None,None] # proceed with Kmeans
-        
-    elif len(unique_labels)>=2: # cluster case = (0,1), (0,1,-1), (0,1,2)
-        main_label = unique_labels-{-1}
+def alt_sequence(read_alleles, hap_reads, motif_size):
+    """
+    generates alt sequence and reports characteristics
 
-        main_clusters = {}
-        
-        for label in main_label:
-            c_label = [i for i, x in enumerate(cluster_labels) if x == label]
-            alen = [data[i][0] for i in c_label]
-            if len(c_label) in main_clusters:
-                main_clusters[len(c_label)+1] = [c_label, alen]
-            else:
-                main_clusters[len(c_label)] = [c_label, alen]
-            
-        top2_clus_idx = [v for _,v in sorted(main_clusters.items(), reverse=True)[:2]] # getting top 2 cluster with more support
+    :param read_alleles: dict with read_id as key and allele sequence as value
+    :param hap_reads: list of read_ids belonging to the haplotype cluster
+    :param motif_size: size of the motif for checking repetitiveness
+    :return: ALT, allele_length, decomposed_seq, repetitive: alt sequence, its length, motif decomposition and repetitiveness status
+    """
 
-        new_haplotypes = [[hap_reads[idx] for idx in top2_clus_idx[0][0]], [hap_reads[idx] for idx in top2_clus_idx[1][0]]] # getting respective read ids
-
-        new_alen = [top2_clus_idx[0][1], top2_clus_idx[1][1]]
-
-        if set(new_alen[0])==set(new_alen[1]):
-            return [False,None,None]
-        
-        return [True, new_haplotypes, new_alen]
-
-
-
-
-    
-
-
-def alt_sequence(read_seqs, hap_reads, amplicon, motif_size):
-    seqs = [seq for seq in [read_seqs[read_id][0] for read_id in hap_reads] if seq!='']
-    if len(seqs)>0:
+    # wouldn't most of the reads say deleted and only one read has some sequence ???
+    seqs = [seq for seq in [read_alleles[read_id][0] for read_id in hap_reads] if seq!='']
+    if seqs:
         ALT = consensus_seq_poa(seqs)
         allele_length = len(ALT)
     else:
         ALT = '<DEL>'
         allele_length = 0
 
-    decomp_seq = ''
-    repeativity = True
-    if amplicon and allele_length and (motif_size<=10):
-        decomp_seq, nonrep_percent = motif_decomposition(ALT, motif_size)
-        
-        if nonrep_percent > 0.30: # if more than 30% of the sequence is non-repeat, repeativity = False
-            repeativity = False
-    return [ALT, allele_length, decomp_seq, repeativity]
-
-
-
-
-
-
+    decomposed_seq = ''
+    repetitive = True
+    if allele_length and (motif_size <= 10):
+        decomposed_seq, nonrep_fraction = motif_decomposition(ALT, motif_size)
+        if nonrep_fraction > 0.30: # if more than 30% of the sequence is non-repeat, repeativity = False
+            repetitive = False
+    return [ALT, allele_length, decomposed_seq, repetitive]

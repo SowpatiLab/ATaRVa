@@ -1,149 +1,203 @@
-def haplocluster_reads(snp_allelereads, ordered_snp_on_cov, read_indices, snpQ, snpC, snpR, phasingR):
+# --- Constants ---
 
-    threshold_range = [(0.3, 0.7),(0.25, 0.75),(0.2, 0.8)] # threshold values to get Significant_snps
-    for idx,range in enumerate(threshold_range):
+THRESHOLD_RANGES      = [(0.3, 0.7), (0.25, 0.75), (0.2, 0.8)]
+MIN_SNP_COVERAGE_FRAC = 0.6    # min fraction of reads a SNP must cover
+MIN_ALLELE_FRAC       = 0.2    # min fraction for allele quality calculation
+CLUSTER_JOIN_HIGH     = 0.7    # min intersection to join a cluster
+CLUSTER_JOIN_LOW      = 0.05   # max intersection to confirm non-membership
+FAIL_RESULT           = [(), -1, 0, '', '', 0]
 
-        final_haplos = ()
-        min_snp = -1
-        skip_point = 10
+def haplocluster_reads(snp_allele_reads, ordered_snps_by_coverage, read_indices, qual_threshold, num_snps,
+                       snp_cov_threshold, phased_fraction_threshold):
+    """
+    cluster reads into haplotypes using SNP allele information.
 
-        r1 = range[0] # threshold value 1
-        r2 = range[1] # threshold value 2
+    :param snp_allele_reads:          SNP position → allele → read indices
+    :param ordered_snps_by_coverage:  SNP positions ordered by coverage
+    :param read_indices:              all read indices at this locus
+    :param qual_threshold:            minimum base quality at SNP position
+    :param num_snps:                  number of SNPs to use for phasing
+    :param snp_cov_threshold:         minimum SNP coverage threshold
+    :param phased_fraction_threshold: min fraction of reads that must be phased
+    :return:                          [haplotypes, min_snp, skip_point, snp_quals, phased_reads, snp_count]
+    """
 
-        filtered_significant_poses = {}
-        ordered_split_pos = []
-        for pos in ordered_snp_on_cov:
-            if snp_allelereads[pos]['cov'] < (0.6*len(read_indices)): break
-            if sum(r1 * sum(len(snp_allelereads[pos]['alleles'][nucs]) for nucs in snp_allelereads[pos]['alleles']) <= len(snp_allelereads[pos]['alleles'][nucs]) <= r2 * sum(len(snp_allelereads[pos]['alleles'][nucs]) for nucs in snp_allelereads[pos]['alleles']) for nucs in snp_allelereads[pos]['alleles']) >= 2:
-                ordered_split_pos.append(pos)
-                filtered_significant_poses[pos] = {'cov': snp_allelereads[pos]['cov'], 'alleles': snp_allelereads[pos]['alleles'], 'Qval': snp_allelereads[pos]['Qval']}
+    final_haplotypes = ()
+    min_snp_pos      = -1
+    skip_point       = 10
+    n_reads          = len(read_indices)
+    min_snp_coverage = MIN_SNP_COVERAGE_FRAC * n_reads
 
+    for tier_idx, (lower_thresh, upper_thresh) in enumerate(THRESHOLD_RANGES):
 
-        if len(filtered_significant_poses) == 0:
-            if idx < 2: #level_split:
-                continue
-            else:
-                skip_point = 0
-                return [final_haplos, min_snp, skip_point, '', '', 0]
+        sig_snp_data    = {}
+        ordered_sig_snps = []
 
-        final_haplos, status, min_snp, skip_point, chosen_snpQ, phased_read, snp_num = merge_snpreadsets(filtered_significant_poses, ordered_split_pos, read_indices, snpQ, snpC, snpR, phasingR) # calling the phasing function
-        if status: break
-        if idx == 2: #level_split:
+        for pos in ordered_snps_by_coverage:
+            snp         = snp_allele_reads[pos]
+            total_allele_reads = sum(len(reads) for reads in snp['alleles'].values())
+
+            if snp['cov'] < min_snp_coverage:
+                break
+
+            # count alleles where read fraction is within threshold bounds
+            balanced_alleles = sum(
+                lower_thresh * total_allele_reads <= len(reads) <= upper_thresh * total_allele_reads
+                for reads in snp['alleles'].values()
+            )
+
+            if balanced_alleles >= 2:
+                ordered_sig_snps.append(pos)
+                sig_snp_data[pos] = { 'cov': snp['cov'], 'alleles': snp['alleles'], 'qual': snp['qual'] }
+
+        if not sig_snp_data:
+            if tier_idx < 2: continue
+            return FAIL_RESULT
+
+        (final_haplotypes,
+         success,
+         min_snp_pos,
+         skip_point,
+         snp_quals,
+         phased_reads,
+         snp_count) = merge_snpreadsets(sig_snp_data, ordered_sig_snps, read_indices, qual_threshold, num_snps,
+                                        snp_cov_threshold, phased_fraction_threshold)
+
+        if success or tier_idx == 2:
             break
 
-    return [final_haplos, min_snp, skip_point, chosen_snpQ, phased_read, snp_num]
+    return [final_haplotypes, min_snp_pos, skip_point, snp_quals, phased_reads, snp_count]
 
 
-def merge_snpreadsets(Significant_poses, ordered_split_pos, read_indices, snpQ, snpC, snpR, phasingR):
+def merge_snpreadsets(sig_snp_data, ordered_sig_snps, read_indices, snp_qual_threshold, max_snps, min_allele_read_frac, phased_fraction_threshold):
+    """
+    merge SNP read sets to phase reads into two haplotype clusters.
 
+    :param sig_snp_data:              significant SNP position data
+    :param ordered_sig_snps:          SNP positions ordered by significance
+    :param read_indices:              all read indices at locus
+    :param snp_qual_threshold:        minimum base quality threshold
+    :param max_snps:                  max SNPs to use for phasing
+    :param min_allele_read_frac:      min read fraction to keep an allele
+    :param phased_fraction_threshold: min fraction of reads that must be phased
+    :return:                          [haplotypes, success, min_snp, skip_point, snp_quals, phased_reads, snp_count]
+    """
+    skip_point   = 10
+    top_snps     = ordered_sig_snps[:max_snps]
+    phased_reads = ''
 
-    skip_point = 10
+    # --- compute quality values for top SNPs ---
+    snp_qual_list = []
+    for pos in top_snps:
+        snp        = sig_snp_data[pos]
+        total_reads = snp['cov']
+        allele_quals = {
+            sum(snp['qual'][r] for r in reads) / len(reads)
+            for allele, reads in snp['alleles'].items()
+            if allele != 'r' and len(reads) / total_reads >= MIN_ALLELE_FRAC
+        }
+        if allele_quals:
+            snp_qual_list.append(str(int(max(allele_quals))))
 
-    sorted_alt_snp = ordered_split_pos[:snpC]
-    Alt_snp_Qval = []
-    for snps in sorted_alt_snp:
-        total_reads = Significant_poses[snps]['cov']
-        qvalue_list = set()
-        for nucs in Significant_poses[snps]['alleles']:
-            if (nucs!='r') and ((len(Significant_poses[snps]['alleles'][nucs])/total_reads) >= 0.2):
-                qvalue_list.add(sum([Significant_poses[snps]['Qval'][r_idx] for r_idx in Significant_poses[snps]['alleles'][nucs]]) / len(Significant_poses[snps]['alleles'][nucs]))
+    snp_quals = ','.join(snp_qual_list)
+    snp_count = len(top_snps)
 
-        if qvalue_list != set():
-            Alt_snp_Qval.append(str(int(max(qvalue_list))))
-        
-        
-    chosen_snpQ = ','.join(Alt_snp_Qval)
-    phased_read = ''
-    snp_num = len(sorted_alt_snp)
-    
-    if len(sorted_alt_snp) == 0:
-        skip_point = 5
-        return [(), False, -1, skip_point, chosen_snpQ, phased_read, snp_num]
-    
+    if not top_snps:
+        return [(), False, -1, 5, snp_quals, phased_reads, snp_count]
 
-    sorted_filtered_dict = dict((snps,Significant_poses[snps]['alleles']) for snps in sorted_alt_snp)
+    # --- filter alleles by read fraction ---
+    filtered_snps = {pos: dict(sig_snp_data[pos]['alleles']) for pos in top_snps}
 
+    for pos in list(filtered_snps):
+        alleles   = filtered_snps[pos]
+        tot_reads = sum(len(reads) for reads in alleles.values())
 
-    #to remove the nucs with lower read contribution in sig_snps
-    for pos in sorted_filtered_dict:
-        del_nucs = []
-        tot_reads = sum([len(vals) for vals in sorted_filtered_dict[pos].values()]) # calculate the total read for that snp
-        if len(sorted_filtered_dict[pos]) == 2:
-            for nucs in sorted_filtered_dict[pos]:
-                if len(sorted_filtered_dict[pos][nucs])/tot_reads < snpR: del_nucs.append(nucs) # if the reads in 'nucs' have reads less than 25%, delete it
-        else:  # if snp has more than 2 'nucs' in it  # SUS!!!
-            for nucs in sorted_filtered_dict[pos]:
-                if len(sorted_filtered_dict[pos][nucs])/tot_reads < snpR: del_nucs.append(nucs) # if the reads in 'nucs' have reads less than 25%, delete it
-        for nucs in del_nucs:
-            del sorted_filtered_dict[pos][nucs]
+        # remove alleles below read fraction threshold
+        filtered_snps[pos] = {
+            allele: reads
+            for allele, reads in alleles.items()
+            if len(reads) / tot_reads >= min_allele_read_frac
+        }
 
-    # to remove pos with less than 2 nucs
-    del_pos = []
-    for pos in sorted_filtered_dict:
-        if len(sorted_filtered_dict[pos]) == 2:
-            pass
-        elif len(sorted_filtered_dict[pos]) < 2:
-            del_pos.append(pos)
-    for pos in del_pos:
-        del sorted_filtered_dict[pos]
+        # remove positions with fewer than 2 valid alleles
+        if len(filtered_snps[pos]) < 2:
+            del filtered_snps[pos]
 
-    if len(sorted_filtered_dict) == 0: # after removing snp based on their nuc's read coverage, if there are no snp left then go to next threshold range
-        skip_point = 1
-        return [(), False, -1, skip_point, chosen_snpQ, phased_read, snp_num]
+    if not filtered_snps:
+        return [(), False, -1, 1, snp_quals, phased_reads, snp_count]
 
+    # --- compute pairwise mismatch scores between SNPs ---
+    snp_positions  = list(filtered_snps)
+    mismatch_scores = {}                  # {pos_a: {pos_b: mismatch_score}}
 
-    # SNP Combination method 
-    poses = list(sorted_filtered_dict.keys()) # get only SNP coordinate
-    pos_cluster = {}
-    for idx in range(len(poses)): # Comparison starting from 1st snp to all other snp
-        if (pos_cluster!={}) and idx == len(poses)-1: break 
-        pos_cluster[poses[idx]] = {}
-        for pos in poses[idx + 1:]:
-            current_pos_values = list(sorted_filtered_dict[poses[idx]].values())  # [  {1,2,3,4,5},  {6,7,8,9,10} ]  nuc's read set for current Target SNP
-            mis_score = 0
-            for reads_set in sorted_filtered_dict[pos].values():  # [  {1,2,3,4,6},  {5,7,8,9,10}  ]  nuc's read set for Query SNP
-                similar_reads = set()
-                for i in range(len(current_pos_values)):
-                    intersection = reads_set & current_pos_values[i]  # intersection is calculated for each combination of 4 read sets
-                    similar_reads.add(len(intersection))   # taking the min value from a pairwise interection values
-                mis_score += min(similar_reads)
-            pos_cluster[poses[idx]][pos] = mis_score # pos_cluster = { 1023 : {1036 : 0, 1045 : 1, 1123 : 3,..},  1036 : { 1045: 1, 1123 : 2,..}, ..............}
-
-    significant_snps = []
-    for each_pos in pos_cluster:
-        if list(pos_cluster[each_pos].values()).count(0) >= 2: # check whether any of the pos_cluster have atleast 2 zeros in their mismatch scores
-            significant_snps.append(each_pos)
-            significant_snps.extend(sorted(pos_cluster[each_pos].keys(), key=lambda item: pos_cluster[each_pos][item])) # if yes take that pos_cluster and proceed for clustering
+    for i, pos_a in enumerate(snp_positions):
+        if mismatch_scores and i == len(snp_positions) - 1:
             break
-    if significant_snps == []: # if there are no pos_cluster with atleast 2 zeros in it
-        least_mismatches = {}
-        for each_pos in pos_cluster:
-            least_mismatches[each_pos] = sum(sorted(val for val in pos_cluster[each_pos].values())[:2]) # take sum of 1st 2 mismatch scores from sorted pos:mis_score and append in to 'least_mismatches' dictionary
-        current_pos = sorted(least_mismatches.keys(), key=lambda item: least_mismatches[item])[0] # now take the snp position with least score and proceed for clustering
-        significant_snps.append(current_pos)
-        significant_snps.extend(sorted(pos_cluster[current_pos].keys(), key=lambda item: pos_cluster[current_pos][item])) # [1023, 1036, 1045, 1123]
+        mismatch_scores[pos_a] = {}
+        alleles_a = list(filtered_snps[pos_a].values())
 
+        for pos_b in snp_positions[i + 1:]:
+            score = sum(
+                min(len(reads_b & allele_a) for allele_a in alleles_a)
+                for reads_b in filtered_snps[pos_b].values()
+            )
+            mismatch_scores[pos_a][pos_b] = score
 
+    # --- select best SNPs for phasing ---
+    # prefer positions with at least 2 zero-mismatch neighbours
+    sig_snps = []
+    for pos, neighbours in mismatch_scores.items():
+        if sum(1 for s in neighbours.values() if s == 0) >= 2:
+            sig_snps.append(pos)
+            sig_snps.extend(
+                sorted(neighbours, key=lambda p: neighbours[p])
+            )
+            break
 
-    final_ordered_dict = {k: sorted_filtered_dict[k] for k in significant_snps if k in sorted_filtered_dict} # dict of 'final snp & its nucs : reads' for haplotyping, generated from 'significant_snps' list above
-    
-    min_snp = min(list(final_ordered_dict.keys()))
+    # fallback — pick position with lowest sum of two best scores
+    if not sig_snps:
+        best_pos = min(
+            mismatch_scores,
+            key=lambda p: sum(
+                sorted(mismatch_scores[p].values())[:2]
+            )
+        )
+        sig_snps.append(best_pos)
+        sig_snps.extend(
+            sorted(mismatch_scores[best_pos],
+                   key=lambda p: mismatch_scores[best_pos][p])
+        )
 
-    cluster1, cluster2 = set(), set()
-    for position_keys in final_ordered_dict: # clustering starts from the position of how its arranged in the dict, The 2 read_set will be two new haplotypes
-        for nuc_read in final_ordered_dict[position_keys].values():
+    # --- build final ordered SNP dict ---
+    final_snp_dict = {
+        pos: filtered_snps[pos]
+        for pos in sig_snps
+        if pos in filtered_snps
+    }
+    min_snp_pos = min(final_snp_dict)
+
+    # --- cluster reads into two haplotypes ---
+    cluster1: set = set()
+    cluster2: set = set()
+
+    for alleles in final_snp_dict.values():
+        for read_set in alleles.values():
             if not cluster1:
-                cluster1 |= nuc_read
+                cluster1 |= read_set
             elif not cluster2:
-                cluster2 |= nuc_read
-            elif (len(nuc_read & cluster1)>0.7*len(nuc_read)) and  (len(nuc_read & cluster2)<0.05*len(nuc_read)): # then successive read_set are joined based on their intersection percentage
-                cluster1 |= nuc_read
-            elif (len(nuc_read & cluster2)>0.7*len(nuc_read)) and  (len(nuc_read & cluster1)<0.05*len(nuc_read)):
-                cluster2 |= nuc_read
+                cluster2 |= read_set
+            elif (len(read_set & cluster1) > CLUSTER_JOIN_HIGH * len(read_set) and
+                  len(read_set & cluster2) < CLUSTER_JOIN_LOW  * len(read_set)):
+                cluster1 |= read_set
+            elif (len(read_set & cluster2) > CLUSTER_JOIN_HIGH * len(read_set) and
+                  len(read_set & cluster1) < CLUSTER_JOIN_LOW  * len(read_set)):
+                cluster2 |= read_set
 
-    if ((len(cluster1)+len(cluster2)) >= phasingR*len(read_indices)): # after clustering the total reads in the both reads should be greater thn 50% of total supporting reads for that specific locus
-        phased_read = [len(cluster1),len(cluster2)]
-        return [(cluster1, cluster2), True, min_snp, skip_point, chosen_snpQ, phased_read, snp_num]
-    else:
-        skip_point = 2
-        return [(), False, -1, skip_point, chosen_snpQ, phased_read, snp_num]
+    # --- validate phasing coverage ---
+    total_phased = len(cluster1) + len(cluster2)
+    if total_phased >= phased_fraction_threshold * len(read_indices):
+        phased_reads = [len(cluster1), len(cluster2)]
+        return [(cluster1, cluster2), True, min_snp_pos,
+                skip_point, snp_quals, phased_reads, snp_count]
+
+    return [(), False, -1, 2, snp_quals, phased_reads, snp_count]

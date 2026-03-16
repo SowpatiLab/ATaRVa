@@ -18,6 +18,7 @@ class LocusInfo:
     motif:        str = ''
     length:       int = 0
     motif_length: int = 0
+    name:         str = None
 
     def __post_init__(self):
         self.length       = self.end - self.start
@@ -29,7 +30,7 @@ class ReadInfo:
     end:         int   = 0
     snps:        set   = field(default_factory=set)
     dels:        set   = field(default_factory=list)
-    methyl:      list  = field(default_factory=list)
+    methylation: list  = field(default_factory=list)
     qual:        int   = 0
     left_flank:  list  = field(default_factory=list)
     right_flank: list  = field(default_factory=list)
@@ -37,11 +38,11 @@ class ReadInfo:
 
 @dataclass(slots=True)
 class LocusVariation:
-    reads:           list  = field(default_factory=list)
-    read_alens:      dict  = field(default_factory=dict)
-    read_seqs:       dict  = field(default_factory=dict)
-    read_haplotags:   list  = field(default_factory=list)
-    read_meth:       dict  = field(default_factory=dict)
+    reads:             list  = field(default_factory=list)
+    read_alens:        dict  = field(default_factory=dict)
+    read_seqs:         dict  = field(default_factory=dict)
+    read_haplotags:    list  = field(default_factory=list)
+    read_methylation:  dict  = field(default_factory=dict)  # read index -> (total methylation probability, methylation positions, methylation encodings)
 
 
 @dataclass(slots=True)
@@ -94,6 +95,6 @@ class ExtendedRead(pysam.AlignedSegment):
 
         ext.methyl_start           = 0
         ext.methyl_end             = 0
-        ext.methyl_range           = []
+        ext.methylation_calls      = []     # list of tuples (position, probability) for methylation calls in the read
 
         return ext

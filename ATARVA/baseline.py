@@ -8,11 +8,11 @@ from sortedcontainers import SortedList
 from collections import deque
 
 from ATARVA.structures import ReadLocusInfo, LocusInfo, ReadInfo, LocusVariation, ExtendedRead
-from ATARVA.vcf_writer import vcf_writer, vcf_homozygous_writer, vcf_heterozygous_writer, vcf_fail_writer
+from ATARVA.vcf_writer import vcf_writer, write_homozygous_call, vcf_heterozygous_writer, write_fail_call
 from ATARVA.operation_utils import record_homopolymers, clean_eqsign_readseq
 from ATARVA.cstag_utils import parse_cstag
 from ATARVA.cigar_utils import parse_cigar
-from ATARVA.sub_operation_utils import mm_tag_extract
+from ATARVA.sub_operation_utils import mm_tag_extract, calculate_methylation
 from ATARVA.locus_utils import process_locus
 from ATARVA.consensus import consensus_seq_poa
 from ATARVA.genotype_utils import analyse_genotype
@@ -34,6 +34,7 @@ class Cooper:
     karyotype = None
     haploid = None
     chrom = None
+    somatic = False
 
     outfile = None; outhandle = None
     logfile = None; loghandle = None
@@ -74,7 +75,7 @@ class Cooper:
         self.prev_reads = set()
 
         self.cooper_sorted_snps = SortedList()
-        self.cooper_sorted_ins_rpos_set = set()
+        self.cooper_insert_positions = set()
 
         self.chrom = None
 
@@ -180,7 +181,7 @@ class Cooper:
 
             while self.cooper_loci_ends and read.ref_start > self.cooper_loci_ends[0]:
                 genotype_status = self.locus_processor()
-                genotyped_loci_count += genotype_status[0]
+                genotyped_loci_count += genotype_status
                 self.progress_bar.update(1)
 
             while self.cooper_read_ends and read.ref_start > self.cooper_read_ends[0]:
@@ -204,12 +205,12 @@ class Cooper:
                         self.prev_reads.discard(rindex)
 
                     del_ins_pos_idx = 0
-                    list_rpos = sorted(sorted_global_ins_rpos_set)
+                    list_rpos = sorted(self.cooper_insert_positions)
                     for i in list_rpos:
                         del_ins_pos_idx+=1
                         if i > read_end: break
                     del list_rpos[:del_ins_pos_idx]
-                    sorted_global_ins_rpos_set = set(list_rpos)                    
+                    self.cooper_insert_positions = set(list_rpos)                    
 
 
             # if the read is beyond the last locus in the bed file the loop stops
@@ -218,7 +219,6 @@ class Cooper:
                     genotype_status = self.locus_processor()
                     genotyped_loci_count += genotype_status
                     self.progress_bar.update(1)
-                # process the loci left in global_loci_variation
                 break
 
             for row in self.tbx.fetch(chrom, read.ref_start, read.ref_end):
@@ -292,7 +292,7 @@ class Cooper:
             self.cooper_read_indices.append(read.index)
             self.cooper_read_data[read.index] = ReadInfo(start = read.ref_start,
                                                          end = read.ref_end, snps=set(),
-                                                         dels = [], methyl = [],
+                                                         dels = [], methylation = [],
                                                          qual = read.mean_qual,
                                                          left_flank = read.left_flanks,
                                                          right_flank = read.right_flanks)
@@ -306,8 +306,8 @@ class Cooper:
                 if len(read_modified_bases)>0:
                     for mods in read_modified_bases:
                         if (mods[0][0]=='C') and (mods[0][2]=='m'):
-                            mm_tag_extract(read, mods[1], 0, not(mods[0][1])) # last arg is bool value for strand state; forward = True, reverse = False
-                            self.cooper_read_data[read_index].methyl = read.methyl_range
+                            mm_tag_extract(read, mods[1]) # last arg is bool value for strand state; forward = True, reverse = False
+                            self.cooper_read_data[read_index].methylation = read.methylation_calls
                             break
             else :
                 parse_cigar(self, read)
@@ -315,8 +315,8 @@ class Cooper:
                 if len(read_modified_bases) > 0:
                     for mods in read_modified_bases:
                         if (mods[0][0]=='C') and (mods[0][2]=='m'):
-                            mm_tag_extract(read, mods[1], 0, not(mods[0][1])) # last arg is bool value for strand state; forward = True, reverse = False
-                            self.cooper_read_data[read_index].methyl = read.methyl_range
+                            mm_tag_extract(read, mods[1]) # last arg is bool value for strand state; forward = True, reverse = False
+                            self.cooper_read_data[read_index].methylation = read.methylation_calls
                             break
 
             for locus_key in read.loci_data:
@@ -366,39 +366,36 @@ class Cooper:
                 for snp_pos in self.cooper_snp_data.keys():
                     self.cooper_sorted_snps.add(snp_pos)
 
-            category, homozygous_allele, reads_of_homozygous, hallele_counter, skip_point, haplotypes, homozygous_alens = process_locus(self, locus_key, neighbors)
+            # [category, homozygous_allele, read_indices, hallele_counter, 10, haplotypes, allele_lengths]
+            category, homozygous_allele, read_indices, hallele_counter, skip_point, haplotypes, allele_lengths = process_locus(self, locus_key, neighbors)
             read_seqs = self.cooper_loci_data[locus_key].read_seqs
 
             if category == 1:
+                ALT = '<DEL>'
                 if homozygous_allele != locus.length:
-                    seqs = [seq for seq in [read_seqs[read_id][0] for read_id in reads_of_homozygous] if seq!='']
-                    if len(seqs) > 0:
+                    homozygous_allele = 0
+                    seqs = [seq for seq in [read_seqs[id][0] for id in read_indices] if seq != '']
+                    if seqs:
                         ALT = consensus_seq_poa(seqs)
                         homozygous_allele = len(ALT)
-                    else:
-                        ALT = '<DEL>'
-                        homozygous_allele = 0
                 else: ALT = '.'
 
-                lower, upper = [round(x) for x in np.percentile(np.array(homozygous_alens), [2.5, 97.5])]
+                lower, upper = [round(x) for x in np.percentile(np.array(allele_lengths), [2.5, 97.5])]
 
-                # if ALT != '.':
-                #     meth_info = methylation_calc(reads_of_homozygous, self.cooper_loci_data, locus_key, ALT)
-                # else:
-                #     meth_info = methylation_calc(reads_of_homozygous, self.cooper_loci_data, locus_key, ref.fetch(locus.chrom, locus.start, locus.end))
+                if ALT != '.':
+                    meth_info = calculate_methylation(read_indices, self.cooper_loci_data[locus_key].read_methylation, ALT)
+                else:
+                    meth_info = calculate_methylation(read_indices, self.cooper_loci_data[locus_key].read_methylation, self.ref.fetch(locus.chrom, locus.start, locus.end))
 
                 if self.haploid:
                     allele_range = f'{lower}-{upper}'
                 else:
                     allele_range = f'{lower}-{upper},{lower}-{upper}'
 
-                vcf_homozygous_writer(self, locus_key, homozygous_allele, len(reads_of_homozygous), len(reads_of_homozygous),
-                                      ALT, '.', hallele_counter, allele_range, None, meth_info)
+                write_homozygous_call(self, locus_key, homozygous_allele, hallele_counter, allele_range, meth_info, '.', ALT, len(read_indices), len(read_indices))
                 genotyped_loci += 1
             elif category == 2:
-                state, skip_point = analyse_genotype(Chrom, locus_key, global_loci_info, global_loci_variations, global_read_variations, global_snp_positions,
-                                                     hallele_counter, ref, out, sorted_global_snp_list, snpQ, snpC, snpD, snpR, phasingR, reads_of_homozygous,
-                                                     male, log_bool, decomp, amplicon, somatic)
+                state, skip_point = analyse_genotype(self, locus_key, hallele_counter, read_indices)
                 if state: genotyped_loci += 1
                 else:
                     skip_messages = {
@@ -436,8 +433,8 @@ class Cooper:
 
                     # meth_info.append(methylation_calc(hap_reads, global_loci_variations, locus_key))
 
-                lower1,upper1 = confidence_interval(alen_list[0])
-                lower2,upper2 = confidence_interval(alen_list[1])
+                lower1,upper1 = np.percentile(alen_list[0], [2.5, 97.5])
+                lower2,upper2 = np.percentile(alen_list[1], [2.5, 97.5])
                 allele_range = f'{lower1}-{upper1},{lower2}-{upper2}'
 
                 vcf_heterozygous_writer(Chrom, genotypes, lstart, lend, allele_count, len(reads_of_homozygous), global_loci_info,
@@ -446,9 +443,9 @@ class Cooper:
                 genotyped_loci += 1
             else:
                 if skip_point == 0:
-                    vcf_fail_writer(Chrom, locus_key, global_loci_info, ref, out, len(prev_reads), skip_point)
+                    write_fail_call(self, locus_key, skip_point)
 
-                    
-            del global_loci_variations[locus_key]
-            
+            del self.cooper_loci_data[locus_key]
+            del self.cooper_loci_info[locus_key]
+
         return genotyped_loci
