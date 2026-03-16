@@ -75,65 +75,72 @@ def record_homopolymers(ref_seq, locus_start, homopolymer_positions, threshold=3
 
 
 def match_jump(read, match_refend, match_qryend, match_length, repeat_index, locus_query_range,
-               flank_query_range, repeat_tracked, flank_tracked):
-            #    qpos, match_len, loci_flank_qpos_range, flank_track, left_flank,
-            #    right_flank, amp_right_flank_list, amp_left_flank_list,
-            #    out_insertion_qpos_ranges_right, out_insertion_qpos_ranges_left,
-            #    right_ins_rpos, left_ins_rpos, amplicon_variables):
+               flank_query_range, locus_reached, locus_boundary_crossed):
     """
-    Return the number of repeat indices to jump when scanning through a match segment
+    process a match and update data for affected repeats
+
+    :param read: the read being processed
+    :param match_refend: the reference end position of the match
+    :param match_qryend: the query end position of the match
+    :param match_length: length of the match
+    :param repeat_index: the current repeat index being processed
+    :param locus_query_range: list of query position ranges for each locus in the read
+    :param flank_query_range: list of query position ranges for the flanks of each locus in the read
+    :param locus_reached: list of bools storing if reached the locus scanning the cigar
+    :param locus_boundary_crossed: bools indicating if the repeat boundaries have been crossed scanning the cigar
+    :return: number of repeat indices to jump after processing the match segment
     """
 
-    previous_rpos = match_refend - match_length
+    match_refstart = match_refend - match_length
     r = 0 
     for r, coord in enumerate(read.loci_coords[repeat_index:]):
-        coord_start, coord_end = coord
         current_index = r + repeat_index
+        flank_start, flank_end = coord
+        locus_start = flank_start + read.left_flanks[current_index]
+        locus_end = flank_end - read.right_flanks[current_index]
 
         # if the match segment is before the start of the repeat; repeat is unaffected
-        if match_refend < coord_start: break
+        if match_refend < flank_start: break
 
         # if the match segment is beyond the end of the repeat; repeat is unaffected
-        if previous_rpos > coord_end: continue
+        if match_refstart > flank_end: continue
             
-        locus_key = read.loci_keys[current_index]
-        if not repeat_tracked[current_index]:
+        if not locus_reached[current_index]:
 
-            if coord_start <= match_refend:
-                locus_query_range[current_index][0] = match_qryend - (match_refend - coord_start)
+            if flank_start <= match_refend:
+                flank_query_range[current_index][0] = match_qryend - (match_refend - flank_start)
 
-            if coord_end <= match_refend:                
-                locus_query_range[current_index][1] = match_qryend - (match_refend - coord_end)
+            if flank_end <= match_refend:
+                flank_query_range[current_index][1] = match_qryend - (match_refend - flank_end)
 
-            repeat_tracked[current_index] = True 
+            locus_reached[current_index] = True
 
-            # for storing repeat qpos ranges
-            # ????? Recheck this
-            if not flank_tracked[current_index][0]:
-                if coord_start <= match_refend:
-                    flank_query_range[current_index][0] = match_qryend - (match_refend - (coord_start - read.left_flanks[current_index]))
-                    flank_tracked[current_index][0] = True
-            if not flank_tracked[current_index][1]:
-                if coord_end + read.right_flanks[current_index] <= match_refend:
-                    flank_query_range[current_index][1] = match_qryend - (match_refend - (coord_end + read.right_flanks[current_index]))
-                    if match_refend > coord_end - read.right_flanks[current_index]: flank_tracked[current_index][1] = True
+            if not locus_boundary_crossed[current_index][0]:
+                if locus_start <= match_refend:
+                    locus_query_range[current_index][0] = match_qryend - (match_refend - locus_start)
+                    locus_boundary_crossed[current_index][0] = True
+            if not locus_boundary_crossed[current_index][1]:
+                if locus_end <= match_refend:
+                    locus_query_range[current_index][1] = match_qryend - (match_refend - locus_end)
+                    # the postion is greater than the end to consider inserts at the end of the repeat
+                    if match_refend > locus_end: locus_boundary_crossed[current_index][1] = True
 
-        elif coord_end <= match_refend:
-            locus_query_range[current_index][1] = match_qryend - (match_refend - coord_end)
+        elif flank_end <= match_refend:
+            flank_query_range[current_index][1] = match_qryend - (match_refend - flank_end)
 
         # for storing repeat qpos ranges
-        if not flank_tracked[current_index][0]:
-            if coord_start + read.left_flanks[current_index] <= match_refend:
-                flank_query_range[current_index][0] = match_qryend - (match_refend - (coord_start - read.left_flanks[current_index]))
-                flank_tracked[current_index][0] = True
-            if coord_end + read.right_flanks[current_index] <= match_refend:
-                flank_query_range[current_index][1] = match_qryend - (match_refend - (coord_end + read.right_flanks[current_index]))
-                if match_refend > coord_end - read.right_flanks[current_index]: flank_tracked[current_index][1] = True
-            
-        elif not flank_tracked[current_index][1]:
-            if coord_end + read.right_flanks[current_index] <= match_refend:
-                flank_query_range[current_index][1] = match_qryend - (match_refend - (coord_end + read.right_flanks[current_index]))
-                if match_refend > coord_end - read.right_flanks[current_index]: flank_tracked[current_index][1] = True
+        if not locus_boundary_crossed[current_index][0]:
+            if locus_start <= match_refend:
+                locus_query_range[current_index][0] = match_qryend - (match_refend - locus_start)
+                locus_boundary_crossed[current_index][0] = True
+            if locus_end <= match_refend:
+                locus_query_range[current_index][1] = match_qryend - (match_refend - locus_end)
+                if match_refend > locus_end: locus_boundary_crossed[current_index][1] = True
+
+        elif not locus_boundary_crossed[current_index][1]:
+            if locus_end <= match_refend:
+                locus_query_range[current_index][1] = match_qryend - (match_refend - locus_end)
+                if match_refend > locus_end: locus_boundary_crossed[current_index][1] = True
 
     jump = 0    # jump beyond the repeat where all positions are tracked
     if read.loci_coords[repeat_index + r - 1][1] < match_refend:
@@ -144,90 +151,91 @@ def match_jump(read, match_refend, match_qryend, match_length, repeat_index, loc
     return jump
 
 
-def deletion_jump(cooper, read, del_refend, qpos, deletion_len, repeat_index, locus_query_range, flank_query_range, repeat_tracked, flank_tracked):
+def deletion_jump(read, del_refend, qpos, deletion_len, repeat_index, locus_query_range, flank_query_range, locus_reached, locus_boundary_crossed):
     """
-    Return the number of repeat indices to jump when scanning through a deletion segment.
-    The function tracks specifically if the deletion is segment has complete repeats in them
-    or segments of the repeat is deleted.
+    process a deletion and update data for affected repeats
+
+    :param read: the read being processed
+    :param del_refend: the reference end position of the deletion
+    :param qpos: the query position corresponding to the reference end position of the deletion
+    :param deletion_len: length of the deletion
+    :param repeat_index: the current repeat index being processed
+    :param locus_query_range: list of query position ranges for each locus in the read
+    :param flank_query_range: list of query position ranges for the flanks of each locus in the read
+    :param locus_reached: list of bools storing if reached the locus scanning the cigar
+    :param locus_boundary_crossed: bools indicating if the repeat boundaries have been crossed scanning the cigar
+    :return: number of repeat indices to jump after processing the deletion segment
     """
 
-    # if amp_left_flank_list:
-        # chrom, ref, query_sequence, flank_length, qpos_start, qpos_end = amplicon_variables
+    del_refstart = del_refend - deletion_len
 
-    # rpos - corresponds to the position in the reference after tracking the deletion
     r = 0   # required to be initialised outside the loop
     for r, coord in enumerate(read.loci_coords[repeat_index:]):
-        coord_start, coord_end = coord
         current_index = r + repeat_index
+
+        flank_start, flank_end = coord  # the locus coordinates include flanks
+        locus_start = flank_start + read.left_flanks[current_index]
+        locus_end = flank_end - read.right_flanks[current_index]
+
         # if rpos is before the start of the repeat; repeat is unaffected
-        if del_refend < coord_start: break
+        if del_refend < flank_start: break
 
         # actual position in the reference where the deletion is occurring
-        del_refstart = del_refend - deletion_len
-        if del_refstart > coord_end: continue
+        if del_refstart > flank_end: continue
 
         locus_key = read.loci_keys[current_index]
-        if not repeat_tracked[current_index]:
-            # if the locus is not tracked
-            # deletion is encountered beyond
-            if coord_start <= del_refend:    
-                locus_query_range[current_index][0] = qpos        
-                repeat_tracked[current_index] = True    # set tracked as true
-                # if amp_left_flank_list:
-                #     lstart, lend = ref_repeat(locus_key)
-                #     Record_left_out_ins(amp_left_flank_list, r, repeat_index, chrom, ref, query_sequence, flank_length, lstart, lend, locus_qpos_range, loci_flank_qpos_range, out_insertion_qpos_ranges_left, left_ins_rpos, flank_track, qpos_start, qpos_end)
+        if not locus_reached[current_index]:
+            # if the locus is not tracked so far
+            if locus_start <= del_refend:    
+                flank_query_range[current_index][0] = qpos        
+                locus_reached[current_index] = True    # set tracked as true
 
-            if coord_end < del_refend:
-                locus_query_range[current_index][1] = qpos
-                # if amp_left_flank_list:
-                #     lstart, lend = ref_repeat(locus_key)
-                #     Record_right_out_ins(amp_right_flank_list, r, repeat_index, chrom, ref, query_sequence, flank_length, lstart, lend, locus_qpos_range, loci_flank_qpos_range, out_insertion_qpos_ranges_right, right_ins_rpos, flank_track, qpos_start, qpos_end)
+            if locus_end < del_refend:
+                flank_query_range[current_index][1] = qpos
 
             # for storing repeat qpos ranges
-            if not flank_tracked[current_index][0]:
-                if coord_start + read.left_flanks[current_index] <= del_refend:
-                    flank_query_range[current_index][0] = qpos
-                    flank_tracked[current_index][0] = True
-            if not flank_tracked[current_index][1]:
-                if coord_end - read.right_flanks[current_index] < del_refend:
-                    flank_query_range[current_index][1] = qpos
-                    flank_tracked[current_index][1] = True
+            if not locus_boundary_crossed[current_index][0]:
+                if locus_start <= del_refend:
+                    locus_query_range[current_index][0] = qpos
+                    locus_boundary_crossed[current_index][0] = True
+            if not locus_boundary_crossed[current_index][1]:
+                # should probably be locus_end < del_refend because locus_end includes flank
+                if locus_end < del_refend:
+                    locus_query_range[current_index][1] = qpos
+                    locus_boundary_crossed[current_index][1] = True
 
-        elif coord_end < del_refend:
-            locus_query_range[current_index][1] = qpos
-            # if amp_left_flank_list:
-            #     lstart, lend = ref_repeat(locus_key)
-            #     Record_right_out_ins(amp_right_flank_list, r, repeat_index, chrom, ref, query_sequence, flank_length, lstart, lend, locus_qpos_range, loci_flank_qpos_range, out_insertion_qpos_ranges_right, right_ins_rpos, flank_track, qpos_start, qpos_end)
+        elif flank_end < del_refend:
+            flank_query_range[current_index][1] = qpos
 
         # for storing repeat qpos ranges
-        if not flank_tracked[current_index][0]:
-            if coord_start + read.left_flanks[current_index] <= del_refend:
-                flank_query_range[current_index][0] = qpos
-                flank_tracked[current_index][0] = True 
-            if coord_end-read.right_flanks[current_index] < del_refend:
-                flank_query_range[current_index][1] = qpos
-                flank_tracked[current_index][1] = True
-        elif (not flank_tracked[current_index][1]) and (coord_end - read.right_flanks[current_index] <= del_refend):
-            flank_query_range[current_index][1] = qpos
-            if del_refend > coord_end - read.right_flanks[current_index]: flank_tracked[current_index][1] = True
+        if not locus_boundary_crossed[current_index][0]:
+            if locus_start <= del_refend:
+                locus_query_range[current_index][0] = qpos
+                locus_boundary_crossed[current_index][0] = True
+            if locus_end < del_refend:
+                locus_query_range[current_index][1] = qpos
+                locus_boundary_crossed[current_index][1] = True
+        elif not locus_boundary_crossed[current_index][1]:
+            if locus_end <= del_refend:
+                locus_query_range[current_index][1] = qpos
+                if del_refend > locus_end: locus_boundary_crossed[current_index][1] = True
 
-        # updating the allele with the deletion considered
-        # read_loci_variations[locus_key][rpos] = f'D|{deletion_length}'
-
-        # del_len = min(coord[1], rpos) - max(coord[0], del_pos)
-        del_len = min(coord_end - read.right_flanks[current_index], del_refend) - max(coord_start+read.left_flanks[current_index], del_refstart)
-        if (del_refstart >= coord_start + read.left_flanks[current_index]) and (del_refend <= coord_end - read.right_flanks[current_index]): # introduced to include length only if it comes inside repeat region
+        # if deletion does not overlap the repeat; skip
+        if del_refend < locus_start or del_refstart > locus_end:
+            continue
+        else:
+            # updating the allele with the deletion considered
+            del_len = min(locus_end, del_refend) - max(locus_start, del_refstart)
             if del_refstart not in read.homopolymer_positions:
-                read.loci_data[locus_key].alen -= del_len
+                read.loci_data[locus_key].alen  -= del_len
                 read.loci_data[locus_key].halen -= del_len
             else:
+                # if the deletion is only limited to the homopolymer positions
                 if del_len <= read.homopolymer_positions[del_refstart]:
-                    # if the deletion is only limited to the homopolymer positions
                     read.loci_data[locus_key].halen -= del_len
                 else:
                     read.loci_data[locus_key].alen  -= del_len
                     read.loci_data[locus_key].halen -= del_len
-
 
     jump = 0    # jump beyond the repeat where all positions are tracked
     if read.loci_coords[repeat_index + r - 1][1] < del_refend:
@@ -238,102 +246,99 @@ def deletion_jump(cooper, read, del_refend, qpos, deletion_len, repeat_index, lo
     return jump
 
 
-def insertion_jump(cooper, read, ins_refpos, qpos, insert_len, repeat_index, locus_query_range, flank_query_range,
-                   repeat_tracked, flank_tracked, out_insertion_qpos_ranges_left, out_insertion_qpos_ranges_right, left_ins_rpos,
-                   right_ins_rpos): #, amp_right_flank_list, amp_left_flank_list, amplicon_variables):
+def insertion_jump(read, ins_refpos, ins_qend, insert_len, homopolymer_insert, repeat_index, locus_query_range, flank_query_range,
+                   locus_reached, locus_boundary_crossed, left_flank_insertions, right_flank_insertions):
     """
-    Return the number of repeat indices to jump when scanning through a insertion segment.
-    The function tracks specifically if the deletion is segment has complete repeats in them
-    or segments of the repeat is deleted.
+    process an insertion and update data for affected repeats
+    :param read: the read being processed
+    :param ins_refpos: the reference position where the insertion is occurring
+    :param ins_qend: the query end position of the insertion
+    :param insert_len: length of the insertion
+    :param homopolymer_insert: boolean indicating if the insertion is a homopolymer    :param repeat_index: the current repeat index being processed
+    :param locus_query_range: list of query position ranges for each locus in the read
+    :param flank_query_range: list of query position ranges for the flanks of each locus in the read
+    :param locus_reached: list of bools storing if reached the locus scanning the cigar
+    :param locus_boundary_crossed: bools indicating if the repeat boundaries have been crossed scanning the cigar
+    :param left_flank_insertions: list of insertions in the left flank for each locus
+    :param right_flank_insertions: list of insertions in the right flank for each locus
+    :return: number of repeat indices to jump after processing the insertion segment
     """
 
-    # if amp_left_flank_list:
-    #     chrom, ref, query_sequence, flank_length, qpos_start, qpos_end = amplicon_variables
+    ins_qstart = ins_qend - insert_len  # start position of the insertion in the query
 
     r = 0   # required to be initialised outside the loop
     for r, coord in enumerate(read.loci_coords[repeat_index:]):
         current_index = r + repeat_index
 
-        coord_start, coord_end = coord
+        flank_start, flank_end = coord
+        locus_start = flank_start + read.left_flanks[current_index]
+        locus_end = flank_end - read.right_flanks[current_index]
         # if rpos is before the start of the repeat; repeat is unaffected
-        if ins_refpos < coord_start: break
+        if ins_refpos < flank_start: break
 
         # if the insertion is happening beyond, the repeat in unaffected
-        if ins_refpos > coord_end: continue
+        if ins_refpos > flank_end: continue
 
         locus_key = read.loci_keys[current_index]
-        if not repeat_tracked[current_index]:
-            # if the locus is not tracked
-            # deletion is encountered beyond
-            if coord_start <= ins_refpos:
-                locus_query_range[current_index][0] = qpos - insert_len
-                repeat_tracked[current_index] = True    # set tracked as true
-                # if amp_left_flank_list:
-                #     lstart, lend = ref_repeat(locus_key)
-                #     Record_left_out_ins(amp_left_flank_list, r, repeat_index, chrom, ref, query_sequence, flank_length, lstart, lend, locus_qpos_range, loci_flank_qpos_range, out_insertion_qpos_ranges_left, left_ins_rpos, flank_track, qpos_start, qpos_end)
+        if not locus_reached[current_index]:
+            if flank_start <= ins_refpos:      # can this be locus_start - 1??
+                flank_query_range[current_index][0] = ins_qstart
+                locus_reached[current_index] = True    # set tracked as true
 
-            if coord_end == ins_refpos:
-                locus_query_range[current_index][1] = qpos
-                # if amp_left_flank_list:
-                #     lstart, lend = ref_repeat(locus_key)
-                #     Record_right_out_ins(amp_right_flank_list, r, repeat_index, chrom, ref, query_sequence, flank_length, lstart, lend, locus_qpos_range, loci_flank_qpos_range, out_insertion_qpos_ranges_right, right_ins_rpos, flank_track, qpos_start, qpos_end)
-
-                # here jump can be done
+            if flank_end == ins_refpos:
+                flank_query_range[current_index][1] = ins_qend
 
             # for storing repeat qpos ranges
-            if not flank_tracked[current_index][0]:
-                if coord_start + read.left_flanks[current_index] - 1 <= ins_refpos:
-                    locus_query_range[current_index][0] = qpos - insert_len
-                    flank_tracked[current_index][0] = True
-            if not flank_tracked[current_index][1]:
-                if coord_end - read.right_flanks[current_index] <= ins_refpos:
-                    locus_query_range[current_index][1] = qpos
-                    if ins_refpos > coord_end - read.right_flanks[current_index]: flank_tracked[current_index][1] = True
+            if not locus_boundary_crossed[current_index][0]:
+                if locus_start - 1 <= ins_refpos:
+                    locus_query_range[current_index][0] = ins_qstart
+                    locus_boundary_crossed[current_index][0] = True
+            if not locus_boundary_crossed[current_index][1]:
+                if locus_end <= ins_refpos:
+                    locus_query_range[current_index][1] = ins_qend
+                    if ins_refpos > flank_end: locus_boundary_crossed[current_index][1] = True
 
 
-        elif coord_end == ins_refpos:
-            locus_query_range[current_index][1] = qpos
-            # if amp_left_flank_list:
-            #     lstart, lend = ref_repeat(locus_key)
-            #     Record_right_out_ins(amp_right_flank_list, r, repeat_index, chrom, ref, query_sequence, flank_length, lstart, lend, locus_qpos_range, loci_flank_qpos_range, out_insertion_qpos_ranges_right, right_ins_rpos, flank_track, qpos_start, qpos_end)
+        elif flank_end == ins_refpos:
+            flank_query_range[current_index][1] = ins_qend
 
         # for storing repeat qpos ranges
-        if not flank_tracked[current_index][0]:
-            if coord_start + read.left_flanks[current_index] <= ins_refpos:
-                flank_query_range[current_index][0] = qpos - insert_len
-                flank_tracked[current_index][0] = True
-            if coord_end - read.right_flanks[current_index] <= ins_refpos:
-                flank_query_range[current_index][1] = qpos
-                if ins_refpos > coord_end - read.right_flanks[current_index]: flank_tracked[current_index][1] = True
-        elif (not flank_tracked[current_index][1]) and (coord_end - read.right_flanks[current_index] <= ins_refpos):
-            flank_query_range[current_index][1] = qpos
-            if ins_refpos > coord_end - read.right_flanks[current_index]: flank_tracked[current_index][1] = True
+        if not locus_boundary_crossed[current_index][0]:
+            if locus_start <= ins_refpos:
+                locus_query_range[current_index][0] = ins_qstart
+                locus_boundary_crossed[current_index][0] = True
+            if locus_end <= ins_refpos:
+                locus_query_range[current_index][1] = ins_qend
+                if ins_refpos > locus_end: locus_boundary_crossed[current_index][1] = True
+        elif not locus_boundary_crossed[current_index][1]:
+            if locus_end <= ins_refpos:
+                locus_query_range[current_index][1] = ins_qend
+                if ins_refpos > locus_end: locus_boundary_crossed[current_index][1] = True
 
         # read_loci_variations[locus_key][rpos] = f'I|{insertion_length}'
-        if coord_start + read.left_flanks[current_index] <= ins_refpos <= coord_end - read.right_flanks[current_index]: # introduced to include length only if it comes inside repeat region
+        if locus_start <= ins_refpos <= locus_end: # introduced to include length only if it comes inside repeat region
             if ins_refpos not in read.homopolymer_positions:
                 read.loci_data[locus_key].alen  += insert_len
                 read.loci_data[locus_key].halen += insert_len
             else:
-                if len(set(insert)) == 1:
+                if homopolymer_insert:
                     # only if the insertion is a homopolymer; consider it as homopolymer insertion
                     read.loci_data[locus_key].halen += insert_len
                 else:
                     read.loci_data[locus_key].alen  += insert_len
                     read.loci_data[locus_key].halen += insert_len
 
-        if coord_start <= ins_refpos <= coord_start + read.left_flanks[current_index]-1: # -1 is included so ins near the start pos is not taken into account as it is already added
+        if flank_start <= ins_refpos <= locus_start - 1: # -1 is included so ins near the start pos is not taken into account as it is already added
             try:
-                out_insertion_qpos_ranges_left[current_index].append((qpos-insert_len, qpos))
-                left_ins_rpos[current_index].append(ins_refpos)
+                left_flank_insertions[current_index].append((ins_refpos, ins_qstart, ins_qend))
             except AttributeError:
                 pass
-        elif coord_end - read.right_flanks[current_index] + 1 <= ins_refpos <= coord_end: # +1 is included so ins near the end pos is not taken into account as it is already added
+        elif locus_end + 1 <= ins_refpos <= flank_end: # +1 is included so ins near the end pos is not taken into account as it is already added
             try:
-                out_insertion_qpos_ranges_right[current_index].append((qpos-insert_len, qpos))
-                right_ins_rpos[current_index].append(ins_refpos)
+                right_flank_insertions[current_index].append((ins_refpos, ins_qstart, ins_qend))
             except AttributeError:
                 pass
+
     jump = 0    # jump beyond the repeat where all positions are tracked
     if read.loci_coords[repeat_index + r - 1][1] < ins_refpos:
         for f in read.loci_coords[repeat_index:]:
@@ -341,34 +346,3 @@ def insertion_jump(cooper, read, ins_refpos, qpos, insert_len, repeat_index, loc
             else: break
 
     return jump
-
-def ref_repeat(locus_key):
-    lstart = int(locus_key[locus_key.index(':')+1 : locus_key.index('-')])
-    lend = int(locus_key[locus_key.index('-')+1:])
-    return lstart, lend
-
-def Record_left_out_ins(amp_left_flank_list, r, repeat_index, chrom, ref, query_sequence, flank_length, coord_start, coord_end, locus_qpos_range, loci_flank_qpos_range, out_insertion_qpos_ranges_left, left_ins_rpos, flank_track, qpos_start, qpos_end):
-    needed_len = amp_left_flank_list[r+repeat_index]
-    if needed_len>0:
-        updated_seq_start, status = detect_flank(chrom, query_sequence, ref, flank_length, coord_start, coord_end, qpos_start, qpos_end, True)
-        if status:
-            locus_qpos_range[r+repeat_index][0] = updated_seq_start # setting the read flank start
-            flank_track[r+repeat_index][0] = True 
-            loci_flank_qpos_range[r+repeat_index][0] = updated_seq_start # setting the repeat start in read same as its flank start
-            out_insertion_qpos_ranges_left[r+repeat_index] = () # restricting the left insertion ranges as empty
-            left_ins_rpos[r+repeat_index] = () # restricting the left insertion ref pos as empty
-        else:
-            out_insertion_qpos_ranges_left[r+repeat_index] = (None,) # tagging the read as None to ignore this read for genotyping, as it's softclip did not have sufficient ref flank
-
-def Record_right_out_ins(amp_right_flank_list, r, repeat_index, chrom, ref, query_sequence, flank_length, coord_start, coord_end, locus_qpos_range, loci_flank_qpos_range, out_insertion_qpos_ranges_right, right_ins_rpos, flank_track, qpos_start, qpos_end):
-    needed_len = amp_right_flank_list[r+repeat_index]
-    if needed_len>0:
-        updated_seq_end, status = detect_flank(chrom, query_sequence, ref, flank_length, coord_start, coord_end, qpos_start, qpos_end, False)
-        if status:
-            locus_qpos_range[r+repeat_index][1] = updated_seq_end # setting the read flank end
-            flank_track[r+repeat_index][1] = True
-            loci_flank_qpos_range[r+repeat_index][1] = updated_seq_end # setting the repeat end in read same as its flank end
-            out_insertion_qpos_ranges_right[r+repeat_index] = () # restricting the right insertion ranges as empty
-            right_ins_rpos[r+repeat_index] = () # restricting the right insertion ref pos as empty
-        else:
-            out_insertion_qpos_ranges_right[r+repeat_index] = (None,) # tagging the read as None to ignore this read for genotyping, as it's softclip did not have sufficient ref flank

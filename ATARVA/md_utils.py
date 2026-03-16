@@ -1,4 +1,5 @@
-import bisect
+from sortedcontainers import SortedList
+
 from ATARVA.structures import SNP
 
 def update_snps(cooper, read, pos, qpos, insertion_point):
@@ -14,7 +15,7 @@ def update_snps(cooper, read, pos, qpos, insertion_point):
     cooper.cooper_read_data[read.index].snps.add(rpos)
     if rpos not in cooper.cooper_snp_data:
         cooper.cooper_snp_data[rpos] = SNP(cov = 1, sub = { sub_char: {read.index} }, qual={ read.index: Q_value })
-        bisect.insort(cooper.cooper_sorted_snps, rpos)
+        cooper.cooper_sorted_snps.add(rpos)
     else:
         cooper.cooper_snp_data[rpos].cov += 1
         cooper.cooper_snp_data[rpos].qual[read.index] = Q_value
@@ -26,7 +27,8 @@ def update_snps(cooper, read, pos, qpos, insertion_point):
 
 def parse_mdtag(cooper, read, qpos, insertion_point):
         
-    if cooper.cooper_sorted_snps == None: cooper.cooper_sorted_snps = []
+    if cooper.cooper_sorted_snps == None:
+        cooper.cooper_sorted_snps = SortedList()
 
     base = 0
     sub_base = '0'

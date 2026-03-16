@@ -2,11 +2,13 @@
 
 """
     ATaRVa (pronunced as atharva) is a tool designed to analyse tandem repeat variation
-    from long read whole genome sequencing data.
+    from genome sequencing data. Besides genotyping the locus ATaRVa provides functionality
+    to decompose motifs, analyse base modifications along with interactive visualizations.
 """
 
 import sys
 import argparse as ap
+
 from ATARVA.genotype import genotype_parser
 from ATARVA.merge import merge_parser
 from ATARVA.version import __version__
@@ -27,12 +29,12 @@ def main():
     
     parser.add_argument('-h', '--help', action='store_true', help="Print help")
     parser.add_argument('-v', '--version', action='version', version=f'ATaRVa version {__version__}', help="Print version")
-    
+
     subparsers = parser.add_subparsers(dest="command")
-    
+
     genotype_parser(subparsers)
     merge_parser(subparsers)
-    
+
     args = parser.parse_args()
 
     if args.command is None:

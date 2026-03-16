@@ -1,8 +1,7 @@
-import sys, os, gzip
+import sys, os
 import pysam
 import timeit as ti
-# import argparse as ap
-from multiprocessing import Process, Pool
+from multiprocessing import Pool
 from tqdm import tqdm
 
 from ATARVA.readers import fasta_check, bam_check, tabix_check
@@ -12,41 +11,60 @@ from ATARVA.readers import *
 from ATARVA.vcf_writer import set_info_mp_cutoff
 from ATARVA.sub_operation_utils import set_methviz_tag
 
+
 def genotype_parser(subparsers):
-    parser = subparsers.add_parser("genotype", help="tandem repeat genotyper specially designed for long read data", description="Tandem Repeat Genotyper")
+    """Argument parser for the genotype sub-command of ATaRVa and run the genotyping workflow"""
+
+    parser = subparsers.add_parser(
+        "genotype",
+        help        = "tandem repeat genotyper specially designed for long read data",
+        description = "Tandem Repeat Genotyper"
+    )
     parser._action_groups.pop()
 
-    required = parser.add_argument_group('Required arguments')
-    required.add_argument('-f',  '--fasta',   required=True, metavar='<FILE>', help='input reference fasta file')
-    required.add_argument('-b', '--bam', nargs='+', required=True, metavar='<FILE>', help='samples alignment files. allowed formats: SAM, BAM, CRAM')
-    required.add_argument('-r', '--regions', required=True, metavar='<FILE>', help='input regions file. the regions file should be strictly in bgzipped tabix format. \
-                                                                  If the regions input file is in bed format. First sort it using bedtools. Compress it using bgzip. \
-                                                                  Index the bgzipped file with tabix command from samtools package.')
+    # ── Required arguments ────────────────────────────────────────────────────
+    req = parser.add_argument_group('Required arguments')
+    req.add_argument('-f', '--fasta',   required=True, metavar='<FILE>', help='input reference fasta file')
+    req.add_argument('-b', '--bam',     required=True, metavar='<FILE>', nargs='+', help='sample alignment files [SAM | BAM | CRAM]')
+    req.add_argument('-r', '--regions', required=True, metavar='<FILE>', help='bgzipped + tabix-indexed regions file. '
+                          'To prepare: sort with bedtools → compress with bgzip → index with tabix')
 
-    optional = parser.add_argument_group('Optional arguments')
-    optional.add_argument('--format', type=str, metavar='<STR>', default='bam', help='format of input alignment file. allowed options: [cram, bam, sam]. default: [bam]')
-    optional.add_argument('-q', '--map-qual', type=int, metavar='<INT>', default=5, help='minimum mapping quality of a read to be considered. [default: 5]')
-    optional.add_argument('--contigs', nargs='+', help='contigs to get genotyped [chr1 chr12 chr22 ..]. If not mentioned every contigs in the region file will be genotyped.')
-    optional.add_argument('--min-reads', type=int, metavar='<INT>', default=10, help='minimum read coverage after quality cutoff at a locus to be genotyped. [default: 10]')
-    optional.add_argument('--max-reads', type=int, metavar='<INT>', default=None, help='maximum number of reads to be used for genotyping a locus. [default: 100]')
-    optional.add_argument('--snp-dist', type=int, metavar='<INT>', default=3000, help='maximum distance of the SNP from repeat region to be considered for phasing. [default: 3000]')
-    optional.add_argument('--snp-count', type=int, metavar='<INT>', default=3, help='number of SNPs to be considered for phasing (minimum value = 1). [default: 3]')
-    optional.add_argument('--snp-qual', type=int, metavar='<INT>', default=20, help='minimum basecall quality at the SNP position to be considered for phasing. [default: 20]')
-    optional.add_argument('--flank', type=int, metavar='<INT>', default=None, help='length of the flanking region (in base pairs) to search for insertion with a repeat in it. [default: 10]')
-    optional.add_argument('--snp-read', type=float, metavar='<FLOAT>', default=0.2, help='a positive float as the minimum fraction of snp\'s read contribution to be used for phasing. [default: 0.25]')
-    optional.add_argument('--meth-prob', type=float, metavar='<FLOAT>', default=0.5, help='a minimum probability cutoff for methylation. [default: 0.5]')
-    optional.add_argument('--phasing-read', type=float, metavar='<FLOAT>', default=0.4, help='a positive float as the minimum fraction of total read contribution from the phased read clusters. [default: 0.4]')
-    optional.add_argument('-o',  '--vcf', type=str, metavar='<FILE>', default='', help='name of the output file, output is in vcf format. [default: sys.stdout]')
-    optional.add_argument('--karyotype', nargs='+', help='karyotype of the samples [XY XX]')
-    optional.add_argument('-t',  '--threads', type=int, metavar='<INT>', default=1, help='number of threads. [default: 1]')
-    optional.add_argument('--haplotag', type=str, metavar='<STR>', default=None, help='use haplotagged information for phasing. eg: [HP]. [default: None]')
-    optional.add_argument('--decompose', action='store_true', help="write the motif-decomposed sequence to the vcf. [default: False]")
-    optional.add_argument('--methviz', action='store_true', help="write the methylation encoded sequence to the vcf for visualization purpose. [default: False]")
-    optional.add_argument('--amplicon', action='store_true', help="genotype mode for targeted-sequenced samples. In this mode, the default values for `max-reads` and `flank` values are 1000 and 20 respectively. [default: False]")
-    optional.add_argument('--read-wise', action='store_true', help="Read-wise genotyping mode for BED file with dense regions. [default: False]")
-    optional.add_argument('--loci-wise', action='store_true', help="Loci-wise genotyping mode instead of Read-wise for BED file with sparse regions. [default: False]")
-    optional.add_argument('-log', '--debug_mode', action='store_true', help="write the debug messages to log file. [default: False]")
-    optional.add_argument('-v', '--version', action='version', version=f'ATaRVa version {__version__}')
+    # ── Optional arguments ────────────────────────────────────────────────────
+    opt = parser.add_argument_group('Optional arguments')
+
+    # --- Input / Output ---
+    opt.add_argument('-o', '--vcf',      metavar='<FILE>', default='',    help='output VCF file [default: stdout]')
+    opt.add_argument('--format',         metavar='<STR>',  default='bam', help='alignment file format [cram | bam | sam] [default: bam]')
+    opt.add_argument('--contigs',        metavar='<STR>',  nargs='+', help='contigs to genotype e.g. chr1 chr12 chr22. [default: all]')
+    opt.add_argument('--karyotype',      metavar='<STR>',  nargs='+', help='sample karyotypes e.g. XY XX')
+
+    # --- Read filtering ---
+    opt.add_argument('-q', '--map-qual', metavar='<INT>',   type=int,   default=5,    help='minimum mapping quality [default: 5]')
+    opt.add_argument('--min-reads',      metavar='<INT>',   type=int,   default=10,   help='minimum read coverage at a locus [default: 10]')
+    opt.add_argument('--max-reads',      metavar='<INT>',   type=int,   default=None, help='maximum reads used per locus [default: 100]')
+    opt.add_argument('--flank',          metavar='<INT>',   type=int,   default=None, help='flank length (bp) to search for insertions [default: 10]')
+
+    # --- SNP phasing ---
+    opt.add_argument('--snp-dist',       metavar='<INT>',   type=int,   default=3000, help='max SNP distance from repeat for phasing [default: 3000]')
+    opt.add_argument('--snp-count',      metavar='<INT>',   type=int,   default=3,    help='number of SNPs for phasing [default: 3]')
+    opt.add_argument('--snp-qual',       metavar='<INT>',   type=int,   default=20,   help='min base quality at SNP position [default: 20]')
+    opt.add_argument('--snp-read',       metavar='<FLOAT>', type=float, default=0.2,  help='min SNP read fraction for phasing [default: 0.2]')
+    opt.add_argument('--phasing-read',   metavar='<FLOAT>', type=float, default=0.4,  help='min fraction of reads from phased clusters [default: 0.4]')
+    opt.add_argument('--haplotag',       metavar='<STR>',               default=None, help='haplotag for phasing e.g. HP [default: None]')
+
+    # --- Methylation ---
+    opt.add_argument('--meth-prob',      metavar='<FLOAT>', type=float, default=0.5, help='min methylation probability cutoff [default: 0.5]')
+    opt.add_argument('--methviz',        action='store_true', help='write methylation-encoded sequence to VCF [default: False]')
+
+    # --- Modes ---
+    opt.add_argument('--amplicon',       action='store_true', help='targeted sequencing mode [max-reads=1000, flank=20] [default: False]')
+    opt.add_argument('--read-wise',      action='store_true', help='read-wise genotyping for dense BED regions [default: False]')
+    opt.add_argument('--loci-wise',      action='store_true', help='loci-wise genotyping for sparse BED regions [default: False]')
+    opt.add_argument('--decompose',      action='store_true', help='write motif-decomposed sequence to VCF [default: False]')
+
+    # --- Misc ---
+    opt.add_argument('-t', '--threads',      metavar='<INT>',     type=int,   default=1, help='number of threads [default: 1]')
+    opt.add_argument('-log', '--debug_mode', action='store_true', help='write debug messages to log file [default: False]')
 
 
     if (len(sys.argv) == 2) and (sys.argv[1] == 'genotype'):
@@ -116,15 +134,20 @@ def worker_init(bam_file, region_ranges, args, out_file, sample_idx, thread_idx)
 
 
 def genotype_run(args):
+    """
+    Main function to run the genotyping workflow of ATaRVa.
+
+    :param args: command line arguments
+    """
 
     start_time = ti.default_timer()
-    # args = parse_args()
 
     for arg in vars(args):
         if arg in ['func', 'help', 'command']: continue
         print (arg, getattr(args, arg))
     print('\n')
 
+    # --- File checks ---
     fasta_check(args.fasta)
     tabix_check(args.regions)
 
@@ -143,13 +166,13 @@ def genotype_run(args):
             out_file = args.vcf + "atarva_tr"
         else:
             out_file = f'{args.vcf}'
-    # else: out_file = f'{".".join(args.bams.split(".")[:-1])}'
     external_name = out_file
 
+    # --- parameters to be set in VCF ---
     set_info_mp_cutoff(args.meth_prob)
-
     set_methviz_tag(args.methviz)
 
+    # --- process tbx ---
     temp_tbx  = pysam.Tabixfile(args.regions)
     total_loci = 0
     if not args.contigs:
@@ -158,6 +181,14 @@ def genotype_run(args):
     else:
         args.contigs = sorted(args.contigs)
         total_loci = sum(1 for contig in args.contigs for row in temp_tbx.fetch(contig))
+
+    split_point = total_loci // args.threads
+    if split_point == 0:
+        split_point = 1
+        args.threads = 1
+
+    fetcher = splitfile_threads(temp_tbx, args.contigs, total_loci, args.threads)
+    temp_tbx.close()
 
     if not args.karyotype:
         args.karyotype = [False]*len(args.bam)
@@ -170,14 +201,6 @@ def genotype_run(args):
     else:
         if args.max_reads is None: args.max_reads = 100
         if args.flank is None: args.flank = 10
-
-    split_point = total_loci // args.threads
-    if split_point == 0:
-        split_point = 1
-        args.threads = 1
-
-    fetcher = splitfile_threads(temp_tbx, args.contigs, total_loci, args.threads)
-    temp_tbx.close()
 
     mbso = False    # muliple bams single output
     if len(args.bam) > 1 and (args.vcf):
@@ -232,7 +255,9 @@ def genotype_run(args):
                             print(log_info, file=out_log)
                     os.remove(thread_log_out)
                 out_log.close()
+
         else:
             worker_init(bam_file, fetcher[0], args, out_file, sample_idx, 0)
+
     time_now = ti.default_timer()
     sys.stderr.write('CPU time: {} seconds\n'.format(time_now - start_time))

@@ -10,6 +10,18 @@ class ReadLocusInfo:
     rlen:  int  = 0
     seq:   list = field(default_factory=list)
 
+@dataclass(slots=True)
+class LocusInfo:
+    chrom:        str = ''
+    start:        int = 0
+    end:          int = 0
+    motif:        str = ''
+    length:       int = 0
+    motif_length: int = 0
+
+    def __post_init__(self):
+        self.length       = self.end - self.start
+        self.motif_length = len(self.motif)
 
 @dataclass(slots=True)
 class ReadInfo:
@@ -25,11 +37,11 @@ class ReadInfo:
 
 @dataclass(slots=True)
 class LocusVariation:
-    reads:        list  = field(default_factory=list)
-    read_alens:   dict  = field(default_factory=dict)
-    read_seqs:    dict  = field(default_factory=dict)
-    read_hapgp:   list  = field(default_factory=list)
-    read_meth:    dict  = field(default_factory=dict)
+    reads:           list  = field(default_factory=list)
+    read_alens:      dict  = field(default_factory=dict)
+    read_seqs:       dict  = field(default_factory=dict)
+    read_haplotags:   list  = field(default_factory=list)
+    read_meth:       dict  = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -77,7 +89,7 @@ class ExtendedRead(pysam.AlignedSegment):
         ext.homopolymer_positions  = dict()
         ext.left_flanks            = []
         ext.right_flanks           = []
-        ext.hp_tag                 = [False, None]
+        ext.haplotag               = [False, None]
 
         ext.methyl_start           = 0
         ext.methyl_end             = 0
