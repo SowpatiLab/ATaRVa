@@ -1,57 +1,107 @@
-# --- Constants ---
+import numpy as np
 
-THRESHOLD_RANGES      = [(0.3, 0.7), (0.25, 0.75), (0.2, 0.8)]
-MIN_SNP_COVERAGE_FRAC = 0.6    # min fraction of reads a SNP must cover
-MIN_ALLELE_FRAC       = 0.2    # min fraction for allele quality calculation
-CLUSTER_JOIN_HIGH     = 0.7    # min intersection to join a cluster
-CLUSTER_JOIN_LOW      = 0.05   # max intersection to confirm non-membership
-FAIL_RESULT           = [(), -1, 0, '', '', 0]
-
-
-def haplocluster_reads(snp_allele_reads, ordered_snps_by_coverage, read_indices, qual_threshold, num_snps,
-                       snp_cov_threshold, phased_fraction_threshold):
+def haplocluster_reads(cooper, locus_key):
     """
     cluster reads into haplotypes using SNP allele information.
 
-    :param snp_allele_reads:          SNP position → allele → read indices
-    :param ordered_snps_by_coverage:  SNP positions ordered by coverage
-    :param read_indices:              all read indices at this locus
-    :param qual_threshold:            minimum base quality at SNP position
-    :param num_snps:                  number of SNPs to use for phasing
-    :param snp_cov_threshold:         minimum SNP coverage threshold
-    :param phased_fraction_threshold: min fraction of reads that must be phased
-    :return:                          [haplotypes, min_snp, skip_point, snp_quals, phased_reads, snp_count]
+    :param cooper:                  cooper object
+    :param locus_data:              locus data object
+    :param relevant_snp_data:       dict of locus relevant SNP data at the locus
+    :param ordered_snp_on_cov:      SNP positions ordered by alt allele coverage
+    :return:                        [haplotypes, min_snp, skip_point, snp_quals, phased_reads, snp_count]
     """
+
+    MIN_ALLELE_FRAC       = 0.2    # min fraction for allele quality calculation
+
+    locus = cooper.cooper_loci_info[locus_key]
+    locus_data = cooper.cooper_loci_data[locus_key]
+    locus_cov  = locus_data.depth
+
+
+    relevant_snps = set()    # SNPs relevant to the locus based on proximity
+    for rindex in locus_data.reads:
+        relevant_snps |= (cooper.cooper_read_data[rindex].snps)
+
+    relevant_snps = sorted(list(filter(lambda x: (x in cooper.cooper_snp_data) and (cooper.cooper_snp_data[x].cov >= 3) and
+                                                 (locus.start - cooper.args.snp_dist < x < locus.end + cooper.args.snp_dist),
+                            relevant_snps)))
+
+    relevant_snp_data = {}
+    alt_snp_cov = {}
+    for pos in relevant_snps:
+        snp_data = cooper.cooper_snp_data[pos]
+        
+        # filter to get reads that are relevant to the locus
+        ref_reads = snp_data.ref.intersection(set(locus_data.reads))
+        pos_reads = ref_reads.copy()
+        for alt in snp_data.sub:
+            pos_reads |= snp_data.sub[alt]
+        pos_reads = pos_reads.intersection(set(locus_data.reads))
+
+        pos_cov = len(pos_reads)
+        if pos_cov < 5 or pos_cov < locus_cov * MIN_SNP_COVERAGE_FRAC: continue    # at least 5 relevant reads needed at SNP position
+
+        passed_alleles = []
+        alt_covs       = []
+        alt_reads      = {}
+        for alt in snp_data.sub:
+            alt_reads[alt] = snp_data.sub[alt].intersection(set(locus_data.reads))
+            alt_cov   = len(alt_reads[alt])
+            if alt_cov == 0: continue
+
+            avg_alt_qual = np.mean([snp_data.qual[idx] for idx in alt_reads[alt]])
+
+            if avg_alt_qual >= cooper.args.snp_qual and alt_cov >= pos_cov * MIN_ALLELE_FRAC:
+                # alternate allele passes when having 20% read support and average quality above threshold
+                passed_alleles.append(alt)
+                alt_covs.append(alt_cov)
+        
+        if len(ref_reads) >= pos_cov * MIN_ALLELE_FRAC: passed_alleles.append('r')
+
+        if len(passed_alleles) < 2: continue # if no alleles passed quality and coverage thresholds, skip the SNP
+
+        alt_snp_cov[pos] = max(alt_covs)
+
+        relevant_snp_data[pos] = { 'cov': 0, 'alleles': {}, 'qual': {} }
+        for alt in passed_alleles:
+            relevant_snp_data[pos]['cov']           += len(alt_reads[alt])
+            relevant_snp_data[pos]['alleles'][alt]   = alt_reads[alt]
+            relevant_snp_data[pos]['qual'][alt]      = np.mean([snp_data.qual[idx] for idx in alt_reads[alt]])
+        if len(snp_data.ref) > 0:
+            relevant_snp_data[pos]['alleles']['r'] = ref_reads
+            relevant_snp_data[pos]['cov']         += len(ref_reads)
+
+    ordered_snp_on_cov = sorted(relevant_snp_data.keys(), key = lambda item : alt_snp_cov[item], reverse = True)
+
+    THRESHOLD_RANGES      = [(0.3, 0.7), (0.25, 0.75), (0.2, 0.8)]
+    FAIL_RESULT           = [(), -1, 0, '', '', 0]
+    MIN_SNP_COVERAGE_FRAC = 0.6    # min fraction of reads a SNP must cover
 
     final_haplotypes = ()
     min_snp_pos      = -1
     skip_point       = 10
-    n_reads          = len(read_indices)
-    min_snp_coverage = MIN_SNP_COVERAGE_FRAC * n_reads
+    min_snp_coverage = MIN_SNP_COVERAGE_FRAC * locus_cov
 
     for tier_idx, (lower_thresh, upper_thresh) in enumerate(THRESHOLD_RANGES):
 
         sig_snp_data    = {}
         ordered_sig_snps = []
 
-        for pos in ordered_snps_by_coverage:
-            snp         = snp_allele_reads[pos]
-            total_allele_reads = sum(len(reads) for reads in snp['alleles'].values())
-
-            if snp['cov'] < min_snp_coverage:
-                break
+        for pos in ordered_snp_on_cov:
+            snp_data  = relevant_snp_data[pos]
+            pos_cov   = snp_data['cov']
 
             # count alleles where read fraction is within threshold bounds
             balanced_alleles = sum(
-                lower_thresh * total_allele_reads <= len(reads) <= upper_thresh * total_allele_reads
-                for reads in snp['alleles'].values()
+                lower_thresh * pos_cov <= len(reads) <= upper_thresh * pos_cov
+                for reads in snp_data['alleles'].values()
             )
 
             if balanced_alleles >= 2:
                 ordered_sig_snps.append(pos)
-                sig_snp_data[pos] = { 'cov': snp['cov'], 'alleles': snp['alleles'], 'qual': snp['qual'] }
+                sig_snp_data[pos] = { 'cov': snp_data['cov'], 'alleles': snp_data['alleles'], 'qual': snp_data['qual'] }
 
-        if not sig_snp_data:
+        if not ordered_sig_snps:
             if tier_idx < 2: continue
             return FAIL_RESULT
 
@@ -61,86 +111,50 @@ def haplocluster_reads(snp_allele_reads, ordered_snps_by_coverage, read_indices,
          skip_point,
          snp_quals,
          phased_reads,
-         snp_count) = merge_snpreadsets(sig_snp_data, ordered_sig_snps, read_indices, qual_threshold, num_snps,
-                                        snp_cov_threshold, phased_fraction_threshold)
-        print(f'Final haplotypes: {final_haplotypes}')
+         snp_count) = merge_snpreadsets(cooper, locus_data, sig_snp_data, ordered_sig_snps)
+
         if success or tier_idx == 2:
             break
 
     return [final_haplotypes, min_snp_pos, skip_point, snp_quals, phased_reads, snp_count]
 
 
-def merge_snpreadsets(sig_snp_data, ordered_sig_snps, read_indices, snp_qual_threshold, max_snps, min_allele_read_frac, phased_fraction_threshold):
+def merge_snpreadsets(cooper, locus_data, sig_snp_data, ordered_sig_snps):
     """
     merge SNP read sets to phase reads into two haplotype clusters.
 
-    :param sig_snp_data:              significant SNP position data
-    :param ordered_sig_snps:          SNP positions ordered by significance
-    :param read_indices:              all read indices at locus
-    :param snp_qual_threshold:        minimum base quality threshold
-    :param max_snps:                  max SNPs to use for phasing
-    :param min_allele_read_frac:      min read fraction to keep an allele
-    :param phased_fraction_threshold: min fraction of reads that must be phased
-    :return:                          [haplotypes, success, min_snp, skip_point, snp_quals, phased_reads, snp_count]
+    :param cooper:              cooper object
+    :param locus_data:          locus data object
+    :param sig_snp_data:        significant SNP position data
+    :param ordered_sig_snps:    SNP positions ordered by significance
+    :return:                    [haplotypes, success, min_snp, skip_point, snp_quals, phased_reads, snp_count]
     """
+    CLUSTER_JOIN_HIGH     = 0.7    # min intersection to join a cluster
+    CLUSTER_JOIN_LOW      = 0.05   # max intersection to confirm non-membership
+
     skip_point   = 10
-    top_snps     = ordered_sig_snps[:max_snps]
+    top_snps     = ordered_sig_snps[:cooper.args.snp_count]
     phased_reads = ''
 
     # --- compute quality values for top SNPs ---
-    snp_qual_list = []
-    for pos in top_snps:
-        snp        = sig_snp_data[pos]
-        total_reads = snp['cov']
-        allele_quals = {
-            sum(snp['qual'][r] for r in reads) / len(reads)
-            for allele, reads in snp['alleles'].items()
-            if allele != 'r' and len(reads) / total_reads >= MIN_ALLELE_FRAC
-        }
-        if allele_quals:
-            snp_qual_list.append(str(int(max(allele_quals))))
-
-    snp_quals = ','.join(snp_qual_list)
     snp_count = len(top_snps)
+    snp_quals = [max(list(sig_snp_data[pos]['qual'].values())) for pos in top_snps]
 
-    if not top_snps:
-        return [(), False, -1, 5, snp_quals, phased_reads, snp_count]
-
-    # --- filter alleles by read fraction ---
-    filtered_snps = {pos: dict(sig_snp_data[pos]['alleles']) for pos in top_snps}
-
-    for pos in list(filtered_snps):
-        alleles   = filtered_snps[pos]
-        tot_reads = sum(len(reads) for reads in alleles.values())
-
-        # remove alleles below read fraction threshold
-        filtered_snps[pos] = {
-            allele: reads
-            for allele, reads in alleles.items()
-            if len(reads) / tot_reads >= min_allele_read_frac
-        }
-
-        # remove positions with fewer than 2 valid alleles
-        if len(filtered_snps[pos]) < 2:
-            del filtered_snps[pos]
-
-    if not filtered_snps:
-        return [(), False, -1, 1, snp_quals, phased_reads, snp_count]
+    snp_quals = ','.join(str(int(q)) for q in snp_quals)
 
     # --- compute pairwise mismatch scores between SNPs ---
-    snp_positions  = list(filtered_snps)
     mismatch_scores = {}                  # {pos_a: {pos_b: mismatch_score}}
 
-    for i, pos_a in enumerate(snp_positions):
-        if mismatch_scores and i == len(snp_positions) - 1:
+    for i, pos_a in enumerate(top_snps):
+        if mismatch_scores and i == len(top_snps) - 1:
             break
         mismatch_scores[pos_a] = {}
-        alleles_a = list(filtered_snps[pos_a].values())
+        alleles_a = list(sig_snp_data[pos_a].values())
 
-        for pos_b in snp_positions[i + 1:]:
+        for pos_b in top_snps[i + 1:]:
             score = sum(
                 min(len(reads_b & allele_a) for allele_a in alleles_a)
-                for reads_b in filtered_snps[pos_b].values()
+                for reads_b in sig_snp_data[pos_b].values()
             )
             mismatch_scores[pos_a][pos_b] = score
 
@@ -171,9 +185,9 @@ def merge_snpreadsets(sig_snp_data, ordered_sig_snps, read_indices, snp_qual_thr
 
     # --- build final ordered SNP dict ---
     final_snp_dict = {
-        pos: filtered_snps[pos]
+        pos: sig_snp_data[pos]
         for pos in sig_snps
-        if pos in filtered_snps
+        if pos in sig_snp_data
     }
     min_snp_pos = min(final_snp_dict)
 
@@ -196,9 +210,9 @@ def merge_snpreadsets(sig_snp_data, ordered_sig_snps, read_indices, snp_qual_thr
 
     # --- validate phasing coverage ---
     total_phased = len(cluster1) + len(cluster2)
-    if total_phased >= phased_fraction_threshold * len(read_indices):
+    if total_phased >= cooper.args.phasing_read * locus_data.depth:
         phased_reads = [len(cluster1), len(cluster2)]
-        return [(cluster1, cluster2), True, min_snp_pos,
-                skip_point, snp_quals, phased_reads, snp_count]
-
-    return [(), False, -1, 2, snp_quals, phased_reads, snp_count]
+        locus_data.haplotypes = (list(cluster1), list(cluster2))
+        locus_data.hap_status = True
+        locus_data.phase_mode = 'snp'
+        locus_data.hap_category = 0

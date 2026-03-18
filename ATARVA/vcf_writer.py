@@ -1,5 +1,6 @@
 import sys
 import pysam
+import numpy as np
 from ATARVA.decompose import motif_decomposition
 
 INFO_MP_CUTOFF = 0.5
@@ -87,29 +88,24 @@ def write_fail_call(cooper, locus_key, skip_point):
     print(*[locus.chrom, locus.start + 1, '.',  cooper.ref.fetch(locus.chrom, locus.start, locus.end), '.', 0, FILTER, INFO, FORMAT, SAMPLE], file=cooper.outhandle, sep='\t')
 
 
-def write_homozygous_call(cooper, locus_key, allele_length, hallele_counter, allele_range,
-                          methylation_data, decomposed_seq, ALT_seq, reads_len, depth):
+def write_homozygous_call(cooper, locus_key):
     """
     write a homozygous VCF record for a given locus.
 
     :param cooper:           cooper object
     :param locus_key:        locus identifier string
-    :param allele_length:    length of the called allele
-    :param hallele_counter:  allele length counter dict
-    :param allele_range:     allele length range string
-    :param methylation_data: tuple of (prob, read_count, vis_encoding)
-    :param decomposed_seq:   motif-decomposed sequence
-    :param ALT_seq:          alternative allele sequence
-    :param reads_len:        number of reads supporting the call
-    :param depth:            total read depth at locus
     """
     locus = cooper.cooper_loci_info[locus_key]
+    locus_data = cooper.cooper_loci_data[locus_key]
+
+    lower, upper = (round(x) for x in np.percentile(np.array(locus_data.allelle_lengths), [2.5, 97.5]))
+    allele_range = f'{lower}-{upper}' if cooper.haploid else f'{lower}-{upper},{lower}-{upper}'
 
     # --- locus optional tag ---
     optional_tag = f';ID={locus.name}' if locus.name else ';ID=.'
 
     # --- methylation fields ---
-    meth_avg_prob, meth_read_count, meth_vis_enc = methylation_data
+    meth_avg_prob, meth_read_count, meth_vis_enc = locus_data.methylation_data
 
     meth_prob_str  = str(meth_avg_prob)   if meth_avg_prob   is not None else '.'
     meth_reads_str = str(meth_read_count) if meth_read_count is not None else '.'
@@ -119,23 +115,25 @@ def write_homozygous_call(cooper, locus_key, allele_length, hallele_counter, all
     MA = f'{meth_prob_str},{meth_prob_str}'
     MV = f'{meth_vis_str},{meth_vis_str}'
 
+    allele_seq = locus_data.genotype_alleles[0] if locus_data.genotype_alleles else None
+
     # --- ref / alt ---
     ref_seq    = cooper.ref.fetch(cooper.chrom, locus.start, locus.end)
-    is_alt     = ALT_seq and ref_seq != ALT_seq
-    is_seq_alt = is_alt and not ALT_seq.startswith('<')
+    is_alt     = allele_seq and ref_seq != allele_seq
+    is_seq_alt = is_alt and not allele_seq.startswith('<')
 
-    AC  = 2     if is_alt else 0
-    GT  = '1/1' if is_alt else '0/0'
-    ALT = ALT_seq if is_alt else '.'
+    AC  = 2          if is_alt else 0
+    GT  = '1/1'      if is_alt else '0/0'
+    ALT = allele_seq if is_alt else '.'
 
     # --- copy number fields ---
     ref_cn     = locus.length  // locus.motif_length
-    motif_copy = allele_length // locus.motif_length
+    motif_copy = locus_data.homozygous_alen // locus.motif_length
 
     # --- decomposed sequence ---
     if cooper.args.decompose and is_seq_alt and locus.motif_length <= 10:
-        deseq = decomposed_seq or motif_decomposition(ALT, locus.motif_length)[0]
-    else: deseq = '.'
+        decomposed_seq = motif_decomposition(allele_seq, locus.motif_length)[0]
+    else: decomposed_seq = '.'
 
     # --- INFO field ---
     INFO = (
@@ -148,24 +146,27 @@ def write_homozygous_call(cooper, locus_key, allele_length, hallele_counter, all
     )
 
     if cooper.args.debug_mode:
-        eac   = sorted(hallele_counter.items(), key=lambda x: x[1], reverse=True)
+        eac   = sorted(locus_data.halen_frequency.items(), key=lambda x: x[1], reverse=True)
         INFO += f';CT=<TAG>;EAC={eac}'
 
     # --- SAMPLE field ---
     FORMAT = 'GT:AL:CN:AR:SD:DP:SN:SQ:MA:MR:DS:MV'
 
+    allele_length = locus_data.homozygous_alen
+    depth         = locus_data.depth
+    hap_depth     = depth
     if not cooper.haploid:
         SAMPLE = (
             f'{GT}'
             f':{allele_length},{allele_length}'
             f':{motif_copy},{motif_copy}'
             f':{allele_range}'
-            f':{reads_len}'
+            f':{hap_depth}'
             f':{depth}'
             f':.:.'
             f':{MA}'
             f':{meth_reads_str}'
-            f':{deseq}'
+            f':{decomposed_seq}'
             f':{MV}'
         )
     else:
@@ -174,12 +175,12 @@ def write_homozygous_call(cooper, locus_key, allele_length, hallele_counter, all
             f':{allele_length}'
             f':{motif_copy}'
             f':{allele_range}'
-            f':{reads_len}'
+            f':{hap_depth}'
             f':{depth}'
             f':.:.'
             f':{meth_prob_str}'
             f':{meth_reads_str}'
-            f':{deseq}'
+            f':{decomposed_seq}'
             f':{MV}'
         )
 

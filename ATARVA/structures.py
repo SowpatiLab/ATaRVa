@@ -39,10 +39,30 @@ class ReadInfo:
 @dataclass(slots=True)
 class LocusVariation:
     reads:             list  = field(default_factory=list)
+    read_haplotags:    list  = field(default_factory=list)
+    depth:             int   = 0
     read_alens:        dict  = field(default_factory=dict)
     read_seqs:         dict  = field(default_factory=dict)
-    read_haplotags:    list  = field(default_factory=list)
     read_methylation:  dict  = field(default_factory=dict)  # read index -> (total methylation probability, methylation positions, methylation encodings)
+    alen_frequency:    dict  = field(default_factory=dict)
+    halen_frequency:   dict  = field(default_factory=dict)
+    allele_lengths:    list  = field(default_factory=list)
+
+    neighbors:        set   = field(default_factory=set)   # positions of neighbouring loci with shared reads
+    
+    # updated when locus has high coverage and reads are subset
+    raw_depth:         int   = 0
+    raw_reads:         list  = field(default_factory=list)
+    raw_haplotags:     list  = field(default_factory=list)
+
+    # data for genotyping
+    haplotypes:        tuple = ([], [])     # (hap1 read indices, hap2 read indices)
+    hap_status:        bool  = False        # whether haplotagging was successful
+    hap_category:      int   = None         # 0: haplotyped, 1: not haplotyped, 2: amplicon (haplotagging not applicable)
+    phase_mode:        str   = None         # 0: phased by SNPs, 1: phased by methylation, 2: phased by amplicon
+    homozygous_alen:   int   = None         # if hap_category is 1, the allele length of the homozygous locus
+    genotype_alleles:  tuple = (None, None)  # (allele1, allele2) allele sequences for the genotype call
+    fail_tag:          int   = 10        # whether genotyping failed for the locus          
 
 
 @dataclass(slots=True)

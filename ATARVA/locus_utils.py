@@ -16,29 +16,26 @@ def break_locuskey(locus_key):
     return chrom, start, end
 
 
-def count_alleles(locus_key, read_indices, global_loci_variations, allele_counter, hallele_counter, alen_list):
+def count_alleles(cooper, locus_key):
     """
     frequency of each allele length across all reads for a locus
 
+    :param cooper: Cooper object
     :param locus_key: string in the format chrom:start-end
-    :param read_indices: list of read indices covering the locus
-    :param global_loci_variations: dict containing locus-wise variations
-    :param allele_counter: dict to store allele length counts
-    :param hallele_counter: dict to store haplotype-wise allele length counts
-    :param alen_list: list to store allele lengths for all reads
-    
-    :return: None (updates the allele_counter, hallele_counter and alen_list in place)
+    :return: None (updates the cooper.cooper_loci_data[locus_key].alen_frequency and cooper.cooper_loci_data[locus_key].halen_frequency in place)
     """
 
+    locus_data = cooper.cooper_loci_data[locus_key]
+    read_indices = locus_data.reads
     for read_index in read_indices:
-        halen, alen = global_loci_variations[locus_key].read_alens[read_index]
-        alen_list.append(halen)
+        halen, alen = locus_data.read_alens[read_index]
+        locus_data.allele_lengths.append(halen)
 
-        try: allele_counter[alen] += 1
-        except KeyError: allele_counter[alen] = 1
+        try: locus_data.alen_frequency[alen] += 1
+        except KeyError: locus_data.alen_frequency[alen] = 1
 
-        try: hallele_counter[halen] += 1
-        except KeyError: hallele_counter[halen] = 1
+        try: locus_data.halen_frequency[halen] += 1
+        except KeyError: locus_data.halen_frequency[halen] = 1
 
 
 def record_ref_snps(cooper, new_reads, locus_start, locus_end):
@@ -89,7 +86,7 @@ def inrepeat_ins(near_by_loci, ins_rpos, sorted_ins_rpos):
     return 0
 
 
-def subset_reads(cooper, read_indices: list, read_haplotags: list) -> tuple:
+def subset_reads(cooper, locus_data):
     """
     subsets reads for loci with high coverage based on read quality.
 
@@ -98,6 +95,13 @@ def subset_reads(cooper, read_indices: list, read_haplotags: list) -> tuple:
     :param read_haplotags: list of haplotype tags for the reads
     :return:               subsetted read indices and corresponding haplotype tags
     """
+    read_indices   = locus_data.reads
+    read_haplotags = locus_data.read_haplotags
+
+    locus_data.raw_reads     = read_indices
+    locus_data.raw_haplotags = read_haplotags
+    locus_data.raw_depth     = len(read_indices)
+
     # sort read indices by quality in one step — no intermediate dict
     sorted_reads = sorted(
         read_indices,
@@ -113,7 +117,9 @@ def subset_reads(cooper, read_indices: list, read_haplotags: list) -> tuple:
         *[(i, ht) for i, ht in zip(read_indices, read_haplotags) if i in top_reads]
     ) if top_reads else ([], [])
 
-    return sorted(read_indices), list(read_haplotags)
+    locus_data.reads          = list(read_indices)
+    locus_data.read_haplotags = list(read_haplotags)
+    locus_data.depth          = len(read_indices)
 
 
 def process_flank_insertions(flank_insertions, ref_allele, ref_length, query, locus, locus_neighbors, insert_positions, is_left):
@@ -173,10 +179,11 @@ def process_flank_insertions(flank_insertions, ref_allele, ref_length, query, lo
     return adj_pos, pending, ILR, PI, CI
 
 
-def assign_category(hap_status, read_haplotags, total_reads, hallele_counter):
+def assign_hap_category(locus_data):
     """
     assign category for the locus based on haplotype status and allele distribution
 
+    :param locus_data: LocusVariation object containing locus-specific data
     :param hap_status: boolean value indicating if haplotagging is available and informative
     :param read_haplotags: list of haplotype tags for the reads
     :param total_reads: total number of reads covering the locus
@@ -184,28 +191,32 @@ def assign_category(hap_status, read_haplotags, total_reads, hallele_counter):
     :return: category (1 for homozygous, 2 for ambiguous, 3 for phased), homozygous allele length if applicable
     """
 
-    if hap_status and (read_haplotags.count(None) / total_reads) <= 0.15:
-        return 3, None                          # phased
+    if locus_data.hap_status and (locus_data.read_haplotags.count(None) / locus_data.depth) <= 0.15:
+        locus_data.hap_category = 3 # phased
+        return
 
-    if len(hallele_counter) == 1:
-        return 1, next(iter(hallele_counter))   # homozygous
+    locus_data.phase_mode = None
+    if len(locus_data.halen_frequency) == 1:
+        locus_data.hap_category = 1 # homozygous
+        locus_data.homozygous_alen = next(iter(locus_data.halen_frequency))   # homozygous
+        return
 
-    filtered = [a for a, c in hallele_counter.items() if c > 1]
-    if len(filtered) == 1 and hallele_counter[filtered[0]] / total_reads >= 0.75:
-        return 1, filtered[0]                   # homozygous
+    filtered = [a for a, c in locus_data.halen_frequency.items() if c > 1]
+    if len(filtered) == 1 and locus_data.halen_frequency[filtered[0]] / locus_data.depth >= 0.75:
+        locus_data.hap_category = 1 # homozygous
+        locus_data.homozygous_alen = filtered[0]
+        return                   # homozygous
 
-    return 2, None                              # ambiguous
+    locus_data.hap_category = 2 # ambiguous
 
 
-
-def process_locus(cooper, locus_key, locus_neighbors):
+def process_locus(cooper, locus_key):
     """
     process the reads for a locus
 
     :param cooper:        cooper object containing read data and args
     :param locus_key:     string in the format chrom:start-end
-    :param locus_neighbors:  list of neighboring loci coordinates
-    :return: category, homozygous_allele, reads_of_homozygous, hallele_counter, skip_point, haplotypes, homozygous_alens
+    :return: None (updates the cooper.cooper_loci_data[locus_key] in place)
     """
 
     locus      = cooper.cooper_loci_info[locus_key]
@@ -213,25 +224,23 @@ def process_locus(cooper, locus_key, locus_neighbors):
 
     ref_allele = cooper.ref.fetch(cooper.chrom, locus.start, locus.end)
     ref_length = locus.length
-    locus_neighbors.remove((locus.start, locus.end))
+    locus_data.neighbors.remove((locus.start, locus.end))
 
     read_indices   = locus_data.reads
     read_haplotags = locus_data.read_haplotags
-    total_reads    = len(read_indices)
+    locus_data.depth    = len(read_indices)
 
-    category, haplotypes   = None, None
-    homozygous_allele      = None
-    is_homozygous          = False
     pending_insertions     = set()
     ILR = PI = CI          = 0
 
     # --- coverage check ---
-    if total_reads < cooper.args.min_reads:
+    if locus_data.depth < cooper.args.min_reads:
         cooper.prev_reads = set(read_indices)
-        return [None, False, {}, {}, 0, None, []]
+        locus_data.skipped_tag = 0
+        return
 
-    if total_reads > cooper.args.max_reads:
-        read_indices, read_haplotags = subset_reads(cooper, cooper.args.max_reads, read_indices, read_haplotags)
+    if locus_data.depth > cooper.args.max_reads:
+        subset_reads(cooper, locus_data)
 
     current_reads = set(read_indices)
     new_reads     = current_reads - cooper.prev_reads
@@ -250,9 +259,9 @@ def process_locus(cooper, locus_key, locus_neighbors):
 
         # process flanks
         new_qs, pend_l, ilr, pi, ci    = process_flank_insertions(left_ins,  ref_allele, ref_length, query, locus,
-                                                                  locus_neighbors, cooper.cooper_insert_positions, is_left=True)
+                                                                  locus_data.neighbors, cooper.cooper_insert_positions, is_left=True)
         new_qe, pend_r, ilr2, pi2, ci2 = process_flank_insertions(right_ins, ref_allele, ref_length, query, locus,
-                                                                  locus_neighbors, cooper.cooper_insert_positions, is_left=False)
+                                                                  locus_data.neighbors, cooper.cooper_insert_positions, is_left=False)
 
         if new_qs is not None: adj_qs = new_qs
         if new_qe is not None: adj_qe = new_qe
@@ -263,12 +272,12 @@ def process_locus(cooper, locus_key, locus_neighbors):
         pending_insertions |= pend_l | pend_r
 
         locus_data.read_seqs[read_index][0]   = query[adj_qs:adj_qe]
-        locus_data.read_alens[read_index][0] = adj_qe - adj_qs
+        locus_data.read_alens[read_index][0]  = adj_qe - adj_qs
 
         # methylation
-        subseq_len    = fqe - fqs
-        adj_fqs       = fqs + adj_qs
-        adj_fqe       = fqe - (subseq_len - adj_qe)
+        subseq_len     = fqe - fqs
+        adj_fqs        = fqs + adj_qs
+        adj_fqe        = fqe - (subseq_len - adj_qe)
         read_mod_bases = read_data.methylation
 
         meth_pos = []; meth_encode = []; meth_count = meth_qual = 0
@@ -290,13 +299,11 @@ def process_locus(cooper, locus_key, locus_neighbors):
         cooper.logger.debug(f"{locus_key};Larger_ins={ILR};Partial_ins={PI};Complete_ins={CI}")
 
     cooper.cooper_insert_positions |= pending_insertions
+    count_alleles(cooper, locus_key) # updates frequency of allele lengths in cooper.cooper_loci_data[locus_key]
 
-    allele_counter = {}; hallele_counter = {}; allele_lengths = []
-    count_alleles(locus_key, read_indices, cooper.cooper_loci_data,
-                  allele_counter, hallele_counter, allele_lengths) # updates allele_counter, hallele_counter and alen_list in place
-
-    hap_status = False
-    if not cooper.args.amplicon:
+    if cooper.args.amplicon:
+        locus.hap_category = 2  # ambigous for amplicons
+    else:
         record_ref_snps(cooper, new_reads, locus.start, locus.end)
 
         if cooper.args.haplotag:
@@ -304,12 +311,13 @@ def process_locus(cooper, locus_key, locus_neighbors):
             for read_idx, tag in zip(read_indices, read_haplotags):
                 if tag == 1: hap1.append(read_idx)
                 if tag == 2: hap2.append(read_idx)
-            haplotypes = (hap1, hap2)
-            hap_status = all(haplotypes)
+            locus_data.haplotypes = (hap1, hap2)
+            # haplotyped successfully if there are reads in both haplogroups
+            locus_data.hap_status = all(locus_data.haplotypes)
+            if locus_data.hap_status:
+                locus_data.phase_mode = 'haplotag'
 
-        category, homozygous_allele = assign_category(hap_status, read_haplotags, total_reads, hallele_counter)
-    else:
-        category = 2
+        assign_hap_category(locus_data)
 
     cooper.prev_reads = current_reads
-    return [category, homozygous_allele, read_indices, hallele_counter, 10, haplotypes, allele_lengths]
+    locus_data.skipped_tag = 10

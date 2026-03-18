@@ -335,15 +335,16 @@ class Cooper:
         :return: 1 if locus was successfully genotyped, 0 otherwise
         """
         self.cooper_loci_ends.popleft()
-        locus_key = self.cooper_loci_keys.popleft()
-        locus     = self.cooper_loci_info[locus_key]
+        locus_key   = self.cooper_loci_keys.popleft()
+        locus_data  = self.cooper_loci_data[locus_key]
+        locus       = self.cooper_loci_info[locus_key]
 
         if locus_key not in self.cooper_loci_data:
             print(f'No reads for locus {locus_key} — skipping.')
             return 0
 
         # --- fetch neighbouring loci ---
-        neighbours = [
+        locus_data.neighbors = [
             (int(r.split('\t')[1]), int(r.split('\t')[2]))
             for r in self.tbx.fetch(self.chrom, locus.start - self.args.flank, locus.end + self.args.flank)
         ]
@@ -354,39 +355,35 @@ class Cooper:
                 self.cooper_sorted_snps.add(pos)
 
         # --- process locus ---
-        (category, homozygous_allele, read_indices,
-         hallele_counter, skip_point,
-         haplotypes, allele_lengths) = process_locus(self, locus_key, neighbours)
+        process_locus(self, locus_key)
 
-        read_seqs     = self.cooper_loci_data[locus_key].read_seqs
-        genotyped     = 0
-
-        print(category)
+        locus_data    = self.cooper_loci_data[locus_key]
+        read_seqs     = locus_data.read_seqs
         # --- category 1 — homozygous ---
-        if category == 1:
-            seqs = [read_seqs[rid][0] for rid in read_indices if read_seqs[rid][0]]
+        if locus_data.hap_category == 1:
+            read_seqs = [read_seqs[rid][0] for rid in locus_data.reads if read_seqs[rid][0] != '']
 
-            if homozygous_allele != locus.length and seqs:
-                ALT              = consensus_seq_poa(seqs)
-                homozygous_allele = len(ALT)
+            if locus_data.homozygous_alen != locus.length:
+                if len(read_seqs) > 0:
+                    # homozygous alt genotype
+                    ALT               = consensus_seq_poa(read_seqs)
+                    locus_data.homozygous_alen = len(ALT)
+                else:
+                    # homozygous deletion genotype
+                    ALT = '<DEL>'; locus_data.homozygous_alen = 0
             else:
-                ALT = '.' if homozygous_allele == locus.length else '<DEL>'
+                ALT = '.'; locus_data.homozygous_alen = locus.length
 
-            lower, upper = (round(x) for x in np.percentile(np.array(allele_lengths), [2.5, 97.5]))
+            allele_seq  = ALT if ALT != '.' else self.ref.fetch(locus.chrom, locus.start, locus.end)
+            locus_data.methylation_data = calculate_methylation(locus_data.read_indices, locus_data.read_methylation, allele_seq)
+            locus_data.genotype_alleles = (allele_seq, allele_seq)
 
-            ref_seq   = self.ref.fetch(locus.chrom, locus.start, locus.end)
-            meth_src  = ALT if ALT != '.' else ref_seq
-            meth_info = calculate_methylation(read_indices, self.cooper_loci_data[locus_key].read_methylation, meth_src)
-
-            allele_range = f'{lower}-{upper}' if self.haploid else f'{lower}-{upper},{lower}-{upper}'
-
-            write_homozygous_call(self, locus_key, homozygous_allele, hallele_counter, allele_range, meth_info,
-                                  '.', ALT, len(read_indices), len(read_indices))
-            genotyped = 1
+            write_homozygous_call(self, locus_key)
+            locus_data.genotyped = 1
 
         # --- category 2 — ambiguous ---
-        elif category == 2:
-            state, skip_point = analyse_genotype(self, locus_key, hallele_counter, read_indices)
+        elif locus_data.hap_category == 2:
+            state, skip_point = analyse_genotype(self, locus_key)
             if state:
                 genotyped = 1
             else:
@@ -396,7 +393,7 @@ class Cooper:
                 tqdm.write(msg)
 
         # --- category 3 — phased / heterozygous ---
-        elif category == 3:
+        elif locus.hap_category == 3:
             genotypes    = []
             allele_count = {}
             ALT_seqs     = []

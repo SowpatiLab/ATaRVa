@@ -93,15 +93,13 @@ def compute_cluster_cutoff(minor_cluster, major_cluster):
     return max(2, ratio_cutoff)
 
     
-def length_genotyper(cooper, locus_key, hallele_counter, read_indices):
+def length_genotyper(cooper, locus_key):
     """
     genotype a locus by clustering allele lengths using KMeans.
 
-    :param cooper:          cooper object
-    :param hallele_counter: allele length counter dict
-    :param locus_key:       locus identifier string
-    :param read_indices:    list of read indices covering the locus
-    :return:                [bool_state, category]
+    :param cooper:     cooper object
+    :param locus_key:  key for the locus
+    :return:           [bool_state, category]
     """
     FAIL             = [False, 6]
     MIN_READS        = 3
@@ -113,9 +111,9 @@ def length_genotyper(cooper, locus_key, hallele_counter, read_indices):
     read_alens = locus_data.read_alens
     read_seqs  = locus_data.read_seqs
 
-    read_indices  = sorted(read_indices)
-    unique_alens  = set(hallele_counter)
-    singleton_alens = {alen for alen, count in hallele_counter.items() if count == 1}
+    read_indices    = sorted(locus_data.reads)
+    unique_alens    = set(locus_data.allele_lengths)
+    singleton_alens = {alen for alen, count in locus_data.halen_frequency.items() if count == 1}
 
     # --- pre-compute 10% windows for each unique allele ---
     windows = { i: (round(i * (1 - WINDOW_FRAC)), round(i * (1 + WINDOW_FRAC))) for i in unique_alens }
@@ -198,81 +196,30 @@ def length_genotyper(cooper, locus_key, hallele_counter, read_indices):
     return FAIL
 
 
-def analyse_genotype(cooper, locus_key, hallele_counter, read_indices):
+def analyse_genotype(cooper, locus_key):
     """
     genotype the locus based on the read data
 
     :param cooper: Cooper object
-    :param locus_key: key for the locus
-    :param hallele_counter: counter for haplotype alleles
-    :param read_indices: indices of reads to consider
-    :return: list of genotype status and category
+    :param locus_key: locus identifier string
     """
 
-    locus = cooper.cooper_loci_info[locus_key]
+    locus      = cooper.cooper_loci_info[locus_key]
+    locus_data = cooper.cooper_loci_data[locus_key]
     status = False
 
-    read_seqs = cooper.cooper_loci_data[locus_key].read_seqs
 
-    if cooper.somatic: # for somatic variant calling
-        # state, skip_point, genotype_dict = correlation_clustering(read_seqs, read_indices, motif_size, global_loci_variations, locus_key)
-        # if state:
-        #     vcf_multizygous_writer(contig, genotype_dict, locus_start, locus_end, len(read_indices), global_loci_info, ref, out, log_bool, decomp, hallele_counter)
-        return [state, skip_point]
-    
-    elif cooper.haploid: # for haploid and amplicon genotyping
-        state, skip_point = length_genotyper(cooper, locus_key, hallele_counter, read_indices)
+    if cooper.haploid: # for haploid and amplicon genotyping
+        state, skip_point = length_genotyper(cooper, locus_key)
         return [state, skip_point]
 
-    snp_positions = set()
-    for rindex in read_indices:
-        snp_positions |= (cooper.cooper_read_data[rindex].snps)
-
-    snp_positions = sorted(list(filter(lambda x: (x in cooper.cooper_snp_data) and (cooper.cooper_snp_data[x].cov >= 3) and
-                                                    (locus.start - cooper.args.snp_dist < x < locus.end + cooper.args.snp_dist),
-                            snp_positions)))
-
-    snp_allelereads = {}
-    read_indices = set(read_indices)
-    non_ref_snp_cov = {}
-    for pos in snp_positions:
-        c_point = 0
-        coverage = set()
-        alt_nucs = [nuc for nuc in cooper.cooper_snp_data[pos].sub]
-        for alt_nuc in alt_nucs:
-            reads_of_nuc = cooper.cooper_snp_data[pos].sub[alt_nuc].intersection(read_indices)
-            if len(reads_of_nuc) == 0: continue
-            coverage.add(len(reads_of_nuc))
-
-            if (sum([cooper.cooper_snp_data[pos].qual[read_idx] for read_idx in reads_of_nuc])/len(reads_of_nuc)) <= cooper.args.snp_qual:
-                c_point=1
-                break
-        if (len(coverage)==0) or (c_point==1): continue
-        else: non_ref_snp_cov[pos] = max(coverage)
-            
-        snp_allelereads[pos] = { 'cov': 0, 'reads': set(), 'alleles': {}, 'qual': {} }
-        for nuc in cooper.cooper_snp_data[pos].sub:
-            snp_allelereads[pos]['alleles'][nuc] = cooper.cooper_snp_data[pos].sub[nuc].intersection(read_indices)
-            snp_allelereads[pos]['cov'] += len(snp_allelereads[pos]['alleles'][nuc])
-            if nuc!='r':
-                snp_allelereads[pos]['qual'].update(dict([(read_idx,cooper.cooper_snp_data[pos].qual[read_idx]) for read_idx in snp_allelereads[pos]['alleles'][nuc]]))
-
-    del_positions = list(filter(lambda x: snp_allelereads[x]['cov'] < 5, snp_allelereads.keys()))
-
-    for pos in del_positions: del snp_allelereads[pos]
-
-    ordered_snp_on_cov = sorted(snp_allelereads.keys(), key = lambda item : non_ref_snp_cov[item], reverse = True)
-
-    print(f'SNP positions considered for phasing: {snp_allelereads}')
     (haplotypes,
      min_snp, skip_point,
      chosen_snpQ,
-     phased_read, snp_num) = haplocluster_reads(snp_allelereads, ordered_snp_on_cov, read_indices, cooper.args.snp_qual,
-                                                cooper.args.snp_count, cooper.args.snp_read, cooper.args.phasing_read)
+     phased_read, snp_num) = haplocluster_reads(cooper, locus_key)
 
     if haplotypes == (): # if the loci has no significant snps
-        state, skip_point = length_genotyper(cooper, locus_key, hallele_counter, read_indices)
-        del read_seqs
+        state, skip_point = length_genotyper(cooper, locus_key)
         return [state, skip_point]
     
     if min_snp != -1:

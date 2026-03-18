@@ -173,17 +173,17 @@ def encode_methylation(score_matrix, pos_matrix, consensus_cgs):
     return ''.join(encoded_meth)
 
 
-def calculate_methylation(read_indices, read_methylation, ALT_seq):
+def calculate_methylation(read_indices, read_methylation, consensus_seq):
     """
     calculate the methylation level at CG positions for at the locus based on reads
 
     :param read_indices: list of read ids supporting the locus
     :param methyl_probabilities: list of tuples with modified base positions and their respective probabilities for each read
-    :param ALT_seq: the consensus alternate sequence
+    :param consensus_seq: the consensus sequence
     :return: average methylation level, number of reads with methylation information, encrypted methylation string for visualization
     """
 
-    arr  = np.frombuffer(ALT_seq.upper().encode(), dtype=np.uint8)
+    arr  = np.frombuffer(consensus_seq.upper().encode(), dtype=np.uint8)
     c_mask = arr[:-1] == ord('C')
     g_mask = arr[1:]  == ord('G')
     cg_positions = np.where(c_mask & g_mask)[0]
