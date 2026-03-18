@@ -56,13 +56,14 @@ class LocusVariation:
     raw_haplotags:     list  = field(default_factory=list)
 
     # data for genotyping
-    haplotypes:        tuple = ([], [])     # (hap1 read indices, hap2 read indices)
-    hap_status:        bool  = False        # whether haplotagging was successful
-    hap_category:      int   = None         # 0: haplotyped, 1: not haplotyped, 2: amplicon (haplotagging not applicable)
-    phase_mode:        str   = None         # 0: phased by SNPs, 1: phased by methylation, 2: phased by amplicon
-    homozygous_alen:   int   = None         # if hap_category is 1, the allele length of the homozygous locus
-    genotype_alleles:  tuple = (None, None)  # (allele1, allele2) allele sequences for the genotype call
-    fail_tag:          int   = 10        # whether genotyping failed for the locus          
+    haplotypes:        tuple = ([], [])       # (hap1 read indices, hap2 read indices)
+    hap_status:        bool  = False          # whether haplotagging was successful
+    hap_category:      int   = None           # 0: haplotyped, 1: not haplotyped, 2: amplicon (haplotagging not applicable)
+    phase_mode:        str   = None           # 0: phased by SNPs, 1: phased by methylation, 2: phased by amplicon
+    homozygous_alen:   int   = None           # if hap_category is 1, the allele length of the homozygous locus
+    genotype_alleles:  tuple = (None, None)   # (allele1, allele2) allele sequences for the genotype call
+    allele_range:      tuple = (None, None)   # allele length range for the genotype call, in the format 'lower1-upper1,lower2-upper2'
+    fail_tag:          int   = 10             # whether genotyping failed for the locus          
 
 
 @dataclass(slots=True)

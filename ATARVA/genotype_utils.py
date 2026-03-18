@@ -18,7 +18,7 @@ def homozygous_call(cooper, locus_key, allele_lengths, hallele_counter, read_ind
     ALT, allele_length, decomposed_seq, is_repetitive = alt_sequence(locus_data.read_seqs, read_indices, locus.motif_length)
     if is_repetitive:
         methylation_data = calculate_methylation(read_indices, locus_data.read_methylation, ALT)
-        write_homozygous_call(cooper, locus_key, allele_length, hallele_counter, allele_range, methylation_data, decomposed_seq, ALT)
+        write_homozygous_call(cooper, locus_key)
     else:
         return [False, 6]
     return [True, 10]
@@ -60,10 +60,10 @@ def heterozygous_call(cooper, haplotypes, read_seqs, new_alen, locus_key, read_i
     elif any(repeativity_list):
         if repeativity_list[0]:
             allele_range = f'{lower1}-{upper1},{lower1}-{upper1}'
-            write_homozygous_call(ref, contig, locus_key, global_loci_info, genotypes[0], len(haplotypes[0]), len(read_indices), out, ALT_seqs[0], log_bool, 'kmeans', decomp, hallele_counter, False, allele_range, decomp_seq_list[0], meth_info[0])
+            write_homozygous_call(cooper, locus_key)
         else:
             allele_range = f'{lower2}-{upper2},{lower2}-{upper2}'
-            write_homozygous_call(ref, contig, locus_key, global_loci_info, genotypes[1], len(haplotypes[1]), len(read_indices), out, ALT_seqs[1], log_bool, 'kmeans', decomp, hallele_counter, False, allele_range, decomp_seq_list[1], meth_info[1])
+            write_homozygous_call(cooper, locus_key)
     else:
         return [False, 6]
     
@@ -213,12 +213,9 @@ def analyse_genotype(cooper, locus_key):
         state, skip_point = length_genotyper(cooper, locus_key)
         return [state, skip_point]
 
-    (haplotypes,
-     min_snp, skip_point,
-     chosen_snpQ,
-     phased_read, snp_num) = haplocluster_reads(cooper, locus_key)
+    min_snp = haplocluster_reads(cooper, locus_key)
 
-    if haplotypes == (): # if the loci has no significant snps
+    if locus_data.haplotypes == (): # if the loci has no significant snps
         state, skip_point = length_genotyper(cooper, locus_key)
         return [state, skip_point]
     
@@ -232,14 +229,13 @@ def analyse_genotype(cooper, locus_key):
             min_idx += 1
         del cooper.cooper_sorted_snps[:min_idx]
 
-
     genotypes = []
     allele_count = {}
     ALT_seqs = []
     alen_list = []
     meth_info = []
-    for hap_reads in haplotypes:
-        ALT, allele_length,_,_ = alt_sequence(read_seqs, hap_reads, False, locus.motif_length) # false for genome, to not check the repetitiveness in the sequence
+    for hap_reads in locus_data.haplotypes:
+        ALT, allele_length, _, _ = alt_sequence(read_seqs, hap_reads, False, locus.motif_length) # false for genome, to not check the repetitiveness in the sequence
         alen_list.append([len(read_seqs[read_id][0]) for read_id in hap_reads])
         ALT_seqs.append(ALT)
         genotypes.append(allele_length)
@@ -251,10 +247,6 @@ def analyse_genotype(cooper, locus_key):
         meth_info.append(calculate_methylation(hap_reads, cooper.cooper_loci_data[locus_key].read_methylation, ALT))
 
     del read_seqs
-    lower1, upper1 = np.percentile(alen_list[0], [2.5, 97.5])
-    lower2, upper2 = np.percentile(alen_list[1], [2.5, 97.5])
-    allele_range = f'{lower1}-{upper1},{lower2}-{upper2}'
-    vcf_heterozygous_writer(contig, genotypes, locus_start, locus_end, allele_count, len(read_indices), global_loci_info, ref, out, chosen_snpQ, phased_read, snp_num, ALT_seqs, log_bool, 'SNP', decomp, hallele_counter, allele_range, [None], meth_info)
+    vcf_heterozygous_writer(cooper, locus_key)
     state = True
     return [state, skip_point]
-    

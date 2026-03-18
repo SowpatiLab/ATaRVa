@@ -105,18 +105,13 @@ def haplocluster_reads(cooper, locus_key):
             if tier_idx < 2: continue
             return FAIL_RESULT
 
-        (final_haplotypes,
-         success,
-         min_snp_pos,
-         skip_point,
-         snp_quals,
-         phased_reads,
-         snp_count) = merge_snpreadsets(cooper, locus_data, sig_snp_data, ordered_sig_snps)
+        
+        min_snp_pos = merge_snpreadsets(cooper, locus_data, sig_snp_data, ordered_sig_snps)
 
-        if success or tier_idx == 2:
+        if locus_data.hap_status or tier_idx == 2:
             break
 
-    return [final_haplotypes, min_snp_pos, skip_point, snp_quals, phased_reads, snp_count]
+    return min_snp_pos
 
 
 def merge_snpreadsets(cooper, locus_data, sig_snp_data, ordered_sig_snps):
@@ -132,26 +127,22 @@ def merge_snpreadsets(cooper, locus_data, sig_snp_data, ordered_sig_snps):
     CLUSTER_JOIN_HIGH     = 0.7    # min intersection to join a cluster
     CLUSTER_JOIN_LOW      = 0.05   # max intersection to confirm non-membership
 
-    skip_point   = 10
-    top_snps     = ordered_sig_snps[:cooper.args.snp_count]
-    phased_reads = ''
+    snps     = ordered_sig_snps[:cooper.args.snp_count]
 
     # --- compute quality values for top SNPs ---
-    snp_count = len(top_snps)
-    snp_quals = [max(list(sig_snp_data[pos]['qual'].values())) for pos in top_snps]
-
+    snp_quals = [max(list(sig_snp_data[pos]['qual'].values())) for pos in snps]
     snp_quals = ','.join(str(int(q)) for q in snp_quals)
 
     # --- compute pairwise mismatch scores between SNPs ---
     mismatch_scores = {}                  # {pos_a: {pos_b: mismatch_score}}
 
-    for i, pos_a in enumerate(top_snps):
-        if mismatch_scores and i == len(top_snps) - 1:
+    for i, pos_a in enumerate(snps):
+        if mismatch_scores and i == len(snps) - 1:
             break
         mismatch_scores[pos_a] = {}
         alleles_a = list(sig_snp_data[pos_a].values())
 
-        for pos_b in top_snps[i + 1:]:
+        for pos_b in snps[i + 1:]:
             score = sum(
                 min(len(reads_b & allele_a) for allele_a in alleles_a)
                 for reads_b in sig_snp_data[pos_b].values()
@@ -164,23 +155,18 @@ def merge_snpreadsets(cooper, locus_data, sig_snp_data, ordered_sig_snps):
     for pos, neighbours in mismatch_scores.items():
         if sum(1 for s in neighbours.values() if s == 0) >= 2:
             sig_snps.append(pos)
-            sig_snps.extend(
-                sorted(neighbours, key=lambda p: neighbours[p])
-            )
+            sig_snps.extend(sorted(neighbours, key=lambda p: neighbours[p]))
             break
 
     # fallback — pick position with lowest sum of two best scores
     if not sig_snps:
         best_pos = min(
             mismatch_scores,
-            key=lambda p: sum(
-                sorted(mismatch_scores[p].values())[:2]
-            )
+            key=lambda p: sum(sorted(mismatch_scores[p].values())[:2])
         )
         sig_snps.append(best_pos)
         sig_snps.extend(
-            sorted(mismatch_scores[best_pos],
-                   key=lambda p: mismatch_scores[best_pos][p])
+            sorted(mismatch_scores[best_pos], key=lambda p: mismatch_scores[best_pos][p])
         )
 
     # --- build final ordered SNP dict ---
@@ -211,8 +197,9 @@ def merge_snpreadsets(cooper, locus_data, sig_snp_data, ordered_sig_snps):
     # --- validate phasing coverage ---
     total_phased = len(cluster1) + len(cluster2)
     if total_phased >= cooper.args.phasing_read * locus_data.depth:
-        phased_reads = [len(cluster1), len(cluster2)]
-        locus_data.haplotypes = (list(cluster1), list(cluster2))
-        locus_data.hap_status = True
-        locus_data.phase_mode = 'snp'
+        locus_data.haplotypes   = (list(cluster1), list(cluster2))
+        locus_data.hap_status   = True
+        locus_data.phase_mode   = 'snp'
         locus_data.hap_category = 0
+
+        return min_snp_pos
