@@ -49,7 +49,7 @@ class LocusVariation:
     allele_lengths:    list  = field(default_factory=list)
 
     neighbors:        set   = field(default_factory=set)   # positions of neighbouring loci with shared reads
-    
+
     # updated when locus has high coverage and reads are subset
     raw_depth:         int   = 0
     raw_reads:         list  = field(default_factory=list)
@@ -64,6 +64,8 @@ class LocusVariation:
     decomposed_alleles:    tuple = (None, None)   # (decomposed allele1, decomposed allele2) motif decomposition of the allele sequences
     haplotype_methyldata:  tuple = (None, None)   # (hap1 meth data, hap2 meth data) methylation data for the genotype call, in the format (average methylation level, number of reads with methylation info, encoded methylation string for visualization)
     hap_status:            bool  = False          # whether haplotagging was successful
+    num_snps:              int   = 0              # number of SNPs used for phasing, if phased by SNPs
+    snp_quals:             str   = ''             # comma-separated string of SNP quality scores, if phased by SNPs
     hap_category:          int   = None           # 0 or 1
     hap_depth:             int   = 0              # reads used for haplogrouping after filtering out
     phase_mode:            str   = None           # 0: phased by SNPs, 1: phased by length

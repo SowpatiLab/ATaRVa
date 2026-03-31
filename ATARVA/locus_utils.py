@@ -315,7 +315,7 @@ def process_locus(cooper, locus_key):
         # haplotyped successfully if there are reads in both haplogroups
         locus_data.hap_status = all(locus_data.haplotypes)
         locus_data.phase_mode = 'haplotag' if locus_data.hap_status else None
-    
+
     assign_hap_category(locus_data)
 
     cooper.prev_reads = current_reads

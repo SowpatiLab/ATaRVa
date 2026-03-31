@@ -15,7 +15,6 @@ def haplocluster_reads(cooper, locus_key):
 
     MIN_ALLELE_FRAC       = 0.2    # min fraction for allele quality calculation
     THRESHOLD_RANGES      = [(0.3, 0.7), (0.25, 0.75), (0.2, 0.8)]
-    FAIL_RESULT           = [(), -1, 0, '', '', 0]
     MIN_SNP_COVERAGE_FRAC = 0.6    # min fraction of reads a SNP must cover
 
     locus = cooper.cooper_loci_info[locus_key]
@@ -35,7 +34,7 @@ def haplocluster_reads(cooper, locus_key):
     alt_snp_cov = {}
     for pos in relevant_snps:
         snp_data = cooper.cooper_snp_data[pos]
-        
+
         # filter to get reads that are relevant to the locus
         ref_reads = snp_data.ref.intersection(set(locus_data.reads))
         pos_reads = ref_reads.copy()
@@ -60,7 +59,7 @@ def haplocluster_reads(cooper, locus_key):
                 # alternate allele passes when having 20% read support and average quality above threshold
                 passed_alleles.append(alt)
                 alt_covs.append(alt_cov)
-        
+
         if len(ref_reads) >= pos_cov * MIN_ALLELE_FRAC: passed_alleles.append('r')
 
         if len(passed_alleles) < 2: continue # if no alleles passed quality and coverage thresholds, skip the SNP
@@ -79,11 +78,7 @@ def haplocluster_reads(cooper, locus_key):
 
     ordered_snp_on_cov = sorted(relevant_snp_data.keys(), key = lambda item : alt_snp_cov[item], reverse = True)
 
-    final_haplotypes = ()
     min_snp_pos      = -1
-    skip_point       = 10
-    min_snp_coverage = MIN_SNP_COVERAGE_FRAC * locus_cov
-
     for tier_idx, (lower_thresh, upper_thresh) in enumerate(THRESHOLD_RANGES):
 
         sig_snp_data    = {}
@@ -105,14 +100,13 @@ def haplocluster_reads(cooper, locus_key):
 
         if not ordered_sig_snps:
             if tier_idx < 2: continue
-            return FAIL_RESULT
+            return -1
 
-        
         min_snp_pos = merge_snpreadsets(cooper, locus_data, sig_snp_data, ordered_sig_snps)
 
         if locus_data.hap_status or tier_idx == 2:
             break
-    
+
     return min_snp_pos
 
 
@@ -201,8 +195,14 @@ def merge_snpreadsets(cooper, locus_data, sig_snp_data, ordered_sig_snps):
     if total_phased >= cooper.args.phasing_read * locus_data.depth:
         locus_data.haplotypes        = (list(cluster1), list(cluster2))
         locus_data.haplotype_lengths = ([locus_data.read_alens[ridx][0] for ridx in cluster1], [locus_data.read_alens[ridx][0] for ridx in cluster2])
-        locus_data.hap_status   = True
-        locus_data.phase_mode   = 'snp'
-        locus_data.hap_category = 0
+        locus_data.hap_status    = True
+        locus_data.phase_mode    = 'snp'
+        locus_data.hap_category  = 0
+        locus_data.num_snps      = len(final_snp_dict)
+        locus_data.snp_quals     = snp_quals
 
         return min_snp_pos
+
+    locus_data.hap_status    = False
+    locus_data.fail_code     = 1
+    return min_snp_pos

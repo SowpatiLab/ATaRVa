@@ -95,7 +95,7 @@ def splitfile_threads(tbx, contigs, total_loci, threads):
     :param threads:    number of parallel threads
     :return:           list of region chunk tuples, one per thread
     """
-    
+
     split_size  = max(total_loci // threads, total_loci)  # guard against 0
     fetcher     = []
     line_count  = 0
@@ -122,7 +122,7 @@ def splitfile_threads(tbx, contigs, total_loci, threads):
                 cur_chunk       = []
                 line_count      = 0
                 first_in_contig = True
-            
+
         if not first_in_contig:
             end_coord = (int(fields[1]), int(fields[2]))
             cur_chunk.append([chrom, start_coord, end_coord])

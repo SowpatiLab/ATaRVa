@@ -30,7 +30,7 @@ def homozygous_call(cooper, locus_key):
     ALT, allele_length, decomposed_seq, is_repetitive = alt_sequence(locus_data.read_seqs, hap_reads, locus.motif_length)
     if not is_repetitive:
         locus_data.fail_code = 6
-        return [False, 6]
+        return
 
     locus_data.haplotype_alleles      = (ALT, None)
     locus_data.haplotype_alens        = (allele_length, None)
@@ -39,7 +39,7 @@ def homozygous_call(cooper, locus_key):
     locus_data.haplotype_arange       = (f'{lower}-{upper}', None)
 
     write_homozygous_call(cooper, locus_key)
-    return [True, 10]
+    return
 
 
 def heterozygous_call(cooper, locus_key):
@@ -74,7 +74,7 @@ def heterozygous_call(cooper, locus_key):
             locus_data.haplotype_arange     = (locus_data.haplotype_arange[0], f'{lower}-{upper}')
 
     write_heterozygous_call(cooper, locus_key)
-    
+
     return [True, 10]
 
 
@@ -100,7 +100,7 @@ def compute_cluster_cutoff(minor_cluster, major_cluster):
     ratio_cutoff = int(max(0.03, len(minor_cluster) / len(major_cluster)) * len(major_cluster))
     return max(2, ratio_cutoff)
 
-    
+
 def length_genotyper(cooper, locus_key):
     """
     genotype a locus by clustering allele lengths using KMeans.
@@ -109,7 +109,7 @@ def length_genotyper(cooper, locus_key):
     :param locus_key:  key for the locus
     :return:           [bool_state, category]
     """
-    FAIL             = [False, 6]
+
     MIN_READS        = 3
     MIN_CLUSTER_FRAC = 0.15
     WINDOW_FRAC      = 0.1
@@ -140,7 +140,7 @@ def length_genotyper(cooper, locus_key):
 
     if len(filtered_alens) < MIN_READS:
         locus_data.fail_code = 0
-        return FAIL
+        return
 
     # --- KMeans clustering ---
     alen_array = np.array(filtered_alens).reshape(-1, 1)
@@ -157,7 +157,7 @@ def length_genotyper(cooper, locus_key):
     c1_lengths    = [filtered_alens[i] for i in c1_idx]
     c2_lengths    = [filtered_alens[i] for i in c2_idx]
     haplotypes = ([main_read_ids[i] for i in c1_idx], [main_read_ids[i] for i in c2_idx])
-    
+
     locus_data.hap_depth = len(filtered_alens)
     # --- compute cluster cutoff ---
     min_cluster_size = MIN_CLUSTER_FRAC * len(filtered_alens)
@@ -179,10 +179,10 @@ def length_genotyper(cooper, locus_key):
 
         if len(major_reads) < min_cluster_size:
             locus_data.fail_code = 1
-            return FAIL
-        
+            return
+
         homozygous_call(cooper, locus_key)
-        return [True, 10]
+        return
 
     # --- diploid genotyping ---
     c1_valid = bool(c1_idx) and len(c1_idx) >= min_cluster_size
@@ -192,21 +192,21 @@ def length_genotyper(cooper, locus_key):
         locus_data.haplotypes = haplotypes
         locus_data.haplotype_lengths = (c1_lengths, c2_lengths)
         bool_state, category = heterozygous_call(cooper, locus_key)
-        return [bool_state, category]
+        return
 
     if c1_valid:
         locus_data.haplotypes = (haplotypes[0], [])
         locus_data.haplotype_lengths = (c1_lengths, None)
-        bool_state, category = homozygous_call(cooper, locus_key)
-        return [bool_state, category]
+        homozygous_call(cooper, locus_key)
+        return
 
     if c2_valid:
         locus_data.haplotypes = (haplotypes[1], [])
         locus_data.haplotype_lengths = (c2_lengths, None)
-        bool_state, category = homozygous_call(cooper, locus_key)
-        return [bool_state, category]
+        homozygous_call(cooper, locus_key)
+        return
 
-    return FAIL
+    return
 
 
 def analyse_genotype(cooper, locus_key):
@@ -221,15 +221,15 @@ def analyse_genotype(cooper, locus_key):
     locus_data = cooper.cooper_loci_data[locus_key]
 
     if cooper.haploid:
-        state, skip_point = length_genotyper(cooper, locus_key)
+        length_genotyper(cooper, locus_key)
         return
 
     min_snp = haplocluster_reads(cooper, locus_key)
 
     if not locus_data.hap_status: # if the loci has no significant snps
-        state, skip_point = length_genotyper(cooper, locus_key)
-        return [state, skip_point]
-    
+        length_genotyper(cooper, locus_key)
+        return
+
     if min_snp != -1:
         snp_left_boundary = locus.start - cooper.args.snp_dist
         min_idx = 0

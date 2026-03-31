@@ -24,9 +24,9 @@ def main():
                                formatter_class=ap.RawTextHelpFormatter)
 
     parser._action_groups.pop()
-    
+
     print(f"ATaRVa - Analysis of Tandem Repeat Variants\nSowpati Lab\n")
-    
+
     parser.add_argument('-h', '--help', action='store_true', help="Print help")
     parser.add_argument('-v', '--version', action='version', version=f'ATaRVa version {__version__}', help="Print version")
 
