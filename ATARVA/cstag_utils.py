@@ -9,14 +9,7 @@ def parse_cstag(cooper, read):
     Parse the CS tag for a read and record the variations observed for the read also for the loci
 
     :param cooper: ATaRVa object
-    :param read_index: index of the read in the global read list
     :param read: pysam AlignedSegment object
-    :param loci_keys: list of locus keys
-    :param loci_coords: list of locus coordinates
-    :param left_flank_list: list of left flank sequences for the loci
-    :param right_flank_list: list of right flank sequences for the loci
-    :param init_amp_var: list of initial amplicon variation information for the read
-    :return: meth_start, meth_end: start and end positions of methylation in the
     """
 
     if cooper.cooper_sorted_snps == None: cooper.cooper_sorted_snps = []

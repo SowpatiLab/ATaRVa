@@ -60,7 +60,7 @@ def vcf_writer(out, bam, bam_name):
     out.write(str(vcf_header))
 
 
-def write_fail_call(cooper, locus_key, skip_point):
+def write_fail_call(cooper, locus_key):
     """
     entry for vcf failed call
 
@@ -70,6 +70,7 @@ def write_fail_call(cooper, locus_key, skip_point):
     """
 
     locus = cooper.cooper_loci_info[locus_key]
+    locus_data = cooper.cooper_loci_data[locus_key]
     refcn = str(locus.length // locus.motif_length)
 
     if locus.name is not None:
@@ -77,7 +78,7 @@ def write_fail_call(cooper, locus_key, skip_point):
     else:
         optional_tag = ';ID=.'
 
-    if skip_point == 0: FILTER = 'LESS_READS'
+    if locus_data.fail_code == 0: FILTER = 'LESS_READS'
           
     locus_key = f'{locus.chrom}:{locus.start}-{locus.end}'
 
@@ -98,14 +99,11 @@ def write_homozygous_call(cooper, locus_key):
     locus = cooper.cooper_loci_info[locus_key]
     locus_data = cooper.cooper_loci_data[locus_key]
 
-    lower, upper = (round(x) for x in np.percentile(np.array(locus_data.allelle_lengths), [2.5, 97.5]))
-    allele_range = f'{lower}-{upper}' if cooper.haploid else f'{lower}-{upper},{lower}-{upper}'
-
     # --- locus optional tag ---
     optional_tag = f';ID={locus.name}' if locus.name else ';ID=.'
 
     # --- methylation fields ---
-    meth_avg_prob, meth_read_count, meth_vis_enc = locus_data.methylation_data
+    meth_avg_prob, meth_read_count, meth_vis_enc = locus_data.haplotype_methyldata[0] if locus_data.haplotype_methyldata else (None, None, None)
 
     meth_prob_str  = str(meth_avg_prob)   if meth_avg_prob   is not None else '.'
     meth_reads_str = str(meth_read_count) if meth_read_count is not None else '.'
@@ -115,24 +113,25 @@ def write_homozygous_call(cooper, locus_key):
     MA = f'{meth_prob_str},{meth_prob_str}'
     MV = f'{meth_vis_str},{meth_vis_str}'
 
-    allele_seq = locus_data.genotype_alleles[0] if locus_data.genotype_alleles else None
+    allele = locus_data.haplotype_alleles[0] if locus_data.haplotype_alleles else None
+    allele_range = f'{locus_data.haplotype_arange[0]},{locus_data.haplotype_arange[0]}' if locus_data.haplotype_arange else '.'
 
     # --- ref / alt ---
     ref_seq    = cooper.ref.fetch(cooper.chrom, locus.start, locus.end)
-    is_alt     = allele_seq and ref_seq != allele_seq
-    is_seq_alt = is_alt and not allele_seq.startswith('<')
+    is_alt     = allele and ref_seq != allele
+    is_seq_alt = is_alt and not allele.startswith('<')
 
-    AC  = 2          if is_alt else 0
-    GT  = '1/1'      if is_alt else '0/0'
-    ALT = allele_seq if is_alt else '.'
+    AC  = 2       if is_alt else 0
+    GT  = '1/1'   if is_alt else '0/0'
+    ALT = allele  if is_alt else '.'
 
     # --- copy number fields ---
-    ref_cn     = locus.length  // locus.motif_length
-    motif_copy = locus_data.homozygous_alen // locus.motif_length
+    ref_units  = locus.length  // locus.motif_length
+    motif_copy = len(allele) // locus.motif_length
 
     # --- decomposed sequence ---
     if cooper.args.decompose and is_seq_alt and locus.motif_length <= 10:
-        decomposed_seq = motif_decomposition(allele_seq, locus.motif_length)[0]
+        decomposed_seq = locus_data.decomposed_alleles[0] if locus_data.decomposed_alleles[0] else None
     else: decomposed_seq = '.'
 
     # --- INFO field ---
@@ -142,7 +141,7 @@ def write_homozygous_call(cooper, locus_key):
         f';START={locus.start}'
         f';END={locus.end}'
         f'{optional_tag}'
-        f';REFCN={ref_cn}'
+        f';REFCN={ref_units}'
     )
 
     if cooper.args.debug_mode:
@@ -152,7 +151,7 @@ def write_homozygous_call(cooper, locus_key):
     # --- SAMPLE field ---
     FORMAT = 'GT:AL:CN:AR:SD:DP:SN:SQ:MA:MR:DS:MV'
 
-    allele_length = locus_data.homozygous_alen
+    allele_length = len(allele)
     depth         = locus_data.depth
     hap_depth     = depth
     if not cooper.haploid:
@@ -188,144 +187,105 @@ def write_homozygous_call(cooper, locus_key):
     print(cooper.chrom, locus.start + 1, '.', ref_seq, ALT, 0, 'PASS', INFO, FORMAT, SAMPLE, file=cooper.outhandle, sep='\t')
 
 
-def vcf_heterozygous_writer(contig, genotypes, locus_start, locus_end, allele_count, DP, global_loci_info, ref, out,
-                            chosen_snpQ, phased_read, snp_num, ALT_reads, log_bool, tag, decomp, hallele_counter, allele_range,
-                            decomp_seq, meth_info):
+def write_heterozygous_call(cooper, locus_key):
+    """
+    write a heterozygous VCF record for a given locus.
 
-    locus_key = f'{contig}:{locus_start}-{locus_end}'
+    :param cooper:           cooper object
+    :param locus_key:        locus identifier string
+    """
 
-    if len(global_loci_info[locus_key]) > 5:
-        optional_tag = f';ID={global_loci_info[locus_key][5]}'
-    else:
-        optional_tag = ';ID=.'
+    locus = cooper.cooper_loci_info[locus_key]
+    locus_data = cooper.cooper_loci_data[locus_key]
 
-    motif_size = int(float(global_loci_info[locus_key][4]))
+    if locus.name is not None:
+        optional_tag = f';ID={locus.name}'
+    else: optional_tag = ';ID=.'
 
-    final_allele = set(genotypes)
-    heterozygous_allele = ''
-    AC = 'AC'
-    AN = 2
-    GT = 'GT'
-    SD = 'SD'
-    PC = 'PC'
+    length_GT = ''
+    units_GT = ''
+    AC  = 'AC'
+    AN  = 2
+    GT  = 'GT'
+    SD  = 'SD'
+    PC  = 'PC'
     ALT = '.'
-    alt_seqs = []
 
-    ref_allele_length = locus_end - locus_start
-    refcn = str(ref_allele_length // int(float(global_loci_info[locus_key][4])))
+    ref_alen   = locus.end - locus.start
+    ref_allele = cooper.ref.fetch(cooper.chrom, locus.start, locus.end)
+    ref_units = str(ref_alen // locus.motif_length)
 
-    meth_prob = []
-    meth_reads = []
-    meth_vistag = []
-    for each_meth in meth_info:
-        meth_prob.append(str(each_meth[0]) if each_meth[0] is not None else '.') #methylation probability
-        meth_reads.append(str(each_meth[1]) if each_meth[1] is not None else '.') #number of methylated reads
-        meth_vistag.append(each_meth[2] if each_meth[2] is not None else '.') #methylation visual encoding
+    meth_prob   = []
+    meth_reads  = []
+    meth_viztag = []
+    for hap_methyl in locus_data.haplotype_methyldata:
+        meth_prob.append(str(hap_methyl[0]) if hap_methyl[0] is not None else '.') #methylation probability
+        meth_reads.append(str(hap_methyl[1]) if hap_methyl[1] is not None else '.') #number of methylated reads
+        meth_viztag.append(hap_methyl[2] if hap_methyl[2] is not None else '.') #methylation visual encoding
 
-    if len(final_allele) == 1:
-
-        if ref_allele_length == tuple(final_allele)[0]:
-            AC = 0
-            GT = '0|0'
-            heterozygous_allele+=str(ref_allele_length)+','+str(ref_allele_length)
-            SD = str(allele_count[ref_allele_length])+','+str(allele_count[str(ref_allele_length)])
-            alt_seqs.append('')
+    if locus_data.haplotype_alleles[0] == locus_data.haplotype_alleles[1]: # if the two alleles are the same, make it a homozygous call
+        allele = locus_data.haplotype_alleles[0]
+        if ref_allele == allele:
+            AC = 0; GT = '0|0'
         else:
             AC = 2; GT = '1|1'
-            heterozygous_allele+=str(tuple(final_allele)[0])+','+str(tuple(final_allele)[0])
-            SD = str(allele_count[tuple(final_allele)[0]])+','+str(allele_count[str(tuple(final_allele)[0])])
+            ALT = allele
+        length_GT += f'{len(allele)},{len(allele)}'
+        units_GT += f'{len(allele)//locus.motif_length},{len(allele)//locus.motif_length}'
+        SD = f'{len(locus_data.haplotypes[0])},{len(locus_data.haplotypes[1])}'
+        PC = f'{len(locus_data.haplotypes[0])},{len(locus_data.haplotypes[1])}'
+        allele_range = f'{locus_data.haplotype_arange[0]},{locus_data.haplotype_arange[1]}'
 
-            ALT = ALT_reads[0]
-            if ALT[0]!='<': alt_seqs.append(ALT)
-            else: alt_seqs.append('')
-        PC = str(phased_read[0])+','+str(phased_read[1])
-        MA = ','.join(meth_prob)
-        MR = ','.join(meth_reads)
-        MV = ','.join(meth_vistag)
     else:
-
-        if len(set((ref_allele_length,)) & final_allele) == 1:
+        if ref_allele in locus_data.haplotype_alleles:
+            ref_index = 0; allele_index = 1
+            if locus_data.haplotype_alleles[0] != ref_allele:
+                allele_index = 0
+                ref_index = 1
+            allele = locus_data.haplotype_alleles[allele_index]
             AC = 1
             GT = '0|1'
-            heterozygous_allele+=str(ref_allele_length)+','+str(tuple(final_allele-{ref_allele_length})[0])
-            SD = str(allele_count[ref_allele_length])+','+str(allele_count[tuple(final_allele-{ref_allele_length})[0]])
-            if genotypes.index(ref_allele_length) == 0:
-                PC = str(phased_read[0])+','+str(phased_read[1])
+            length_GT += f'{ref_alen},{len(allele)}'
+            units_GT += f'{ref_units},{len(allele)//locus.motif_length}'
 
-                alt_seqs.append(None) # dummy added for ref, to keep the length of alt_seqs as 2
-                ALT = ALT_reads[1]
-                if ALT[0]!='<': alt_seqs.append(ALT)
-                else: alt_seqs.append('')
-                MA = ','.join(meth_prob)
-                MR = ','.join(meth_reads)
-                MV = ','.join(meth_vistag)
-            else:
-                PC = str(phased_read[1])+','+str(phased_read[0])
-
-                ALT = ALT_reads[0]
-                if ALT[0]!='<': alt_seqs.append(ALT)
-                else: alt_seqs.append('')
-                alt_seqs.append(None) # dummy added for ref, to keep the length of alt_seqs as 2
-                allele_range = ','.join(allele_range.split(',')[::-1]) # reverse the allele range to keep the order consistent with GT
-                MA = ','.join(meth_prob[::-1]) # reverse the meth_prob to keep the order consistent with GT
-                MR = ','.join(meth_reads[::-1])
-                MV = ','.join(meth_vistag[::-1])
+            SD = f'{len(locus_data.haplotypes[ref_index])},{len(locus_data.haplotypes[allele_index])}'
+            if locus_data.hap_status: PC = f'{len(locus_data.haplotypes[ref_index])},{len(locus_data.haplotypes[allele_index])}'
+            ALT = allele
+            if ref_index == 1:
+                meth_prob = meth_prob[::-1] # reverse the meth_prob to keep the order consistent with GT
+                meth_reads = meth_reads[::-1]
+                meth_viztag = meth_viztag[::-1]
+            allele_range = f'{locus_data.haplotype_arange[ref_index]},{locus_data.haplotype_arange[allele_index]}'
         else:
             AC = '1,1'
             GT = '1|2'
-            heterozygous_allele+=str(genotypes[0])+','+str(genotypes[1])
-            SD = str(allele_count[genotypes[0]])+','+str(allele_count[genotypes[1]])
-            PC = str(phased_read[0])+','+str(phased_read[1])
+            ALT1 = locus_data.haplotype_alleles[0]
+            ALT2 = locus_data.haplotype_alleles[1]
+            length_GT += f'{len(ALT1)},{len(ALT2)}'
+            units_GT += f'{len(ALT1)//locus.motif_length},{len(ALT2)//locus.motif_length}'
 
-            ALT1 = ALT_reads[0]
-            if ALT1[0]!='<': alt_seqs.append(ALT1)
-            else: alt_seqs.append('')
-                
-            ALT2 = ALT_reads[1]
-            if ALT2[0]!='<': alt_seqs.append(ALT2)
-            else: alt_seqs.append('')
+            SD = f'{len(locus_data.haplotypes[0])},{len(locus_data.haplotypes[1])}'
+            if locus_data.hap_status: PC = f'{len(locus_data.haplotypes[0])},{len(locus_data.haplotypes[1])}'
 
-            ALT = ALT1 + ',' + ALT2
-            MA = ','.join(meth_prob)
-            MR = ','.join(meth_reads)
-            MV = ','.join(meth_vistag)
-
+            ALT = f'{ALT1},{ALT2}'
+            allele_range = f'{locus_data.haplotype_arange[0]},{locus_data.haplotype_arange[1]}'
+    MA = ','.join(meth_prob)
+    MR = ','.join(meth_reads)
+    MV = ','.join(meth_viztag)
 
     if PC == '.,.': PC = '.' # due to length genotyper
-    if log_bool:
-        eac = sorted(hallele_counter.items(), key = lambda x: x[1], reverse=True)
-        INFO = 'AC='+str(AC)+';AN='+str(AN)+';MOTIF=' + str(global_loci_info[locus_key][3]) + ';START=' + str(locus_start) + ';END='+str(locus_end) + optional_tag + ';REFCN='+ refcn + ';CT=' + tag + ';EAC=' + str(eac)
-    else:
-        INFO = 'AC='+str(AC)+';AN='+str(AN)+';MOTIF=' + str(global_loci_info[locus_key][3]) + ';START=' + str(locus_start) + ';END='+str(locus_end) + optional_tag + ';REFCN='+ refcn
+    INFO = 'AC='+str(AC)+';AN='+str(AN)+';MOTIF=' + locus.motif + ';START=' + str(locus.start) + ';END='+str(locus.end) + optional_tag + ';REFCN='+ ref_units
 
-    deseq = '.,.'
-    if decomp:
-        motif_size = int(float(global_loci_info[locus_key][4]))
-        
-        if motif_size>10:
-            deseq = ','.join(['.']*len(alt_seqs))
-        else:
-            ds = []
-            for index,iseq in enumerate(alt_seqs):
-                if iseq:
-                    if all(decomp_seq):
-                        ds.append(decomp_seq[index])
-                    else:
-                        i_deseq,_ = motif_decomposition(iseq, motif_size)
-                        ds.append(i_deseq)
-                elif iseq=='':
-                    ds.append('.')
-            deseq = ','.join(ds)
-
-    motif_copy = ','.join([str(int(i) // motif_size) for i in heterozygous_allele.split(',')])
+    decomp_seqs = '.,.'
+    if cooper.args.decompose:
+        decomp_seqs = f'{locus_data.decomposed_alleles[0]},{locus_data.decomposed_alleles[1]}'
      
     FORMAT = 'GT:AL:CN:AR:SD:DP:SN:SQ:MA:MR:DS:MV'
-    SAMPLE = str(GT)+':'+heterozygous_allele+':' + motif_copy + ':' + allele_range + ':' + SD + ':' + str(DP) + ':' + str(snp_num) + ':' + chosen_snpQ + ':' + MA + ':' + MR + ':' + deseq + ':' + MV
+    # SAMPLE = f'{str(GT)}:{length_GT}:{units_GT}:{allele_range}:{SD}:{str(locus_data.depth)}:{str(snp_num)}:{chosen_snpQ}:{MA}:{MR}:{decomp_seqs}:{MV}'
+    SAMPLE = f'{str(GT)}:{length_GT}:{units_GT}:{allele_range}:{SD}:{str(locus_data.depth)}:{MA}:{MR}:{decomp_seqs}:{MV}'
 
-    del ALT_reads
-    del alt_seqs
 
-    print(*[contig, locus_start+1, '.',  ref.fetch(contig, locus_start, locus_end), ALT, 0, 'PASS', INFO, FORMAT, SAMPLE], file=out, sep='\t')
+    print(*[cooper.chrom, locus.start + 1, '.',  ref_allele, ALT, 0, 'PASS', INFO, FORMAT, SAMPLE], file=cooper.outhandle, sep='\t')
 
 
 def vcf_multizygous_writer(contig, genotype_dict, locus_start, locus_end, DP, global_loci_info, ref, out, log_bool, decomp, hallele_counter):

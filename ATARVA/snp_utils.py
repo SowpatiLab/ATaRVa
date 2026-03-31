@@ -1,4 +1,6 @@
 import numpy as np
+import sys
+
 
 def haplocluster_reads(cooper, locus_key):
     """
@@ -12,6 +14,9 @@ def haplocluster_reads(cooper, locus_key):
     """
 
     MIN_ALLELE_FRAC       = 0.2    # min fraction for allele quality calculation
+    THRESHOLD_RANGES      = [(0.3, 0.7), (0.25, 0.75), (0.2, 0.8)]
+    FAIL_RESULT           = [(), -1, 0, '', '', 0]
+    MIN_SNP_COVERAGE_FRAC = 0.6    # min fraction of reads a SNP must cover
 
     locus = cooper.cooper_loci_info[locus_key]
     locus_data = cooper.cooper_loci_data[locus_key]
@@ -64,6 +69,7 @@ def haplocluster_reads(cooper, locus_key):
 
         relevant_snp_data[pos] = { 'cov': 0, 'alleles': {}, 'qual': {} }
         for alt in passed_alleles:
+            if alt == 'r': continue
             relevant_snp_data[pos]['cov']           += len(alt_reads[alt])
             relevant_snp_data[pos]['alleles'][alt]   = alt_reads[alt]
             relevant_snp_data[pos]['qual'][alt]      = np.mean([snp_data.qual[idx] for idx in alt_reads[alt]])
@@ -72,10 +78,6 @@ def haplocluster_reads(cooper, locus_key):
             relevant_snp_data[pos]['cov']         += len(ref_reads)
 
     ordered_snp_on_cov = sorted(relevant_snp_data.keys(), key = lambda item : alt_snp_cov[item], reverse = True)
-
-    THRESHOLD_RANGES      = [(0.3, 0.7), (0.25, 0.75), (0.2, 0.8)]
-    FAIL_RESULT           = [(), -1, 0, '', '', 0]
-    MIN_SNP_COVERAGE_FRAC = 0.6    # min fraction of reads a SNP must cover
 
     final_haplotypes = ()
     min_snp_pos      = -1
@@ -110,7 +112,7 @@ def haplocluster_reads(cooper, locus_key):
 
         if locus_data.hap_status or tier_idx == 2:
             break
-
+    
     return min_snp_pos
 
 
@@ -140,12 +142,12 @@ def merge_snpreadsets(cooper, locus_data, sig_snp_data, ordered_sig_snps):
         if mismatch_scores and i == len(snps) - 1:
             break
         mismatch_scores[pos_a] = {}
-        alleles_a = list(sig_snp_data[pos_a].values())
+        alleles_a = list(sig_snp_data[pos_a]['alleles'].values())
 
         for pos_b in snps[i + 1:]:
             score = sum(
                 min(len(reads_b & allele_a) for allele_a in alleles_a)
-                for reads_b in sig_snp_data[pos_b].values()
+                for reads_b in sig_snp_data[pos_b]['alleles'].values()
             )
             mismatch_scores[pos_a][pos_b] = score
 
@@ -171,7 +173,7 @@ def merge_snpreadsets(cooper, locus_data, sig_snp_data, ordered_sig_snps):
 
     # --- build final ordered SNP dict ---
     final_snp_dict = {
-        pos: sig_snp_data[pos]
+        pos: sig_snp_data[pos]['alleles']
         for pos in sig_snps
         if pos in sig_snp_data
     }
@@ -197,7 +199,8 @@ def merge_snpreadsets(cooper, locus_data, sig_snp_data, ordered_sig_snps):
     # --- validate phasing coverage ---
     total_phased = len(cluster1) + len(cluster2)
     if total_phased >= cooper.args.phasing_read * locus_data.depth:
-        locus_data.haplotypes   = (list(cluster1), list(cluster2))
+        locus_data.haplotypes        = (list(cluster1), list(cluster2))
+        locus_data.haplotype_lengths = ([locus_data.read_alens[ridx][0] for ridx in cluster1], [locus_data.read_alens[ridx][0] for ridx in cluster2])
         locus_data.hap_status   = True
         locus_data.phase_mode   = 'snp'
         locus_data.hap_category = 0

@@ -31,7 +31,7 @@ class ReadInfo:
     snps:        set   = field(default_factory=set)
     dels:        set   = field(default_factory=list)
     methylation: list  = field(default_factory=list)
-    qual:        int   = 0
+    mean_qual:   int   = 0
     left_flank:  list  = field(default_factory=list)
     right_flank: list  = field(default_factory=list)
 
@@ -56,14 +56,20 @@ class LocusVariation:
     raw_haplotags:     list  = field(default_factory=list)
 
     # data for genotyping
-    haplotypes:        tuple = ([], [])       # (hap1 read indices, hap2 read indices)
-    hap_status:        bool  = False          # whether haplotagging was successful
-    hap_category:      int   = None           # 0: haplotyped, 1: not haplotyped, 2: amplicon (haplotagging not applicable)
-    phase_mode:        str   = None           # 0: phased by SNPs, 1: phased by methylation, 2: phased by amplicon
-    homozygous_alen:   int   = None           # if hap_category is 1, the allele length of the homozygous locus
-    genotype_alleles:  tuple = (None, None)   # (allele1, allele2) allele sequences for the genotype call
-    allele_range:      tuple = (None, None)   # allele length range for the genotype call, in the format 'lower1-upper1,lower2-upper2'
-    fail_tag:          int   = 10             # whether genotyping failed for the locus          
+    haplotypes:            tuple = ([], [])       # (hap1 read indices, hap2 read indices)
+    haplotype_lengths:     tuple = (None, None)   # (lengths in hap1 reads, lengths in hap2 reads)
+    haplotype_alleles:     tuple = (None, None)   # (allele1, allele2) allele sequences for the genotype call
+    haplotype_alens:       tuple = (None, None)   # (alen1, alen2) allele lengths for the genotype call
+    haplotype_arange:      tuple = (None, None)   # allele length range for the genotype call, in the format 'lower1-upper1,lower2-upper2'
+    decomposed_alleles:    tuple = (None, None)   # (decomposed allele1, decomposed allele2) motif decomposition of the allele sequences
+    haplotype_methyldata:  tuple = (None, None)   # (hap1 meth data, hap2 meth data) methylation data for the genotype call, in the format (average methylation level, number of reads with methylation info, encoded methylation string for visualization)
+    hap_status:            bool  = False          # whether haplotagging was successful
+    hap_category:          int   = None           # 0 or 1
+    hap_depth:             int   = 0              # reads used for haplogrouping after filtering out
+    phase_mode:            str   = None           # 0: phased by SNPs, 1: phased by length
+    homozygous_alen:       int   = None           # if hap_category is 1, the allele length of the homozygous locus
+    fail_code:             int   = 10             # whether genotyping failed for the locus
+    genotyped:             int   = 0              # whether the locus was genotyped successfully
 
 
 @dataclass(slots=True)

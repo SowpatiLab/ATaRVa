@@ -77,7 +77,7 @@ def check_alnfile(bamfile, args):
     :returns: srs (boolean) - True if SRS mode, False if LRS mode
     """
     n_reads = 0
-    aln_file = pysam.AlignmentFile(bamfile, args.format)
+    aln_file = pysam.AlignmentFile(bamfile, args.aln_format)
     for read in aln_file.fetch():
         if (read.flag & 0X400) or (read.flag & 0X100): continue 
         
@@ -99,13 +99,10 @@ def check_alnfile(bamfile, args):
     aln_file.close()
 
     srs = False
-    if args.amplicon:
-        srs = True  # Why is SRS true if amplicon mode is selected?
-        print('Processing in amplicon mode...')
-    elif (args.read_wise and args.loci_wise):
+    if (args.read_wise and args.locus_wise):
         print('Error: Choose either Read-wise or Loci-wise genotyping mode!!')
         sys.exit()
-    elif args.loci_wise:
+    elif args.locus_wise:
         srs = True
         print('Processing in Loci-wise genotyping mode...')
     else:

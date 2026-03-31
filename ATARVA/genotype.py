@@ -21,9 +21,8 @@ FORMAT_MAP = {
     'bam' : 'rb'
 }
 
-DEFAULT_MAX_READS = {'amplicon': 1000, 'default': 100}
-DEFAULT_FLANK     = {'amplicon': 20,   'default': 10}
-
+DEFAULT_MAX_READS = 100
+DEFAULT_FLANK     = 10
 
 def genotype_parser(subparsers):
     """Argument parser for the genotype sub-command of ATaRVa"""
@@ -47,7 +46,7 @@ def genotype_parser(subparsers):
 
     # Input / Output
     opt.add_argument('-o', '--vcf',      metavar='<FILE>', default='', help='output VCF file [default: stdout]')
-    opt.add_argument('--format',         metavar='<STR>',  default='bam', help='alignment format [cram | bam | sam] [default: bam]')
+    opt.add_argument('--aln-format',         metavar='<STR>',  default='bam', help='alignment format [cram | bam | sam] [default: bam]')
     opt.add_argument('--contigs',        metavar='<STR>',  nargs='+', help='contigs to genotype e.g. chr1 chr12 [default: all]')
     opt.add_argument('--karyotype',      metavar='<STR>',  nargs='+', help='sample karyotypes e.g. XY XX')
 
@@ -70,15 +69,14 @@ def genotype_parser(subparsers):
     opt.add_argument('--methviz',        action='store_true', help='write methylation-encoded sequence to VCF [default: False]')
 
     # Modes
-    opt.add_argument('--amplicon',       action='store_true', help='targeted sequencing mode [max-reads=1000, flank=20]')
     opt.add_argument('--read-wise',      action='store_true', help='read-wise genotyping for dense BED regions')
-    opt.add_argument('--loci-wise',      action='store_true', help='loci-wise genotyping for sparse BED regions')
+    opt.add_argument('--locus-wise',     action='store_true', help='locus-wise genotyping for sparse BED regions')
     opt.add_argument('--decompose',      action='store_true', help='write motif-decomposed sequence to VCF')
 
     # Misc
-    opt.add_argument('-t', '--threads',      metavar='<INT>', type=int, default=1, help='number of threads [default: 1]')
+    opt.add_argument('-t',   '--threads',      metavar='<INT>', type=int, default=1, help='number of threads [default: 1]')
     opt.add_argument('-log', '--debug_mode', action='store_true', help='write debug messages to log file')
-    opt.add_argument('-v', '--version',      action='version', version=f'ATaRVa version {__version__}')
+    opt.add_argument('-v',   '--version',      action='version', version=f'ATaRVa version {__version__}')
 
     if len(sys.argv) == 2 and sys.argv[1] == 'genotype':
         parser.print_help()
@@ -215,10 +213,10 @@ def genotype_run(args) -> None:
     fasta_check(args.fasta)
     tabix_check(args.regions)
 
-    args.format = FORMAT_MAP.get(args.format, 'rb')
+    args.aln_format = FORMAT_MAP.get(args.aln_format, 'rb')
 
     for bam in args.bam:
-        bam_check(bam, args.format)
+        bam_check(bam, args.aln_format)
 
     # --- VCF output setup ---
     set_info_mp_cutoff(args.meth_prob)
@@ -249,16 +247,15 @@ def genotype_run(args) -> None:
     )
 
     # --- mode defaults ---
-    mode = 'amplicon' if args.amplicon else 'default'
-    if args.max_reads is None: args.max_reads = DEFAULT_MAX_READS[mode]
-    if args.flank     is None: args.flank     = DEFAULT_FLANK[mode]
+    if args.max_reads is None: args.max_reads = DEFAULT_MAX_READS
+    if args.flank     is None: args.flank     = DEFAULT_FLANK
 
     multi_bam_single_out = len(args.bam) > 1 and args.vcf
 
     # --- per-sample processing ---
     for sample_idx, bam_file in enumerate(args.bam):
         sample_stem = _sample_stem(bam_file)
-        print(f'Processing sample: {sample_stem}\n')
+        print(f'Processing sample: {sample_stem}\n', file=sys.stderr)
 
         check_alnfile(bam_file, args)
 

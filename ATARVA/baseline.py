@@ -1,6 +1,6 @@
 import numpy as np
 import pysam
-import logging
+import sys, logging
 
 from pathlib import Path
 from tqdm import tqdm
@@ -8,7 +8,7 @@ from sortedcontainers import SortedList
 from collections import deque
 
 from ATARVA.structures        import ReadLocusInfo, LocusInfo, ReadInfo, LocusVariation, ExtendedRead
-from ATARVA.vcf_writer        import vcf_writer, write_homozygous_call, vcf_heterozygous_writer, write_fail_call
+from ATARVA.vcf_writer        import vcf_writer, write_homozygous_call, write_heterozygous_call, write_fail_call
 from ATARVA.operation_utils   import record_homopolymers, clean_eqsign_readseq
 from ATARVA.cstag_utils       import parse_cstag
 from ATARVA.cigar_utils       import parse_cigar
@@ -18,11 +18,13 @@ from ATARVA.consensus         import consensus_seq_poa
 from ATARVA.genotype_utils    import analyse_genotype
 
 
-SKIP_MESSAGES = {
-    0: 'Locus skipped — insignificant SNPs at read-split level.',
+FAIL_MESSAGES = {
+    0: 'Locus failed - insufficient reads support',
+    1: 'Locus failed - insufficient reads for haplogroup',
+    0: 'Locus skipped - insignificant SNPs at read-split level.',
     1: 'Locus skipped — low read contribution from significant SNPs.',
     2: 'Locus skipped — insufficient reads in phased clusters.',
-    6: 'Locus skipped — wide allele distribution with single-read support.',
+    6: 'Locus skipped - the locus is not a repetitive sequence.'
 }
 
 
@@ -31,9 +33,7 @@ class Cooper:
     Independently handles genotyping a set of regions from a single BAM file.
     """
 
-    def __init__(self, bam_file: str, region_ranges: list,
-                 args, out_file: str,
-                 sample_idx: int, thread_idx: int):
+    def __init__(self, bam_file, region_ranges, args, out_file, sample_idx, thread_idx):
         """
         initialise Cooper and run genotyping.
 
@@ -46,7 +46,7 @@ class Cooper:
         """
 
         self.tbx = pysam.Tabixfile(args.regions)
-        self.bam = pysam.AlignmentFile(bam_file, args.format)
+        self.bam = pysam.AlignmentFile(bam_file, args.aln_format)
         self.ref = pysam.FastaFile(args.fasta)
 
         self.args       = args
@@ -83,9 +83,6 @@ class Cooper:
                 format   = '%(levelname)s - %(message)s'
             )
             self.logger = logging.getLogger('ATaRVa_logger')
-
-        if args.amplicon:
-            args.haplotag = None
 
         self.disable_progress = thread_idx != -1
 
@@ -176,7 +173,7 @@ class Cooper:
                 genotyped_count  += self.locus_processor()
                 self.progress_bar.update(1)
 
-            # --- evict stale reads ---
+            # --- evict expired reads ---
             while self.cooper_read_ends:
                 if read.ref_start <= self.cooper_read_ends[0]:
                     break
@@ -280,7 +277,7 @@ class Cooper:
                 snps        = set(),
                 dels        = [],
                 methylation = [],
-                qual        = read.mean_qual,
+                mean_qual   = read.mean_qual,
                 left_flank  = read.left_flanks,
                 right_flank = read.right_flanks
             )
@@ -307,8 +304,7 @@ class Cooper:
 
             # --- populate loci data ---
             for locus_key, locus_read_info in read.loci_data.items():
-                if self.args.amplicon and not locus_read_info.seq:
-                    continue
+                if not locus_read_info.seq: continue
                 ldata = self.cooper_loci_data[locus_key]
                 ldata.reads.append(read.index)
                 ldata.read_alens[read.index]    = [locus_read_info.halen,
@@ -366,7 +362,7 @@ class Cooper:
             if locus_data.homozygous_alen != locus.length:
                 if len(read_seqs) > 0:
                     # homozygous alt genotype
-                    ALT               = consensus_seq_poa(read_seqs)
+                    ALT = consensus_seq_poa(read_seqs)
                     locus_data.homozygous_alen = len(ALT)
                 else:
                     # homozygous deletion genotype
@@ -375,25 +371,25 @@ class Cooper:
                 ALT = '.'; locus_data.homozygous_alen = locus.length
 
             allele_seq  = ALT if ALT != '.' else self.ref.fetch(locus.chrom, locus.start, locus.end)
-            locus_data.methylation_data = calculate_methylation(locus_data.read_indices, locus_data.read_methylation, allele_seq)
-            locus_data.genotype_alleles = (allele_seq, allele_seq)
+            locus_data.haplotype_methyldata = (calculate_methylation(locus_data.reads, locus_data.read_methylation, allele_seq), None)
+            locus_data.haplotype_alleles = (allele_seq, allele_seq)
 
             write_homozygous_call(self, locus_key)
             locus_data.genotyped = 1
 
         # --- category 2 — ambiguous ---
         elif locus_data.hap_category == 2:
-            state, skip_point = analyse_genotype(self, locus_key)
-            if state:
-                genotyped = 1
+            analyse_genotype(self, locus_key)
+            if locus_data.hap_status:
+                locus_data.genotyped = 1
             else:
-                msg = SKIP_MESSAGES.get(
-                    skip_point,
+                msg = FAIL_MESSAGES.get(
+                    locus_data.fail_code,
                     "Locus skipped — insufficient significant SNPs.")
                 tqdm.write(msg)
 
         # --- category 3 — phased / heterozygous ---
-        elif locus.hap_category == 3:
+        elif locus_data.hap_category == 3:
             genotypes    = []
             allele_count = {}
             ALT_seqs     = []
@@ -401,7 +397,7 @@ class Cooper:
             alen_lists   = []
             meth_info    = []
 
-            for hap_reads in haplotypes:
+            for hap_reads in locus_data.haplotypes:
                 phased_reads.append(len(hap_reads))
                 seqs      = [read_seqs[rid][0] for rid in hap_reads
                              if read_seqs[rid][0]]
@@ -425,28 +421,19 @@ class Cooper:
             (l2, u2) = np.percentile(alen_lists[1], [2.5, 97.5])
             allele_range = f'{l1}-{u1},{l2}-{u2}'
 
-            vcf_heterozygous_writer(
-                self.chrom, genotypes,
-                locus.start, locus.end,
-                allele_count, len(read_indices),
-                self.cooper_loci_info, self.ref,
-                self.outhandle, '.', phased_reads,
-                0, ALT_seqs, self.args.debug_mode,
-                'HP', '.', hallele_counter,
-                allele_range, [None], meth_info
-            )
-            genotyped = 1
+            write_heterozygous_call(self, locus_key)
+            locus_data.genotyped = 1
 
         # --- no category — write fail if needed ---
         else:
-            if skip_point == 0:
-                write_fail_call(self, locus_key, skip_point)
+            if locus_data.fail_code == 0:
+                write_fail_call(self, locus_key)
 
         # --- cleanup ---
         del self.cooper_loci_data[locus_key]
         del self.cooper_loci_info[locus_key]
 
-        return genotyped
+        return locus_data.genotyped
 
 
 def _hidden_path(out_file: str) -> str:

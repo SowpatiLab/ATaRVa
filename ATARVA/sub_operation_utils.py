@@ -1,8 +1,6 @@
+import string, sys
 import numpy as np
 from scipy import stats
-import string
-import hdbscan
-import warnings
 
 from ATARVA.consensus import *
 from ATARVA.decompose import motif_decomposition
@@ -175,7 +173,7 @@ def encode_methylation(score_matrix, pos_matrix, consensus_cgs):
 
 def calculate_methylation(read_indices, read_methylation, consensus_seq):
     """
-    calculate the methylation level at CG positions for at the locus based on reads
+    calculate the methylation level at CG positions for a haplogroup based on the consensus sequence of the haplogroup
 
     :param read_indices: list of read ids supporting the locus
     :param methyl_probabilities: list of tuples with modified base positions and their respective probabilities for each read
@@ -224,6 +222,7 @@ def alt_sequence(read_alleles, hap_reads, motif_size):
     """
 
     # wouldn't most of the reads say deleted and only one read has some sequence ???
+    ALT = ''
     seqs = [seq for seq in [read_alleles[read_id][0] for read_id in hap_reads] if seq!='']
     if seqs:
         ALT = consensus_seq_poa(seqs)
@@ -233,9 +232,8 @@ def alt_sequence(read_alleles, hap_reads, motif_size):
         allele_length = 0
 
     decomposed_seq = ''
-    repetitive = True
+    is_repetitive = True
     if allele_length and (motif_size <= 10):
         decomposed_seq, nonrep_fraction = motif_decomposition(ALT, motif_size)
-        if nonrep_fraction > 0.30: # if more than 30% of the sequence is non-repeat, repeativity = False
-            repetitive = False
-    return [ALT, allele_length, decomposed_seq, repetitive]
+        if nonrep_fraction > 0.30: is_repetitive = False
+    return [ALT, allele_length, decomposed_seq, is_repetitive]
