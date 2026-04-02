@@ -57,17 +57,17 @@ def record_ref_snps(cooper, new_reads, locus_start, locus_end):
 
     for read_index in new_reads:
 
-        read_data = cooper.cooper_read_data[read_index]
+        read = cooper.cooper_read_data[read_index]
 
         for pos in cooper.cooper_sorted_snps:
             # if snp not in range skip
             if not (snp_start <= pos <= snp_end): continue
 
-            if pos < read_data.start: continue
-            if pos > read_data.end: break
+            if pos < read.start: continue
+            if pos > read.end: break
 
             # if a position has not ALT SNP and is not deleted in the read record it as reference
-            if (pos not in read_data.snps) and (bisect.bisect(read_data.dels, pos) % 2 == 0):
+            if (pos not in read.snps) and (bisect.bisect(read.dels, pos) % 2 == 0):
                 cooper.cooper_snp_data[pos].ref.add(read_index)
                 cooper.cooper_snp_data[pos].cov += 1
 
@@ -185,28 +185,17 @@ def assign_hap_category(locus_data):
     assign category for the locus based on haplotype status and allele distribution
 
     :param locus_data: LocusVariation object containing locus-specific data
-    :param hap_status: boolean value indicating if haplotagging is available and informative
-    :param read_haplotags: list of haplotype tags for the reads
-    :param total_reads: total number of reads covering the locus
-    :param hallele_counter: dict with haplotype-wise allele length counts
-    :return: category (1 for homozygous, 2 for ambiguous, 3 for phased), homozygous allele length if applicable
+    :return: None (updates the locus_data.hap_category in place)
     """
 
-    if locus_data.hap_status and (locus_data.read_haplotags.count(None) / locus_data.depth) <= 0.15:
+    if locus_data.is_genotyped and (locus_data.read_haplotags.count(None) / locus_data.depth) <= 0.15:
         locus_data.hap_category = 3 # phased based on haplotag
         return
 
+    read_aseqs = [aseq[0] for aseq in locus_data.read_aseqs.values()]
     locus_data.phase_mode = None
-    if len(locus_data.halen_frequency) == 1:
-        locus_data.hap_category = 1 # homozygous
-        locus_data.homozygous_alen = next(iter(locus_data.halen_frequency))   # homozygous
-        return
-
-    # filtering out single ton alleles
-    filtered = [a for a, c in locus_data.halen_frequency.items() if c > 1]
-    if len(filtered) == 1 and locus_data.halen_frequency[filtered[0]] / locus_data.depth >= 0.75:
-        locus_data.hap_category = 1 # homozygous
-        locus_data.homozygous_alen = filtered[0]
+    if len(set(read_aseqs)) == 1:
+        locus_data.hap_category    = 1 # homozygous
         return
 
     locus_data.hap_category = 2 # ambiguous
@@ -237,7 +226,7 @@ def process_locus(cooper, locus_key):
     # --- coverage check ---
     if locus_data.depth < cooper.args.min_reads:
         cooper.prev_reads    = set(read_indices)
-        locus_data.fail_code  = 0
+        locus_data.skip_code = 0
         return
 
     if locus_data.depth > cooper.args.max_reads:
@@ -252,8 +241,8 @@ def process_locus(cooper, locus_key):
 
     # --- per read processing ---
     for read_index in read_indices:
-        read_data = cooper.cooper_read_data[read_index]
-        query, relative_qrange, left_ins, right_ins, fqs, fqe = locus_data.read_seqs[read_index]
+        read = cooper.cooper_read_data[read_index]
+        query, relative_qrange, left_ins, right_ins, fqs, fqe = locus_data.read_aseqs[read_index]
         adj_qs, adj_qe = relative_qrange
 
         left_ins.sort( key=lambda x: x[0])
@@ -273,32 +262,18 @@ def process_locus(cooper, locus_key):
         CI  += ci  + ci2
         pending_insertions |= pend_l | pend_r
 
-        locus_data.read_seqs[read_index][0]   = query[adj_qs:adj_qe]
+        locus_data.read_aseqs[read_index][0]   = query[adj_qs:adj_qe]
         locus_data.read_alens[read_index][0]  = adj_qe - adj_qs
 
         # methylation
         subseq_len     = fqe - fqs
         adj_fqs        = fqs + adj_qs
         adj_fqe        = fqe - (subseq_len - adj_qe)
-        read_mod_bases = read_data.methylation
 
-        meth_pos = []; meth_encode = []; meth_count = meth_qual = 0
-        for pos, raw_prob in read_mod_bases:
-            if not (adj_fqs <= pos <= adj_fqe): continue
-            prob = raw_prob / 255
-            meth_pos.append(pos - adj_fqs)
-            if lower_bound < prob < upper_bound:
-                meth_encode.append(-1)
-            else:
-                meth_count += 1
-                is_meth     = prob >= upper_bound
-                meth_encode.append(int(is_meth))
-                meth_qual  += is_meth
+        locus_data.read_methylation[read_index] = read.process_methylation_info(adj_fqs, adj_fqe, lower_bound, upper_bound)
 
-        locus_data.read_methylation[read_index] = (round(meth_qual / meth_count, 2), meth_pos, meth_encode) if meth_count else None
-
-    if cooper.args.debug_mode:
-        cooper.logger.debug(f"{locus_key};Larger_ins={ILR};Partial_ins={PI};Complete_ins={CI}")
+    # if cooper.args.debug_mode:
+    cooper.logger.debug(f"{locus_key};Larger_ins={ILR};Partial_ins={PI};Complete_ins={CI}")
 
     cooper.cooper_insert_positions |= pending_insertions
     count_alleles(cooper, locus_key) # updates frequency of allele lengths in cooper.cooper_loci_data[locus_key]
@@ -310,13 +285,13 @@ def process_locus(cooper, locus_key):
         for read_idx, tag in zip(read_indices, locus_data.read_haplotags):
             if tag == 1: hap1.append(read_idx)
             if tag == 2: hap2.append(read_idx)
-        locus_data.haplotypes        = (hap1, hap2)
-        locus_data.haplotype_lengths = ([locus_data.read_alens[ridx][0] for ridx in hap1], [locus_data.read_alens[ridx][0] for ridx in hap2])
+        locus_data.hap_read_sets        = (hap1, hap2)
+        locus_data.hap_alen_sets = ([locus_data.read_alens[ridx][0] for ridx in hap1], [locus_data.read_alens[ridx][0] for ridx in hap2])
         # haplotyped successfully if there are reads in both haplogroups
-        locus_data.hap_status = all(locus_data.haplotypes)
-        locus_data.phase_mode = 'haplotag' if locus_data.hap_status else None
+        locus_data.is_phased  = all(locus_data.hap_read_sets)
+        locus_data.phase_mode = 'haplotag' if locus_data.is_genotyped else None
 
     assign_hap_category(locus_data)
 
     cooper.prev_reads = current_reads
-    locus_data.fail_code = 10
+    locus_data.skip_code = 10

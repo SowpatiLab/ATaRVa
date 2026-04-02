@@ -14,7 +14,6 @@ from ATARVA.vcf_writer    import set_info_mp_cutoff
 from ATARVA.sub_operation_utils import set_methviz_tag
 
 # --- Constants ---
-
 FORMAT_MAP = {
     'cram': 'rc',
     'sam' : 'r',
@@ -96,7 +95,9 @@ def splitfile_threads(tbx, contigs, total_loci, threads):
     :return:           list of region chunk tuples, one per thread
     """
 
-    split_size  = max(total_loci // threads, total_loci)  # guard against 0
+    split_size  = total_loci // threads
+    if split_size == 0:
+        split_size = total_loci
     fetcher     = []
     line_count  = 0
     cur_chunk   = []
@@ -127,7 +128,7 @@ def splitfile_threads(tbx, contigs, total_loci, threads):
             end_coord = (int(fields[1]), int(fields[2]))
             cur_chunk.append([chrom, start_coord, end_coord])
 
-    fetcher.append(tuple(cur_chunk))
+    fetcher.append(tuple(cur_chunk)) # pad with empty chunks if needed
     return fetcher
 
 

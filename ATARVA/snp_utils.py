@@ -6,11 +6,9 @@ def haplocluster_reads(cooper, locus_key):
     """
     cluster reads into haplotypes using SNP allele information.
 
-    :param cooper:                  cooper object
-    :param locus_data:              locus data object
-    :param relevant_snp_data:       dict of locus relevant SNP data at the locus
-    :param ordered_snp_on_cov:      SNP positions ordered by alt allele coverage
-    :return:                        [haplotypes, min_snp, skip_point, snp_quals, phased_reads, snp_count]
+    :param cooper:      cooper object
+    :param locus_key:   locus key
+    :return:            minimum SNP position used for clustering, or -1 if clustering fails
     """
 
     MIN_ALLELE_FRAC       = 0.2    # min fraction for allele quality calculation
@@ -104,7 +102,7 @@ def haplocluster_reads(cooper, locus_key):
 
         min_snp_pos = merge_snpreadsets(cooper, locus_data, sig_snp_data, ordered_sig_snps)
 
-        if locus_data.hap_status or tier_idx == 2:
+        if locus_data.is_genotyped or tier_idx == 2:
             break
 
     return min_snp_pos
@@ -193,16 +191,16 @@ def merge_snpreadsets(cooper, locus_data, sig_snp_data, ordered_sig_snps):
     # --- validate phasing coverage ---
     total_phased = len(cluster1) + len(cluster2)
     if total_phased >= cooper.args.phasing_read * locus_data.depth:
-        locus_data.haplotypes        = (list(cluster1), list(cluster2))
-        locus_data.haplotype_lengths = ([locus_data.read_alens[ridx][0] for ridx in cluster1], [locus_data.read_alens[ridx][0] for ridx in cluster2])
-        locus_data.hap_status    = True
-        locus_data.phase_mode    = 'snp'
-        locus_data.hap_category  = 0
-        locus_data.num_snps      = len(final_snp_dict)
-        locus_data.snp_quals     = snp_quals
+        locus_data.hap_read_sets      = (list(cluster1), list(cluster2))
+        locus_data.hap_alen_sets      = ([locus_data.read_alens[ridx][0] for ridx in cluster1], [locus_data.read_alens[ridx][0] for ridx in cluster2])
+        locus_data.is_genotyped       = True
+        locus_data.phase_mode         = 'snp'
+        locus_data.hap_category       = 0
+        locus_data.n_phasing_snps     = len(final_snp_dict)
+        locus_data.phasing_snp_quals  = snp_quals
 
         return min_snp_pos
 
-    locus_data.hap_status    = False
-    locus_data.fail_code     = 1
+    locus_data.is_genotyped    = False
+    locus_data.skip_code     = 1
     return min_snp_pos

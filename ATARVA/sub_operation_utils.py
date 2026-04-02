@@ -13,10 +13,10 @@ def set_methviz_tag(value):
 
 # base64 encodings
 BASE64_CHARS = string.ascii_uppercase + string.ascii_lowercase + string.digits + '+//'
-NO_MATCH  = -2   # sentinel for unmatched position
-AMBIGUOUS = -1   # sentinel for ambiguous methylation call
+NO_MATCH  = -2   # code for unmatched position
+AMBIGUOUS = -1   # code for ambiguous methylation call
 METH_ENCODING = { NO_MATCH  : '*',   # error / missing call
-                 AMBIGUOUS : '-' }   # ambiguous call
+                  AMBIGUOUS : '-' }   # ambiguous call
 
 
 def mm_tag_extract(read, mod_probs):
@@ -129,11 +129,11 @@ def align_cg_positions(consensus_cg_pos, read_cg_pos):
     return aligned_read_idx
 
 
-def encode_methylation(score_matrix, pos_matrix, consensus_cgs):
+def encode_methylation(call_matrix, pos_matrix, consensus_cgs):
     """
     encode methylation scores at consensus CpG positions into a compact string for visualization
 
-    :param score_matrix: list of lists with methylation scores for each read at their respective CpG positions
+    :param call_matrix: list of lists with methylation calls for each read at their respective CpG positions
     :param pos_matrix: list of lists with read CpG positions aligned to consensus CpG
     :param consensus_cgs: list of CpG positions in the consensus sequence
     :return: encoded methylation string where each character represents the consensus CpG position and its methylation status across reads
@@ -147,26 +147,27 @@ def encode_methylation(score_matrix, pos_matrix, consensus_cgs):
 
     # --- build score matrix using aligned positions ---
     aligned_score_matrix = [
-        [meth_scores[pos] if pos != NO_MATCH else NO_MATCH
+        [meth_calls[pos] if pos != NO_MATCH else NO_MATCH
          for pos in aligned_pos]
-        for meth_scores, aligned_pos in zip(score_matrix, aligned_pos_matrix)
+        for meth_calls, aligned_pos in zip(call_matrix, aligned_pos_matrix)
     ]
 
     # --- encode each consensus CG position ---
     encoded_meth = []
     for col in zip(*aligned_score_matrix):
         col_array = np.array(col)
-        mode      = stats.mode(col_array, keepdims=True).mode[0]
+        # mode      = stats.mode(col_array, keepdims=True).mode[0]
+        values, counts = np.unique(col_array, return_counts=True)
+        mode = values[np.argmax(counts)]
 
         if mode in METH_ENCODING:
             encoded_meth.append(METH_ENCODING[mode])
             continue
 
         # filter sentinels and compute mean
-        valid     = col_array[(col_array != AMBIGUOUS) & (col_array != NO_MATCH)]
-        col_mean  = round(np.mean(valid) * 100)
-        col_scaled = round(col_mean / 1.5625)    # scale to 0-64
-        encoded_meth.append(BASE64_CHARS[col_scaled])
+        avg_base_meth = np.mean(col_array[(col_array != AMBIGUOUS) & (col_array != NO_MATCH)])
+        base64_scaled = round(avg_base_meth * 63)    # scale to 0-64
+        encoded_meth.append(BASE64_CHARS[base64_scaled])
 
     return ''.join(encoded_meth)
 
@@ -192,20 +193,21 @@ def calculate_methylation(read_indices, read_methylation, consensus_seq):
     methyl_nreads       = 0
     haplotype_avgmeth   = 0
     encoded_methylation = None
-    score_matrix = []
-    pos_matrix = []
+    call_matrix = []
+    pos_matrix  = []
     for read_index in read_indices:
-        if read_methylation[read_index] is not None:
-            methyl_nreads += 1
-            haplotype_avgmeth += read_methylation[read_index][0]
-            # for meth visualization
-            if methviz_tag:
-                pos_matrix.append(read_methylation[read_index][1])
-                score_matrix.append(read_methylation[read_index][2])
-            
+        if read_methylation[read_index] is None: continue
+        avg_read_meth, positions, meth_scores, meth_calls = read_methylation[read_index]
+        methyl_nreads += 1
+        haplotype_avgmeth += avg_read_meth
+        # for meth visualization
+        if methviz_tag:
+            pos_matrix.append(positions)
+            call_matrix.append(meth_calls)
+
     if methyl_nreads > 0:
         if methviz_tag:
-            encoded_methylation = encode_methylation(score_matrix, pos_matrix, cg_positions)
+            encoded_methylation = encode_methylation(call_matrix, pos_matrix, cg_positions)
         return [round(haplotype_avgmeth/methyl_nreads, 2), methyl_nreads, encoded_methylation]
     else:
         return [None, None, None]

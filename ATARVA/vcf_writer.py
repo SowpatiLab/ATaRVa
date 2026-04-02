@@ -41,23 +41,22 @@ def vcf_writer(out, bam, bam_name):
     vcf_header.info.add("ID",    number=1,   type="String",   description="Locus identifier tag")
     vcf_header.info.add("REFCN", number=1,   type="Integer",  description="Reference allele copy number")
     vcf_header.info.add("CT",    number=1,   type="String",   description="Cluster type")
-    vcf_header.info.add("EAC",   number=1,   type="String",   description="Each Allele Count")
     vcf_header.info.add("MPC",   number=1,   type="String",   description=f"{INFO_MP_CUTOFF}")
+    vcf_header.info.add("AFD",   number=1,   type="String",   description="Allele length frequency for the reads supporting the locus")
 
     # FORMAT
     vcf_header.formats.add("GT", number=1,   type="String",   description="Genotype")
     vcf_header.formats.add("AL", number=2,   type="Integer",  description="Allele length in base pairs")
     vcf_header.formats.add("CN", number=2,   type="Integer",  description="Motif copy number for each allele")
     vcf_header.formats.add("AR", number='.', type="String",   description="Allele length range")
-    vcf_header.formats.add("SD", number='.', type="Integer",  description="Number of reads supporting for the alleles")
-    vcf_header.formats.add("PC", number=2,   type="Integer",  description="Number of reads in the phased cluster for each allele")
-    vcf_header.formats.add("DP", number=1,   type="Integer",  description="Number of the supporting reads for the repeat locus")
-    vcf_header.formats.add("SN", number='.', type="Integer",  description="Number of SNPs used for phasing")
-    vcf_header.formats.add("SQ", number='.', type="Float",    description="Phred-scale qualities of the SNPs used for phasing")
-    vcf_header.formats.add("MA", number='.', type="Float",    description="Mean methylation level for each allele")
-    vcf_header.formats.add("MR", number='.', type="Integer",  description="Number of reads providing methylation info for each allele")
-    vcf_header.formats.add("DS", number='A', type="String",   description="Motif decomposed sequence")
-    vcf_header.formats.add("MV", number='.', type="String",   description="Visual methylation encodings for the alleles")
+    vcf_header.formats.add("SD", number='.', type="Integer",  description="Number of reads supporting each haplogroup")
+    vcf_header.formats.add("DP", number=1,   type="Integer",  description="Total supporting reads for the repeat locus")
+    vcf_header.formats.add("SN", number='.', type="Integer",  description="Number of informative SNPs used for phasing")
+    vcf_header.formats.add("SQ", number='.', type="Float",    description="Average Phred-scale base call quality of each informative SNP across the supporting reads")
+    vcf_header.formats.add("MA", number='.', type="Float",    description="Average  methylation level for each allele")
+    vcf_header.formats.add("MR", number='.', type="Integer",  description="Number of informative reads for methylation scoring for each allele")
+    vcf_header.formats.add("DS", number='A', type="String",   description="Motif decomposed sequence for each allele sequence")
+    vcf_header.formats.add("MV", number='.', type="String",   description="Base methylation score encoded for visualization for each allele")
 
     out.write(str(vcf_header))
 
@@ -80,7 +79,7 @@ def write_fail_call(cooper, locus_key):
     else:
         optional_tag = ';ID=.'
 
-    if locus_data.fail_code == 0: FILTER = 'LESS_READS'
+    if locus_data.skip_code == 0: FILTER = 'LESS_READS'
 
     locus_key = f'{locus.chrom}:{locus.start}-{locus.end}'
 
@@ -105,7 +104,7 @@ def write_homozygous_call(cooper, locus_key):
     optional_tag = f';ID={locus.name}' if locus.name else ';ID=.'
 
     # --- methylation fields ---
-    meth_avg_prob, meth_read_count, meth_vis_enc = locus_data.haplotype_methyldata[0] if locus_data.haplotype_methyldata else (None, None, None)
+    meth_avg_prob, meth_read_count, meth_vis_enc = locus_data.hap_meth_data[0] if locus_data.hap_meth_data else (None, None, None)
 
     meth_prob_str  = str(meth_avg_prob)   if meth_avg_prob   is not None else '.'
     meth_reads_str = str(meth_read_count) if meth_read_count is not None else '.'
@@ -113,7 +112,7 @@ def write_homozygous_call(cooper, locus_key):
 
     # homozygous — duplicate values for diploid FORMAT consistency
 
-    allele = locus_data.haplotype_alleles[0] if locus_data.haplotype_alleles else None
+    allele = locus_data.gt_aseqs[0] if locus_data.gt_aseqs else None
 
     # --- ref / alt ---
     ref_seq    = cooper.ref.fetch(cooper.chrom, locus.start, locus.end)
@@ -130,7 +129,7 @@ def write_homozygous_call(cooper, locus_key):
 
     # --- decomposed sequence ---
     if cooper.args.decompose and is_seq_alt and locus.motif_length <= 10:
-        decomposed_seq = locus_data.decomposed_alleles[0] if locus_data.decomposed_alleles[0] else None
+        decomposed_seq = locus_data.gt_decomp_seqs[0] if locus_data.gt_decomp_seqs[0] else None
     else: decomposed_seq = '.'
 
     # --- INFO field ---
@@ -144,8 +143,8 @@ def write_homozygous_call(cooper, locus_key):
     )
 
     if cooper.args.debug_mode:
-        eac   = sorted(locus_data.halen_frequency.items(), key=lambda x: x[1], reverse=True)
-        INFO += f';CT=<TAG>;EAC={eac}'
+        alen_dist   = sorted(locus_data.halen_frequency.items(), key=lambda x: x[1], reverse=True)
+        INFO += f';CT=<TAG>'
 
     # --- SAMPLE field ---
     FORMAT = 'GT:AL:CN:AR:SD:DP:SN:SQ:MA:MR:DS:MV'
@@ -155,7 +154,7 @@ def write_homozygous_call(cooper, locus_key):
     hap_depth     = depth
     length_GT     = f'{allele_length}' if cooper.haploid else f'{allele_length},{allele_length}'
     units_GT      = f'{motif_copy}' if cooper.haploid else f'{motif_copy},{motif_copy}'
-    allele_range  = f'{locus_data.haplotype_arange[0]}' if cooper.haploid else f'{locus_data.haplotype_arange[0]},{locus_data.haplotype_arange[1]}'
+    allele_range  = f'{locus_data.gt_arange[0]}' if cooper.haploid else f'{locus_data.gt_arange[0]},{locus_data.gt_arange[1]}'
     GT            = GT if not cooper.haploid else GT[0]  # convert to haploid GT if needed
     MA = f'{meth_prob_str}'  if cooper.haploid else f'{meth_prob_str},{meth_prob_str}'
     MV = f'{meth_vis_str}'   if cooper.haploid else f'{meth_vis_str},{meth_vis_str}'
@@ -199,7 +198,6 @@ def write_heterozygous_call(cooper, locus_key):
     AN  = 2
     GT  = 'GT'
     SD  = 'SD'
-    PC  = 'PC'
     ALT = '.'
 
     ref_alen   = locus.end - locus.start
@@ -209,13 +207,13 @@ def write_heterozygous_call(cooper, locus_key):
     meth_prob   = []
     meth_reads  = []
     meth_viztag = []
-    for hap_methyl in locus_data.haplotype_methyldata:
+    for hap_methyl in locus_data.hap_meth_data:
         meth_prob.append(str(hap_methyl[0]) if hap_methyl[0] is not None else '.') #methylation probability
         meth_reads.append(str(hap_methyl[1]) if hap_methyl[1] is not None else '.') #number of methylated reads
         meth_viztag.append(hap_methyl[2] if hap_methyl[2] is not None else '.') #methylation visual encoding
 
-    if locus_data.haplotype_alleles[0] == locus_data.haplotype_alleles[1]: # if the two alleles are the same, make it a homozygous call
-        allele = locus_data.haplotype_alleles[0]
+    if locus_data.gt_aseqs[0] == locus_data.gt_aseqs[1]: # if the two alleles are the same, make it a homozygous call
+        allele = locus_data.gt_aseqs[0]
         if ref_allele == allele:
             AC = 0; GT = '0|0'
         else:
@@ -223,59 +221,55 @@ def write_heterozygous_call(cooper, locus_key):
             ALT = allele
         length_GT += f'{len(allele)},{len(allele)}'
         units_GT += f'{len(allele)//locus.motif_length},{len(allele)//locus.motif_length}'
-        SD = f'{len(locus_data.haplotypes[0])},{len(locus_data.haplotypes[1])}'
-        PC = f'{len(locus_data.haplotypes[0])},{len(locus_data.haplotypes[1])}'
-        allele_range = f'{locus_data.haplotype_arange[0]},{locus_data.haplotype_arange[1]}'
+        SD = f'{len(locus_data.hap_read_sets[0])},{len(locus_data.hap_read_sets[1])}'
+        allele_range = f'{locus_data.gt_arange[0]},{locus_data.gt_arange[1]}'
 
     else:
-        if ref_allele in locus_data.haplotype_alleles:
+        if ref_allele in locus_data.gt_aseqs:
             ref_index = 0; allele_index = 1
-            if locus_data.haplotype_alleles[0] != ref_allele:
+            if locus_data.gt_aseqs[0] != ref_allele:
                 allele_index = 0
                 ref_index = 1
-            allele = locus_data.haplotype_alleles[allele_index]
+            allele = locus_data.gt_aseqs[allele_index]
             AC = 1
             GT = '0|1'
             length_GT += f'{ref_alen},{len(allele)}'
             units_GT += f'{ref_units},{len(allele)//locus.motif_length}'
 
-            SD = f'{len(locus_data.haplotypes[ref_index])},{len(locus_data.haplotypes[allele_index])}'
-            if locus_data.hap_status: PC = f'{len(locus_data.haplotypes[ref_index])},{len(locus_data.haplotypes[allele_index])}'
+            SD = f'{len(locus_data.hap_read_sets[ref_index])},{len(locus_data.hap_read_sets[allele_index])}'
             ALT = allele
             if ref_index == 1:
                 meth_prob = meth_prob[::-1] # reverse the meth_prob to keep the order consistent with GT
                 meth_reads = meth_reads[::-1]
                 meth_viztag = meth_viztag[::-1]
-            allele_range = f'{locus_data.haplotype_arange[ref_index]},{locus_data.haplotype_arange[allele_index]}'
+            allele_range = f'{locus_data.gt_arange[ref_index]},{locus_data.gt_arange[allele_index]}'
         else:
             AC = '1,1'
             GT = '1|2'
-            ALT1 = locus_data.haplotype_alleles[0]
-            ALT2 = locus_data.haplotype_alleles[1]
+            ALT1 = locus_data.gt_aseqs[0]
+            ALT2 = locus_data.gt_aseqs[1]
             length_GT += f'{len(ALT1)},{len(ALT2)}'
             units_GT += f'{len(ALT1)//locus.motif_length},{len(ALT2)//locus.motif_length}'
 
-            SD = f'{len(locus_data.haplotypes[0])},{len(locus_data.haplotypes[1])}'
-            if locus_data.hap_status: PC = f'{len(locus_data.haplotypes[0])},{len(locus_data.haplotypes[1])}'
+            SD = f'{len(locus_data.hap_read_sets[0])},{len(locus_data.hap_read_sets[1])}'
 
             ALT = f'{ALT1},{ALT2}'
-            allele_range = f'{locus_data.haplotype_arange[0]},{locus_data.haplotype_arange[1]}'
+            allele_range = f'{locus_data.gt_arange[0]},{locus_data.gt_arange[1]}'
     MA = ','.join(meth_prob)
     MR = ','.join(meth_reads)
     MV = ','.join(meth_viztag)
 
-    if PC == '.,.': PC = '.' # due to length genotyper
     INFO = f'AC={AC};AN={AN};MOTIF={locus.motif};START={locus.start};END={locus.end}{optional_tag};REFCN={ref_units}'
 
     decomposed_seqs = '.,.'
     if cooper.args.decompose:
-        decomposed_seqs = f'{locus_data.decomposed_alleles[0]},{locus_data.decomposed_alleles[1]}'
+        decomposed_seqs = f'{locus_data.gt_decomp_seqs[0]},{locus_data.gt_decomp_seqs[1]}'
 
     num_snps = 0
     snp_quals = ''
-    if locus_data.phase_mode == 'snp' and locus_data.snp_quals:
-        num_snps = locus_data.num_snps
-        snp_quals = locus_data.snp_quals
+    if locus_data.phase_mode == 'snp' and locus_data.phasing_snp_quals:
+        num_snps  = locus_data.n_phasing_snps
+        snp_quals = locus_data.phasing_snp_quals
     FORMAT = 'GT:AL:CN:AR:SD:DP:SN:SQ:MA:MR:DS:MV'
     SAMPLE = (
             f'{GT}'
