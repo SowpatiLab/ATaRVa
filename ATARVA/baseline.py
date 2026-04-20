@@ -242,6 +242,26 @@ class Cooper:
                         genotyped_count  += self.locus_processor()
                         self.progress_bar.update(1)
                     break
+                
+                soft_start = read.ref_start
+                soft_end   = read.ref_end
+                if read.cigartuples[0][0] == 4:
+                    soft_start = max(0, read.ref_start - read.cigartuples[0][1])
+                if read.cigartuples[-1][0] == 4:
+                    soft_end = read.ref_end + read.cigartuples[-1][1]
+                if abs(soft_start - read.ref_start) > self.args.flank or abs(soft_end - read.ref_end) > self.args.flank:
+                    normal_loci, softclip_loci = [[],[]]
+                    for row in self.tbx.fetch(chrom, read.ref_start, read.ref_end):
+                        f = row.split('\t')
+                        if read.ref_start <= int(f[1]) and int(f[2]) <= read.ref_end:
+                            normal_loci.append((int(f[1]), int(f[2])))
+                    for row in self.tbx.fetch(chrom, soft_start, soft_end):
+                        f = row.split('\t')
+                        if soft_start <= int(f[1]) and int(f[2]) <= soft_end:
+                            softclip_loci.append((int(f[1]), int(f[2])))
+
+                    if len(normal_loci) < len(softclip_loci):
+                        print('More loci in softclip range than normal range — use softclip loci')
 
                 # --- assign loci to read ---
                 for row in self.tbx.fetch(chrom, read.ref_start, read.ref_end):

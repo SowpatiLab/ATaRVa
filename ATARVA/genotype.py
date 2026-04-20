@@ -146,8 +146,12 @@ def worker_init(bam_file, region_ranges, args, out_file, sample_idx, thread_idx)
     Cooper(bam_file, region_ranges, args, out_file, sample_idx, thread_idx)
 
 
-def _resolve_output_path(vcf_arg: str) -> str:
-    """Resolve and normalise the output file path from --vcf argument."""
+def resolve_output_path(vcf_arg):
+    """
+    Resolve and normalise the output file path from --vcf argument.
+    :param vcf_arg: raw --vcf argument value
+    :return: resolved base output path (no extension)
+    """
     if not vcf_arg:
         return ''
     path = vcf_arg.rstrip('/')
@@ -156,12 +160,12 @@ def _resolve_output_path(vcf_arg: str) -> str:
     return path
 
 
-def _sample_stem(bam_path: str) -> str:
+def sample_stem(bam_path: str) -> str:
     """Extract sample name stem from BAM file path."""
     return Path(bam_path).stem
 
 
-def _concat_thread_outputs(base_path: str, n_threads: int,
+def concat_thread_outputs(base_path: str, n_threads: int,
                             debug: bool = False) -> None:
     """
     Concatenate per-thread VCF (and optionally log) outputs into a single file.
@@ -223,7 +227,7 @@ def genotype_run(args) -> None:
     set_info_mp_cutoff(args.meth_prob)
     set_methviz_tag(args.methviz)
 
-    base_output = _resolve_output_path(args.vcf)
+    base_output = resolve_output_path(args.vcf)
 
     # --- tabix region processing ---
     tbx = pysam.Tabixfile(args.regions)
@@ -255,39 +259,36 @@ def genotype_run(args) -> None:
 
     # --- per-sample processing ---
     for sample_idx, bam_file in enumerate(args.bam):
-        sample_stem = _sample_stem(bam_file)
-        print(f'Processing sample: {sample_stem}\n', file=sys.stderr)
+        sample_name = sample_stem(bam_file)
+        print(f'Processing sample: {sample_name}\n', file=sys.stderr)
 
         check_alnfile(bam_file, args)
 
         # resolve per-sample output path
         if not args.vcf:
-            out_file = sample_stem
+            out_file = sample_name
         elif multi_bam_single_out or args.vcf.endswith('/'):
-            out_file = f'{base_output}_{sample_stem}'
+            out_file = f'{base_output}_{sample_name}'
         else:
             out_file = base_output
 
         # --- multithreaded ---
         if args.threads > 1:
-            def _progress_callback(_):
-                pbar.update()
+            pbar = tqdm(total=args.threads, desc='Processing',
+                        ascii='_>', ncols=75,
+                        bar_format='{l_bar}{bar}{n_fmt}/{total_fmt}')
+            with Pool(processes=args.threads) as pool:
+                for thread_idx in range(args.threads):
+                    pool.apply_async(
+                        worker_init,
+                        args=(bam_file, fetcher[thread_idx],
+                                args, out_file, sample_idx, thread_idx),
+                        callback=lambda _: pbar.update()
+                    )
+                pool.close()
+                pool.join()
 
-            with tqdm(total=args.threads, desc='Processing',
-                      ascii='_>', ncols=75,
-                      bar_format='{l_bar}{bar}{n_fmt}/{total_fmt}') as pbar:
-                with Pool(processes=args.threads) as pool:
-                    for thread_idx in range(args.threads):
-                        pool.apply_async(
-                            worker_init,
-                            args=(bam_file, fetcher[thread_idx],
-                                  args, out_file, sample_idx, thread_idx),
-                            callback=_progress_callback
-                        )
-                    pool.close()
-                    pool.join()
-
-            _concat_thread_outputs(out_file, args.threads, debug=args.debug_mode)
+            concat_thread_outputs(out_file, args.threads, debug=args.debug_mode)
 
         # --- single threaded ---
         else:
