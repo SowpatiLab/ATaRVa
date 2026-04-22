@@ -104,7 +104,10 @@ def write_homozygous_call(cooper, locus_key):
     optional_tag = f';ID={locus.name}' if locus.name else ';ID=.'
 
     # --- methylation fields ---
-    meth_avg_prob, meth_read_count, meth_vis_enc = locus_data.hap_meth_data[0] if locus_data.hap_meth_data is not None else (None, None, None)
+    if locus_data.hap_meth_data is not None and locus_data.hap_meth_data[0] is not None:
+        meth_avg_prob, meth_read_count, meth_vis_enc = locus_data.hap_meth_data[0]
+    else:
+        meth_avg_prob, meth_read_count, meth_vis_enc = None, None, None
 
     meth_prob_str  = str(meth_avg_prob)   if meth_avg_prob   is not None else '.'
     meth_reads_str = str(meth_read_count) if meth_read_count is not None else '.'

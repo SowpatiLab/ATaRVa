@@ -4,7 +4,7 @@ from ATARVA.structures import SNP
 
 def update_snps(cooper, read, pos, qpos, insertion_point):
 
-    rpos = read.reference_start + pos
+    rpos = read.ref_start + pos
     for ins in insertion_point:
         if ins < rpos:
             qpos += insertion_point[ins]
@@ -38,7 +38,7 @@ def parse_mdtag(cooper, read, qpos, insertion_point):
     deletion  = False
     replacing = False
     
-    for i in read.get_tag('MD'):
+    for i in read.md_tag:
     
         if deletion:
             if i.isalpha():

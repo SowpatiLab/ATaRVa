@@ -48,8 +48,8 @@ def parse_cigar(cooper, read):
     :param read: pysam AlignedSegment object
     """
 
-    rpos = read.reference_start   # NOTE: The coordinates are 1 based in SAM
-    qpos = 0            # starts from 0 the sub string the read sequence in python
+    rpos = read.ref_start   # NOTE: The coordinates are 1 based in SAM
+    qpos = 0                # starts from 0 the sub string the read sequence in python
 
     chrom = read.chrom
     repeat_index = 0

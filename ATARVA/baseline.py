@@ -16,6 +16,7 @@ from ATARVA.sub_operation_utils import mm_tag_extract, calculate_methylation
 from ATARVA.locus_utils       import process_locus
 from ATARVA.consensus         import consensus_seq_poa
 from ATARVA.genotype_utils    import analyse_genotype
+from ATARVA.process_softclips import process_softclips
 
 
 SKIP_MESSAGES = {
@@ -247,9 +248,11 @@ class Cooper:
                 soft_end   = read.ref_end
                 if read.cigartuples[0][0] == 4:
                     soft_start = max(0, read.ref_start - read.cigartuples[0][1])
+                    if read.cigartuples[0][1] >= 30: start_softclip = read.cigartuples[0][1]
                 if read.cigartuples[-1][0] == 4:
                     soft_end = read.ref_end + read.cigartuples[-1][1]
-                if abs(soft_start - read.ref_start) > self.args.flank or abs(soft_end - read.ref_end) > self.args.flank:
+                    if read.cigartuples[-1][1] >= 30: end_softclip = read.cigartuples[-1][1]
+                if abs(soft_start - read.ref_start) > 30 or abs(soft_end - read.ref_end) > 30:
                     normal_loci, softclip_loci = [[],[]]
                     for row in self.tbx.fetch(chrom, read.ref_start, read.ref_end):
                         f = row.split('\t')
@@ -261,7 +264,7 @@ class Cooper:
                             softclip_loci.append((int(f[1]), int(f[2])))
 
                     if len(normal_loci) < len(softclip_loci):
-                        print('More loci in softclip range than normal range — use softclip loci')
+                        process_softclips(self, read, softclip_loci)
 
                 # --- assign loci to read ---
                 for row in self.tbx.fetch(chrom, read.ref_start, read.ref_end):
@@ -277,7 +280,7 @@ class Cooper:
                     # region boundary checks
                     if locus_start < first_coords[0]:
                         continue
-                    if locus_start >= last_coords[0]:
+                    if locus_start >= last_coords[1]:
                         break
                     if not (first_coords[0] <= locus_start and locus_end <= last_coords[1]):
                         continue
@@ -297,6 +300,7 @@ class Cooper:
                     locus_key = f'{chrom}:{locus_start}-{locus_end}'
                     read.loci_keys.append(locus_key)
                     read.loci_data[locus_key] = ReadLocusInfo(halen=0, alen=0, rlen=locus_len, seq=[])
+
 
                     if locus_key not in self.cooper_loci_data:
                         self.cooper_loci_data[locus_key] = LocusVariation()
@@ -319,7 +323,7 @@ class Cooper:
 
                 if '=' in read_sequence:
                     read_sequence = clean_eqsign_readseq(read.chrom, read.ref_start, read.cigartuples,
-                                                        read_sequence, self.ref)
+                                                         read_sequence, self.ref)
 
                 # --- register read ---
                 read_index   += 1

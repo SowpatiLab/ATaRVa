@@ -125,21 +125,27 @@ class ExtendedRead(pysam.AlignedSegment):
         ext._read  = read
 
         # copy core pysam attributes
-        ext.query_name            = read.query_name
-        ext.query_sequence        = read.query_sequence
-        ext.flag                  = read.flag
-        ext.reference_id          = read.reference_id
-        ext.reference_start       = read.reference_start
-        ext.mapping_quality       = read.mapping_quality
-        ext.cigar                 = read.cigar
-        ext.next_reference_id     = read.next_reference_id
-        ext.next_reference_start  = read.next_reference_start
-        ext.template_length       = read.template_length
-        ext.query_qualities       = read.query_qualities
-        ext.tags                  = read.tags
-        ext.has_tag               = read.has_tag
+        ext.query_name                = read.query_name
+        ext.query_sequence            = read.query_sequence
+        ext.flag                      = read.flag
+        ext.reference_id              = read.reference_id
+        ext.reference_start           = read.reference_start
+        ext.ref_start                 = read.reference_start
+        ext.ref_end                   = read.reference_end
+        ext.query_start               = read.query_alignment_start
+        ext.query_end                 = read.query_alignment_end
+        ext.mapping_quality           = read.mapping_quality
+        ext.cigar                     = read.cigar
+        ext.next_reference_id         = read.next_reference_id
+        ext.next_reference_start      = read.next_reference_start
+        ext.template_length           = read.template_length
+        ext.query_qualities           = read.query_qualities
+        ext.tags                      = read.tags
+        ext.has_tag                   = read.has_tag
         if read.has_tag('cs'):
             ext.cs_tag            = read.cs_tag
+        if read.has_tag('MD'):
+            ext.md_tag            = read.get_tag('MD')
 
         # custom attributes
         ext.index                  = None
