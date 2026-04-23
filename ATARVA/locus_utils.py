@@ -272,8 +272,8 @@ def process_locus(cooper, locus_key):
 
         locus_data.read_methylation[read_index] = read.process_methylation_info(adj_fqs, adj_fqe, lower_bound, upper_bound)
 
-    # if cooper.args.debug_mode:
-    cooper.logger.debug(f"{locus_key};Larger_ins={ILR};Partial_ins={PI};Complete_ins={CI}")
+    if cooper.args.debug_mode:
+        cooper.logger.debug(f"{locus_key};Larger_ins={ILR};Partial_ins={PI};Complete_ins={CI}")
 
     cooper.cooper_insert_positions |= pending_insertions
     count_alleles(cooper, locus_key) # updates frequency of allele lengths in cooper.cooper_loci_data[locus_key]
