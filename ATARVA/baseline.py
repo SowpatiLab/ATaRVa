@@ -243,31 +243,15 @@ class Cooper:
                         genotyped_count  += self.locus_processor()
                         self.progress_bar.update(1)
                     break
-                
-                soft_start = read.ref_start
-                soft_end   = read.ref_end
-                if read.cigartuples[0][0] == 4:
-                    soft_start = max(0, read.ref_start - read.cigartuples[0][1])
-                    if read.cigartuples[0][1] >= 30: start_softclip = read.cigartuples[0][1]
-                if read.cigartuples[-1][0] == 4:
-                    soft_end = read.ref_end + read.cigartuples[-1][1]
-                    if read.cigartuples[-1][1] >= 30: end_softclip = read.cigartuples[-1][1]
-                if abs(soft_start - read.ref_start) > 30 or abs(soft_end - read.ref_end) > 30:
-                    normal_loci, softclip_loci = [[],[]]
-                    for row in self.tbx.fetch(chrom, read.ref_start, read.ref_end):
-                        f = row.split('\t')
-                        if read.ref_start <= int(f[1]) and int(f[2]) <= read.ref_end:
-                            normal_loci.append((int(f[1]), int(f[2])))
-                    for row in self.tbx.fetch(chrom, soft_start, soft_end):
-                        f = row.split('\t')
-                        if soft_start <= int(f[1]) and int(f[2]) <= soft_end:
-                            softclip_loci.append((int(f[1]), int(f[2])))
 
-                    if len(normal_loci) < len(softclip_loci):
-                        process_softclips(self, read, softclip_loci)
-
+                start_softclip = end_softclip = 0
+                if read.cigartuples[0][0] == 4 and read.cigartuples[0][1] >= 30: start_softclip = read.cigartuples[0][1]
+                if read.cigartuples[-1][0] == 4 and read.cigartuples[-1][1] >= 30: end_softclip = read.cigartuples[-1][1]
+                fetch_start = max(0, read.ref_start - start_softclip)
+                fetch_end   = min(read.ref_end + end_softclip, last_coords[1])
                 # --- assign loci to read ---
-                for row in self.tbx.fetch(chrom, read.ref_start, read.ref_end):
+                processed_left_softclip = processed_right_softclip = False
+                for row in self.tbx.fetch(chrom, fetch_start, fetch_end):
                     fields      = row.split('\t')
                     locus_start = int(fields[1])
                     locus_end   = int(fields[2])
@@ -284,6 +268,13 @@ class Cooper:
                         break
                     if not (first_coords[0] <= locus_start and locus_end <= last_coords[1]):
                         continue
+
+                    if locus_start < read.ref_start and locus_start - 30 > read.ref_start - start_softclip and not processed_left_softclip:
+                        processed_left_softclip = process_softclips(self, read, (locus_start, locus_end), dir='left')
+                        start_softclip = read.cigartuples[0][1] if processed_left_softclip else start_softclip
+                    elif locus_end > read.ref_end and locus_end + 30 < read.ref_end + end_softclip:
+                        processed_right_softclip = process_softclips(self, read, (locus_start, locus_end), dir='right')
+                        end_softclip = read.cigartuples[-1][1] if processed_right_softclip else end_softclip
 
                     # read must fully span the locus
                     if not (read.ref_start <= locus_start and locus_end <= read.ref_end):
