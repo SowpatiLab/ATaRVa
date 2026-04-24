@@ -47,7 +47,9 @@ def generate_md_tag(cigar, reference, query):
                 if match_count > 0:
                     md.append(str(match_count))
                     match_count = 0
+                if prev_op == 'X' and md[-1] != '0': md.append('0')
                 md.append(reference[rpos])
+                prev_op = 'X'
                 qpos += 1
                 rpos += 1
 
@@ -145,120 +147,65 @@ def join_cstags(cs_left: str, cs_right: str) -> str:
         return cs_left + cs_right
 
 
-# def join_mdtags(left_md: str, right_md: str) -> str:
-#     """
-#     join MD tags of continuous alignments
-
-#     Examples:
-#         ["10", "2", "A", "0", "^C", "^T", "3"] -> "12A0^CT3"
-#         "10A00^C2" -> "10A0^C2"
-    
-#     :param left_md:  left MD tag fragment (e.g., "10A0^C2")
-#     :param right_md: right MD tag fragment (e.g., "12T5")
-#     :return:         joined MD tag (e.g., "10A0^C2T5")
-#     """
-
-#     left_op = ''
-#     left_opdat = ''
-#     left_index = len(left_md)
-#     for x in left_md[::-1]:
-#         if x.isdigit():
-#             if left_op == '':
-#                 left_op = 'M'
-#                 left_opdat = x + left_opdat
-#             else: break
-#         elif x == '^':
-#             left_op = 'D'
-#             left_index -= 1
-#             break
-#         elif x in 'ACGTN':
-#             if left_op == 'M':
-#                 break
-#             else:
-#                 left_op = 'X'
-#                 left_opdat = x + left_opdat
-#         left_index -= 1
-
-#     right_op = ''
-#     right_opdat = ''
-#     right_index = 0
-#     for x in right_md:
-#         if x.isdigit():
-#             if right_op == '':
-#                 right_op = 'M'
-#                 right_opdat += x
-#             else: break
-#         elif x == '^':
-#             if right_op == 'M':
-#                 break
-#             else: right_op = 'D'
-#         elif x in 'ACGTN':
-#             if right_op == '':
-#                 right_op = 'X'
-#                 right_opdat += x
-#             elif right_op == 'D':
-#                 right_opdat += x
-#             elif right_op == 'M':
-#                 break
-#         right_index += 1
-
-#     if left_op == right_op:
-#         if left_op == 'M':
-#             return left_md[:left_index] + str(int(left_opdat) + int(right_opdat)) + right_md[right_index:]
-#         elif left_op == 'X':
-#             return left_md + '0' + right_md
-#         elif left_op == 'D':
-#             return left_md[:left_index] + '^' + left_opdat + right_opdat + right_md[right_index:]
-#     else:
-#         if left_op == 'D' and right_op == 'X':
-#             return left_md + '0' + right_md
-#         else:
-#             return left_md + right_md
-
-def tokenize_md(md):
-    tokens = []
+def right_md_token(md):
     i = 0
-    while i < len(md):
-        if md[i].isdigit():
-            num = 0
-            while i < len(md) and md[i].isdigit():
-                num = num * 10 + int(md[i])
-                i += 1
-            tokens.append(num)
-        elif md[i] == '^':
-            i += 1
-            seq = []
-            while i < len(md) and md[i].isalpha():
-                seq.append(md[i])
-                i += 1
-            tokens.append('^' + ''.join(seq))
-        else:
-            tokens.append(md[i])
-            i += 1
-    return tokens
+    if md[i].isdigit():
+        num = ''
+        while i < len(md) and md[i].isdigit():
+            num += md[i]; i += 1
+        return int(num), i
+
+    elif md[i] == '^':
+        i += 1
+        seq = ''
+        while i < len(md) and md[i].isalpha():
+            seq += md[i]; i += 1
+        return '^' + seq, i
+    else:
+        return md[i], i + 1
+
+def left_md_token(md):
+    i = len(md) - 1
+    if md[i].isdigit():
+        num = ''
+        while i >= 0 and md[i].isdigit():
+            num = md[i] + num
+            i -= 1
+        return int(num), i + 1 
+
+    else:
+        if i > 0 and md[i-1] == '0':
+            return md[i], i
+        seq = ''
+        while i >= 0 and md[i] != '^':
+            seq = md[i] + seq
+            i -= 1
+        return '^' + seq, i
 
 
 def join_mdtags(md1, md2):
-    t1 = tokenize_md(md1)
-    t2 = tokenize_md(md2)
+    t1, t1_idx = left_md_token(md1)
+    t2, t2_idx = right_md_token(md2)
 
     if not t1:
         return md2
     if not t2:
         return md1
 
+    merged = ''
     # merge boundary numbers
-    if isinstance(t1[-1], int) and isinstance(t2[0], int):
-        t1[-1] += t2[0]
-        t2 = t2[1:]
+    if isinstance(t1, int) and isinstance(t2, int):
+        merged = t1 + t2
+    elif not isinstance(t1, int) and not isinstance(t2, int):
+        if t1[0] == '^' and t2[0] == '^':
+            merged = t1 + t2[1:]
+        else:
+            merged = t1 + '0' + t2
+    else:
+        merged = str(t1) + str(t2)
 
-    merged = t1 + t2
-
-    # rebuild string
-    out = []
-    for t in merged:
-        out.append(str(t))
-    return ''.join(out)
+    print(f"\n\nt1: {t1}, t2: {t2}, md1: {md1[t1_idx-10:]}, md2: {md2[:t2_idx+10]}, merged: {merged}")
+    return md1[:t1_idx] + str(merged) + md2[t2_idx:]
 
 
 def join_cigars(cigar_left: str, cigar_right: str) -> str:
@@ -664,8 +611,8 @@ def process_softclips(cooper, read, locus, dir):
                 if read.has_tag('MD') and not valid_md(read.md_tag, read.cigarstring):
                     raise ValueError("MD tag is not consistent with CIGAR string after softclip processing.\n" +
                                     f"MD stats: {md_stats(read.md_tag)}\nCIGAR stats: {cigar_stats(read.cigarstring)}")
-
-            return True
+                print(f"Processed left softclip for read {read.query_name} at locus {locus} with new start {read.ref_start}")
+                return True
 
     if dir == "right":
         if read.ref_end < locus[1] - default_flank:
@@ -716,5 +663,6 @@ def process_softclips(cooper, read, locus, dir):
                     raise ValueError("MD tag is not consistent with CIGAR string after softclip processing.\n" +
                                     f"MD stats: {md_stats(read.md_tag)}\nCIGAR stats: {cigar_stats(read.cigarstring)}")
 
+                print(f"Processed right softclip for read {read.query_name} at locus {locus} with new end {read.ref_end}")
                 return True
     return False

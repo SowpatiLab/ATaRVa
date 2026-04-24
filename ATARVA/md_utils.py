@@ -39,7 +39,7 @@ def parse_mdtag(cooper, read, qpos, insertion_point):
     replacing = False
     
     for i in read.md_tag:
-    
+
         if deletion:
             if i.isalpha():
                 base += 1
