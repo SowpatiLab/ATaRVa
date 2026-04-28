@@ -155,7 +155,7 @@ class ExtendedRead(pysam.AlignedSegment):
         ext.query_start            = read.query_alignment_start
         ext.query_end              = read.query_alignment_end
         ext.sequence               = read.query_sequence
-        ext.mean_qual              = int(np.mean(read.query_qualities)) if read.query_qualities else 0
+        ext.mean_qual              = int(sum(read.query_qualities)/len(read.query_qualities)) if read.query_qualities else 0
         ext.loci                   = []
         ext.loci_coords            = []
         ext.loci_keys              = []

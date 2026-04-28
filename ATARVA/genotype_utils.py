@@ -28,9 +28,9 @@ def homozygous_call(cooper, locus_key):
     lower, upper = (round(x) for x in np.percentile(np.array(hap_lengths), [2.5, 97.5]))
 
     ALT, allele_length, decomposed_seq, is_repetitive = alt_sequence(locus_data.read_aseqs, hap_reads, locus.motif_length)
-    if not is_repetitive:
-        locus_data.skip_code = 6
-        return
+    # if not is_repetitive:
+    #     locus_data.skip_code = 6
+    #     return
 
     locus_data.gt_aseqs        = (ALT, None)
     locus_data.gt_alens        = (allele_length, None)
@@ -195,14 +195,14 @@ def length_genotyper(cooper, locus_key):
         return
 
     if c1_valid:
-        locus_data.hap_read_sets = (hap_read_sets[0], [])
-        locus_data.hap_alen_sets = (c1_lengths, None)
+        locus_data.hap_read_sets = (hap_read_sets[0], hap_read_sets[0])
+        locus_data.hap_alen_sets = (c1_lengths, c1_lengths)
         homozygous_call(cooper, locus_key)
         return
 
     if c2_valid:
-        locus_data.hap_read_sets = (hap_read_sets[1], [])
-        locus_data.hap_alen_sets = (c2_lengths, None)
+        locus_data.hap_read_sets = (hap_read_sets[1], hap_read_sets[1])
+        locus_data.hap_alen_sets = (c2_lengths, c2_lengths)
         homozygous_call(cooper, locus_key)
         return
 

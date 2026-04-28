@@ -194,7 +194,13 @@ def assign_hap_category(locus_data):
 
     read_aseqs = [aseq[0] for aseq in locus_data.read_aseqs.values()]
     locus_data.phase_mode = None
-    if len(set(read_aseqs)) == 1:
+    seq_counter = {}
+    for aseq in read_aseqs:
+        try: seq_counter[aseq] += 1
+        except KeyError: seq_counter[aseq] = 1
+    filtered_seqs = {seq: count for seq, count in seq_counter.items() if count > 1}
+    max_freq = max(filtered_seqs.values()) if filtered_seqs else 0
+    if len(filtered_seqs) == 1 or max_freq / locus_data.depth >= 0.75:
         locus_data.hap_category    = 1 # homozygous
         return
 
@@ -293,5 +299,6 @@ def process_locus(cooper, locus_key):
 
     assign_hap_category(locus_data)
 
-    cooper.prev_reads = current_reads
+    cooper.prev_reads.clear()
+    cooper.prev_reads.update(current_reads)
     locus_data.skip_code = 10

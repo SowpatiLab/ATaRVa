@@ -212,11 +212,8 @@ class Cooper:
                     self.progress_bar.update(1)
 
                 # --- evict expired reads ---
-                while self.cooper_read_ends:
-                    if read.ref_start <= self.cooper_read_ends[0]:
-                        break
-                    if (self.cooper_loci_ends and
-                            self.cooper_read_ends[0] > self.cooper_loci_ends[0]):
+                while self.cooper_read_ends and read.ref_start > self.cooper_read_ends[0]:
+                    if (self.cooper_loci_ends and self.cooper_read_ends[0] > self.cooper_loci_ends[0]):
                         break
 
                     read_end = self.cooper_read_ends.popleft()
@@ -244,11 +241,13 @@ class Cooper:
                         self.progress_bar.update(1)
                     break
 
-                start_softclip = end_softclip = 0
-                if read.cigartuples[0][0] == 4 and read.cigartuples[0][1] >= 30: start_softclip = read.cigartuples[0][1]
-                if read.cigartuples[-1][0] == 4 and read.cigartuples[-1][1] >= 30: end_softclip = read.cigartuples[-1][1]
-                fetch_start = max(0, read.ref_start - start_softclip)
-                fetch_end   = min(read.ref_end + end_softclip, last_coords[1])
+                # start_softclip = end_softclip = 0
+                # if read.cigartuples[0][0] == 4 and read.cigartuples[0][1] >= 50: start_softclip = read.cigartuples[0][1]
+                # if read.cigartuples[-1][0] == 4 and read.cigartuples[-1][1] >= 50: end_softclip = read.cigartuples[-1][1]
+                # fetch_start = max(0, read.ref_start - start_softclip)
+                # fetch_end   = min(read.ref_end + end_softclip, last_coords[1])
+                fetch_start = max(0, read.ref_start)
+                fetch_end   = min(read.ref_end, last_coords[1])
                 # --- assign loci to read ---
                 processed_left_softclip = processed_right_softclip = False
                 for row in self.tbx.fetch(chrom, fetch_start, fetch_end):
@@ -269,12 +268,12 @@ class Cooper:
                     if not (first_coords[0] <= locus_start and locus_end <= last_coords[1]):
                         continue
 
-                    if locus_start < read.ref_start and locus_start - 30 > read.ref_start - start_softclip and not processed_left_softclip:
-                        processed_left_softclip = process_softclips(self, read, (locus_start, locus_end), dir='left')
-                        start_softclip = read.cigartuples[0][1] if processed_left_softclip else start_softclip
-                    elif locus_end > read.ref_end and locus_end + 30 < read.ref_end + end_softclip:
-                        processed_right_softclip = process_softclips(self, read, (locus_start, locus_end), dir='right')
-                        end_softclip = read.cigartuples[-1][1] if processed_right_softclip else end_softclip
+                    # if locus_start < read.ref_start and locus_start - 50 > read.ref_start - start_softclip and not processed_left_softclip:
+                    #     processed_left_softclip = process_softclips(self, read, (locus_start, locus_end), dir='left')
+                    #     start_softclip = read.cigartuples[0][1] if processed_left_softclip else start_softclip
+                    # elif locus_end > read.ref_end and locus_end + 50 < read.ref_end + end_softclip:
+                    #     processed_right_softclip = process_softclips(self, read, (locus_start, locus_end), dir='right')
+                    #     end_softclip = read.cigartuples[-1][1] if processed_right_softclip else end_softclip
 
                     # read must fully span the locus
                     if not (read.ref_start <= locus_start and locus_end <= read.ref_end):
@@ -401,6 +400,11 @@ class Cooper:
         # --- category 1 — homozygous ---
         if locus_data.hap_category == 1:
             read_seqs = [read_seqs[rid][0] for rid in locus_data.reads if read_seqs[rid][0] != '']
+            seq_counter = {}
+            for seq in read_seqs:
+                try: seq_counter[seq] += 1
+                except KeyError: seq_counter[seq] = 1
+            max_allele = max(seq_counter, key=seq_counter.get) if seq_counter else None
 
             if len(read_seqs) == 0:
                 # homozygous deletion genotype
@@ -409,18 +413,18 @@ class Cooper:
                 locus_data.gt_arange = '0-0,0-0'
                 locus_data.gt_aseqs  = (ALT, ALT)
 
-            elif read_seqs[0] == self.ref.fetch(locus.chrom, locus.start, locus.end):
+            elif max_allele == self.ref.fetch(locus.chrom, locus.start, locus.end):
                 # homozygous reference genotype
                 ALT = '.'
                 locus_data.gt_alens  = (locus.length, locus.length)
                 locus_data.gt_arange = f'{locus.length}-{locus.length},{locus.length}-{locus.length}'
-                locus_data.gt_aseqs  = (ALT, ALT)
+                locus_data.gt_aseqs  = (max_allele, max_allele)
                 ref_allele = self.ref.fetch(locus.chrom, locus.start, locus.end)
                 meth_data = calculate_methylation(locus_data.reads, locus_data.read_methylation, ref_allele)
                 locus_data.hap_meth_data = (meth_data, meth_data)
 
             else:
-                ALT = read_seqs[0]
+                ALT = max_allele
                 locus_data.gt_alens      = (len(ALT), len(ALT))
                 locus_data.gt_arange     = f'{len(ALT)}-{len(ALT)}'
                 locus_data.gt_aseqs      = (ALT, ALT)

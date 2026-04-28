@@ -5,7 +5,6 @@ from pathlib import Path
 from multiprocessing import Pool
 from tqdm import tqdm
 import pysam
-from pyinstrument import Profiler
 
 from ATARVA.readers       import fasta_check, bam_check, tabix_check
 from ATARVA.version       import __version__
@@ -209,14 +208,10 @@ def genotype_run(args) -> None:
     """
     start_time = ti.default_timer()
 
-    profiler = Profiler()
-    profiler.start()
-
     # --- print args ---
     for arg in vars(args):
         if arg not in ('func', 'help', 'command'):
             print(arg, getattr(args, arg))
-    print()
 
     # --- file validation ---
     fasta_check(args.fasta)
@@ -300,5 +295,3 @@ def genotype_run(args) -> None:
 
     elapsed = ti.default_timer() - start_time
     sys.stderr.write(f'CPU time: {elapsed:.2f} seconds\n')
-    profiler.stop()
-    profiler.write_html("atarva_profile.html")

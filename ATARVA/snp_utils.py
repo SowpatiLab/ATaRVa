@@ -1,7 +1,3 @@
-import numpy as np
-import sys
-
-
 def haplocluster_reads(cooper, locus_key):
     """
     cluster reads into haplotypes using SNP allele information.
@@ -19,11 +15,9 @@ def haplocluster_reads(cooper, locus_key):
     locus_data = cooper.cooper_loci_data[locus_key]
     locus_cov  = locus_data.depth
 
-
     relevant_snps = set()    # SNPs relevant to the locus based on proximity
     for rindex in locus_data.reads:
         relevant_snps |= (cooper.cooper_read_data[rindex].snps)
-
     relevant_snps = sorted(list(filter(lambda x: (x in cooper.cooper_snp_data) and (cooper.cooper_snp_data[x].cov >= 3) and
                                                  (locus.start - cooper.args.snp_dist < x < locus.end + cooper.args.snp_dist),
                             relevant_snps)))
@@ -31,49 +25,42 @@ def haplocluster_reads(cooper, locus_key):
     relevant_snp_data = {}
     alt_snp_cov = {}
     for pos in relevant_snps:
+        qual_check = False
         snp_data = cooper.cooper_snp_data[pos]
+        max_coverage = 0
 
-        # filter to get reads that are relevant to the locus
-        ref_reads = snp_data.ref.intersection(set(locus_data.reads))
-        pos_reads = ref_reads.copy()
+        passed_alts = set()
         for alt in snp_data.sub:
-            pos_reads |= snp_data.sub[alt]
-        pos_reads = pos_reads.intersection(set(locus_data.reads))
-
-        pos_cov = len(pos_reads)
-        if pos_cov < 5 or pos_cov < locus_cov * MIN_SNP_COVERAGE_FRAC: continue    # at least 5 relevant reads needed at SNP position
-
-        passed_alleles = []
-        alt_covs       = []
-        alt_reads      = {}
-        for alt in snp_data.sub:
-            alt_reads[alt] = snp_data.sub[alt].intersection(set(locus_data.reads))
-            alt_cov   = len(alt_reads[alt])
+            alt_reads = snp_data.sub[alt].intersection(set(locus_data.reads))
+            alt_cov   = len(alt_reads)
             if alt_cov == 0: continue
+            if alt_cov > max_coverage: max_coverage = alt_cov
 
-            avg_alt_qual = np.mean([snp_data.qual[idx] for idx in alt_reads[alt]])
+            avg_alt_qual = sum([snp_data.qual[idx] for idx in alt_reads])/alt_cov
 
-            if avg_alt_qual >= cooper.args.snp_qual and alt_cov >= pos_cov * MIN_ALLELE_FRAC:
-                # alternate allele passes when having 20% read support and average quality above threshold
-                passed_alleles.append(alt)
-                alt_covs.append(alt_cov)
-
-        if len(ref_reads) >= pos_cov * MIN_ALLELE_FRAC: passed_alleles.append('r')
-
-        if len(passed_alleles) < 2: continue # if no alleles passed quality and coverage thresholds, skip the SNP
-
-        alt_snp_cov[pos] = max(alt_covs)
+            if avg_alt_qual <= cooper.args.snp_qual:
+                qual_check = True
+                break
+            passed_alts.add(alt)
+        if max_coverage == 0 or qual_check:
+            continue
+        alt_snp_cov[pos] = max_coverage
 
         relevant_snp_data[pos] = { 'cov': 0, 'alleles': {}, 'qual': {} }
-        for alt in passed_alleles:
-            if alt == 'r': continue
-            relevant_snp_data[pos]['cov']           += len(alt_reads[alt])
-            relevant_snp_data[pos]['alleles'][alt]   = alt_reads[alt]
-            relevant_snp_data[pos]['qual'][alt]      = np.mean([snp_data.qual[idx] for idx in alt_reads[alt]])
-        if len(snp_data.ref) > 0:
+        for alt in passed_alts:
+            alt_reads = snp_data.sub[alt].intersection(set(locus_data.reads))
+            relevant_snp_data[pos]['cov']           += len(alt_reads)
+            relevant_snp_data[pos]['alleles'][alt]   = alt_reads
+            relevant_snp_data[pos]['qual'][alt]      = sum([snp_data.qual[idx] for idx in alt_reads])/len(alt_reads)
+        ref_reads = snp_data.ref.intersection(set(locus_data.reads))
+        if len(ref_reads) > 0:
             relevant_snp_data[pos]['alleles']['r'] = ref_reads
             relevant_snp_data[pos]['cov']         += len(ref_reads)
 
+    del_positions = list(filter(lambda x: relevant_snp_data[x]['cov'] < 5, relevant_snp_data.keys()))
+
+    for pos in del_positions:
+        del relevant_snp_data[pos]
     ordered_snp_on_cov = sorted(relevant_snp_data.keys(), key = lambda item : alt_snp_cov[item], reverse = True)
 
     min_snp_pos      = -1
@@ -85,6 +72,7 @@ def haplocluster_reads(cooper, locus_key):
         for pos in ordered_snp_on_cov:
             snp_data  = relevant_snp_data[pos]
             pos_cov   = snp_data['cov']
+            if pos_cov < 0.6 * locus_cov: break
 
             # count alleles where read fraction is within threshold bounds
             balanced_alleles = sum(

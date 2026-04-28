@@ -204,7 +204,6 @@ def join_mdtags(md1, md2):
     else:
         merged = str(t1) + str(t2)
 
-    print(f"\n\nt1: {t1}, t2: {t2}, md1: {md1[t1_idx-10:]}, md2: {md2[:t2_idx+10]}, merged: {merged}")
     return md1[:t1_idx] + str(merged) + md2[t2_idx:]
 
 
@@ -504,7 +503,8 @@ def detect_flank(cooper, read, locus_start, locus_end, stream):
         sub_cigar: CIGAR string of the repeat alignment to the reference in the read
     """
 
-    flank = 30
+    flank = 50
+    score_threshold = int(2*(0.9*flank))
 
     if stream: # if its upstream (True)
 
@@ -521,7 +521,7 @@ def detect_flank(cooper, read, locus_start, locus_end, stream):
         if target_end > read.query_start: return [-1, -1]
 
         # reject read if less than 70% match with the reference flank sequence
-        if alignment_score < int(2*(0.8*flank)): return [-1, -1]
+        if alignment_score < score_threshold: return [-1, -1]
 
         new_read_query_start = target_begin - 1
         new_read_ref_start   = locus_start - flank + query_begin - 1
@@ -543,7 +543,7 @@ def detect_flank(cooper, read, locus_start, locus_end, stream):
         if target_begin <= read.query_end: return [-1, -1]
 
         # reject read if less than 70% match with the reference flank sequence
-        if alignment_score < int(2*(0.8*flank)): return [-1, -1]
+        if alignment_score < score_threshold: return [-1, -1]
 
         new_read_query_end = target_end - 1
         new_read_ref_end   = locus_end + query_end - 1
@@ -611,7 +611,7 @@ def process_softclips(cooper, read, locus, dir):
                 if read.has_tag('MD') and not valid_md(read.md_tag, read.cigarstring):
                     raise ValueError("MD tag is not consistent with CIGAR string after softclip processing.\n" +
                                     f"MD stats: {md_stats(read.md_tag)}\nCIGAR stats: {cigar_stats(read.cigarstring)}")
-                print(f"Processed left softclip for read {read.query_name} at locus {locus} with new start {read.ref_start}")
+
                 return True
 
     if dir == "right":
@@ -663,6 +663,5 @@ def process_softclips(cooper, read, locus, dir):
                     raise ValueError("MD tag is not consistent with CIGAR string after softclip processing.\n" +
                                     f"MD stats: {md_stats(read.md_tag)}\nCIGAR stats: {cigar_stats(read.cigarstring)}")
 
-                print(f"Processed right softclip for read {read.query_name} at locus {locus} with new end {read.ref_end}")
                 return True
     return False

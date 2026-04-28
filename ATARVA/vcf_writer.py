@@ -127,8 +127,9 @@ def write_homozygous_call(cooper, locus_key):
     ALT = allele  if is_alt else '.'
 
     # --- copy number fields ---
+    allele_length = 0 if allele == '<DEL>' else len(allele)
     ref_units  = locus.length  // locus.motif_length
-    motif_copy = len(allele) // locus.motif_length
+    motif_copy = allele_length // locus.motif_length
 
     # --- decomposed sequence ---
     if cooper.args.decompose and is_seq_alt and locus.motif_length <= 10:
@@ -152,7 +153,7 @@ def write_homozygous_call(cooper, locus_key):
     # --- SAMPLE field ---
     FORMAT = 'GT:AL:CN:AR:SD:DP:SN:SQ:MA:MR:DS:MV'
 
-    allele_length = len(allele)
+    allele_length = 0 if allele == '<DEL>' else len(allele)
     depth         = locus_data.depth
     hap_depth     = depth
     length_GT     = f'{allele_length}' if cooper.haploid else f'{allele_length},{allele_length}'
@@ -222,8 +223,9 @@ def write_heterozygous_call(cooper, locus_key):
         else:
             AC = 2; GT = '1|1'
             ALT = allele
-        length_GT += f'{len(allele)},{len(allele)}'
-        units_GT += f'{len(allele)//locus.motif_length},{len(allele)//locus.motif_length}'
+        allele_length = 0 if allele == '<DEL>' else len(allele)
+        length_GT += f'{allele_length},{allele_length}'
+        units_GT += f'{allele_length//locus.motif_length},{allele_length//locus.motif_length}'
         SD = f'{len(locus_data.hap_read_sets[0])},{len(locus_data.hap_read_sets[1])}'
         allele_range = f'{locus_data.gt_arange[0]},{locus_data.gt_arange[1]}'
 
@@ -236,8 +238,9 @@ def write_heterozygous_call(cooper, locus_key):
             allele = locus_data.gt_aseqs[allele_index]
             AC = 1
             GT = '0|1'
-            length_GT += f'{ref_alen},{len(allele)}'
-            units_GT += f'{ref_units},{len(allele)//locus.motif_length}'
+            allele_length = 0 if allele == '<DEL>' else len(allele)
+            length_GT += f'{ref_alen},{allele_length}'
+            units_GT += f'{ref_units},{allele_length//locus.motif_length}'
 
             SD = f'{len(locus_data.hap_read_sets[ref_index])},{len(locus_data.hap_read_sets[allele_index])}'
             ALT = allele
