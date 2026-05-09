@@ -1,6 +1,7 @@
 import bisect
 
 from ATARVA.realignment import *
+from ATARVA.vcf_writer  import write_fail_call
 
 
 def break_locuskey(locus_key):
@@ -67,7 +68,7 @@ def record_ref_snps(cooper, new_reads, locus_start, locus_end):
             if pos > read.end: break
 
             # if a position has not ALT SNP and is not deleted in the read record it as reference
-            if (pos not in read.snps) and (bisect.bisect(read.dels, pos) % 2 == 0):
+            if (pos not in read.snps) and (bisect.bisect(read.dels, pos) % 2 == 0) and (pos not in read.no_snps):
                 cooper.cooper_snp_data[pos].ref.add(read_index)
                 cooper.cooper_snp_data[pos].cov += 1
 
@@ -100,7 +101,6 @@ def subset_reads(cooper, locus_data):
     read_haplotags = locus_data.read_haplotags
 
     locus_data.raw_reads     = read_indices
-    locus_data.raw_haplotags = read_haplotags
     locus_data.raw_depth     = len(read_indices)
 
     # sort read indices by quality in one step — no intermediate dict
@@ -114,12 +114,11 @@ def subset_reads(cooper, locus_data):
     top_reads = set(sorted_reads[:cooper.args.max_reads])
 
     # filter haplotags and indices in single pass
-    read_indices, read_haplotags = zip(
-        *[(i, ht) for i, ht in zip(read_indices, read_haplotags) if i in top_reads]
-    ) if top_reads else ([], [])
+    # read_indices, read_haplotags = zip(
+    #     *[(i, ht) for i, ht in zip(read_indices, read_haplotags) if i in top_reads]
+    # ) if top_reads else ([], [])
 
-    locus_data.reads          = list(read_indices)
-    locus_data.read_haplotags = list(read_haplotags)
+    locus_data.reads          = list(top_reads)
     locus_data.depth          = len(read_indices)
 
 
@@ -166,16 +165,16 @@ def process_flank_insertions(flank_insertions, ref_allele, ref_length, query, lo
 
         elif (matches   >= round(0.75 * align_len) and
               align_len >= round(0.45 * ins_len)):
-            if is_left and coords[1] >= round(0.7 * ins_len):
-                adj_pos = ins_qs + coords[0]
-            elif not is_left and coords[0] <= round(0.3 * ins_len):
-                adj_pos = ins_qe + coords[1]
-            else:
-                continue
             PI += 1 if align_len <= 0.5 * ins_len else 0
             CI += 1 if align_len >  0.5 * ins_len else 0
-            pending.update(ins[0] for ins in flank_insertions[fid:])
-            break
+            if is_left and coords[1] >= round(0.7 * ins_len):
+                adj_pos = ins_qs + coords[0]
+                pending.update(ins[0] for ins in flank_insertions[fid:])
+                break
+            elif not is_left and coords[0] <= round(0.3 * ins_len):
+                adj_pos = ins_qs + coords[1]
+                pending.update(ins[0] for ins in flank_insertions[fid:])
+                break
 
     return adj_pos, pending, ILR, PI, CI
 
@@ -188,7 +187,7 @@ def assign_hap_category(locus_data):
     :return: None (updates the locus_data.hap_category in place)
     """
 
-    if locus_data.is_genotyped and (locus_data.read_haplotags.count(None) / locus_data.depth) <= 0.15:
+    if locus_data.is_genotyped and (list(locus_data.read_haplotags.values()).count(None) / locus_data.depth) <= 0.15:
         locus_data.hap_category = 3 # phased based on haplotag
         return
 
@@ -196,8 +195,8 @@ def assign_hap_category(locus_data):
     locus_data.phase_mode = None
     seq_counter = {}
     for aseq in read_aseqs:
-        try: seq_counter[aseq] += 1
-        except KeyError: seq_counter[aseq] = 1
+        try: seq_counter[len(aseq)] += 1
+        except KeyError: seq_counter[len(aseq)] = 1
     filtered_seqs = {seq: count for seq, count in seq_counter.items() if count > 1}
     max_freq = max(filtered_seqs.values()) if filtered_seqs else 0
     if len(filtered_seqs) == 1 or max_freq / locus_data.depth >= 0.75:
@@ -224,7 +223,6 @@ def process_locus(cooper, locus_key):
     locus_data.neighbors.remove((locus.start, locus.end))
 
     read_indices      = locus_data.reads
-    locus_data.depth  = len(read_indices)
 
     pending_insertions  = set()
     ILR = PI = CI       = 0
@@ -232,6 +230,7 @@ def process_locus(cooper, locus_key):
     # --- coverage check ---
     if locus_data.depth < cooper.args.min_reads:
         cooper.prev_reads    = set(read_indices)
+        cooper.prev_reads.clear()
         locus_data.skip_code = 0
         return
 
@@ -251,7 +250,7 @@ def process_locus(cooper, locus_key):
         query, relative_qrange, left_ins, right_ins, fqs, fqe = locus_data.read_aseqs[read_index]
         adj_qs, adj_qe = relative_qrange
 
-        left_ins.sort( key=lambda x: x[0])
+        left_ins.sort(key=lambda x: x[0])
         right_ins.sort(key=lambda x: x[0], reverse=True)
 
         # process flanks
@@ -269,7 +268,7 @@ def process_locus(cooper, locus_key):
         pending_insertions |= pend_l | pend_r
 
         locus_data.read_aseqs[read_index][0]   = query[adj_qs:adj_qe]
-        locus_data.read_alens[read_index][0]  = adj_qe - adj_qs
+        locus_data.read_alens[read_index][0]   = adj_qe - adj_qs
 
         # methylation
         subseq_len     = fqe - fqs
@@ -288,7 +287,8 @@ def process_locus(cooper, locus_key):
 
     if cooper.args.haplotag:
         hap1, hap2 = [], []
-        for read_idx, tag in zip(read_indices, locus_data.read_haplotags):
+        for read_idx in read_indices:
+            tag = locus_data.read_haplotags[read_idx]
             if tag == 1: hap1.append(read_idx)
             if tag == 2: hap2.append(read_idx)
         locus_data.hap_read_sets        = (hap1, hap2)
@@ -300,5 +300,5 @@ def process_locus(cooper, locus_key):
     assign_hap_category(locus_data)
 
     cooper.prev_reads.clear()
-    cooper.prev_reads.update(current_reads)
+    # cooper.prev_reads.update(current_reads)
     locus_data.skip_code = 10

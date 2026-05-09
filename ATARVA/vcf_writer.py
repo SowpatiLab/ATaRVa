@@ -69,23 +69,24 @@ def write_fail_call(cooper, locus_key):
     :param locus_key: key for the locus in the format 'chrom:start-end'
     :param skip_point: integer indicating the reason for failure, to be added in the FILTER column of the VCF
     """
-
+    FILTER = ''
     locus = cooper.cooper_loci_info[locus_key]
-    locus_data = cooper.cooper_loci_data[locus_key]
-    refcn = str(locus.length // locus.motif_length)
-
-    if locus.name is not None:
-        optional_tag = f';ID={locus.name}'
+    depth = 0
+    if locus_key not in cooper.cooper_loci_data:
+        FILTER = 'LESS_READS'
     else:
-        optional_tag = ';ID=.'
+        locus_data = cooper.cooper_loci_data[locus_key]
+        refcn = str(locus.length // locus.motif_length)
 
-    if locus_data.skip_code == 0: FILTER = 'LESS_READS'
+        if locus_data.skip_code == 0:   FILTER = 'LESS_READS'
+        depth = locus_data.depth
 
-    locus_key = f'{locus.chrom}:{locus.start}-{locus.end}'
+    # --- locus optional tag ---
+    optional_tag = f';ID={locus.name}' if locus.name else ';ID=.'
 
     INFO = 'AC=0;AN=0;MOTIF=' + str(locus.motif) + ';START=' + str(locus.start) + ';END=' + str(locus.end) + optional_tag + ';REFCN='+refcn
     FORMAT = 'GT:AL:CN:AR:SD:DP:SN:SQ:MA:MR:DS:MV'
-    SAMPLE = '.:.:.:.:.:.:.:.:.:.:.:.'
+    SAMPLE = f'.:.:.:.:.:{depth}:.:.:.:.:.:.'
 
     print(*[locus.chrom, locus.start + 1, '.',  cooper.ref.fetch(locus.chrom, locus.start, locus.end), '.', 0, FILTER, INFO, FORMAT, SAMPLE], file=cooper.outhandle, sep='\t')
 

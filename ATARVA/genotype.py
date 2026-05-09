@@ -179,7 +179,7 @@ def concat_thread_outputs(base_path: str, n_threads: int,
     hidden   = parent / f'.{stem}'              # hidden prefix for thread files
 
     # --- VCF concatenation ---
-    print('Concatenating thread outputs...', file=sys.stderr)
+    print('\nConcatenating thread outputs...', file=sys.stderr)
     with open(f'{base_path}.vcf', 'a') as out_vcf:
         for tidx in range(1, n_threads):
             thread_vcf = f'{hidden}_thread_{tidx}.vcf'
@@ -187,6 +187,7 @@ def concat_thread_outputs(base_path: str, n_threads: int,
                 for line in fh:
                     print(*line.strip().split('\t'), file=out_vcf, sep='\t')
             os.remove(thread_vcf)
+            os.remove(f'{hidden}_debug_{tidx}.log')
     print('Concatenation complete.', file=sys.stderr)
 
     # --- log concatenation ---
@@ -211,7 +212,7 @@ def genotype_run(args) -> None:
     # --- print args ---
     for arg in vars(args):
         if arg not in ('func', 'help', 'command'):
-            print(arg, getattr(args, arg))
+            print(arg, getattr(args, arg), file=sys.stderr)
 
     # --- file validation ---
     fasta_check(args.fasta)
@@ -294,4 +295,4 @@ def genotype_run(args) -> None:
             worker_init(bam_file, fetcher[0], args, out_file, sample_idx, 0)
 
     elapsed = ti.default_timer() - start_time
-    sys.stderr.write(f'CPU time: {elapsed:.2f} seconds\n')
+    sys.stderr.write(f'\nCPU time: {elapsed:.2f} seconds\n')

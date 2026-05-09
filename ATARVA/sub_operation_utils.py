@@ -30,13 +30,18 @@ def mm_tag_extract(read, mod_probs):
     :return: none; the methylation positions are recorded in the read.methylation_calls attribute
     """
 
-    last_index = len(read.query_sequence) - 1
-    if (read.methyl_start != None) and (read.methyl_end != None):
+    last_index   = len(read.query_sequence) - 1
+    frwd_strand  = read.is_forward
+    methyl_start = read.methyl_start
+    methyl_end   = read.methyl_end
+    methylation_calls = read.methylation_calls
+    qseq = read.query_sequence
+    if (methyl_start != None) and (methyl_end != None):
         for pos, prob in mod_probs:
-            meth_chunk_start = pos if read.is_forward else pos - 1 # to check the meth context, start index
-            if read.methyl_start <= pos <= read.methyl_end:
-                if (pos + 1 <= last_index) and (read.query_sequence[meth_chunk_start : meth_chunk_start + 2]=='CG'):
-                    read.methylation_calls.append((pos, prob))
+            meth_chunk_start = pos if frwd_strand else pos - 1 # to check the meth context, start index
+            if methyl_start <= pos <= methyl_end:
+                if (pos + 1 <= last_index) and (qseq[meth_chunk_start : meth_chunk_start + 2]=='CG'):
+                    methylation_calls.append((pos, prob))
 
 
 def align_cg_positions(consensus_cg_pos, read_cg_pos):
@@ -227,6 +232,11 @@ def alt_sequence(read_alleles, hap_reads, motif_size):
     ALT = ''
     seqs = [seq for seq in [read_alleles[read_id][0] for read_id in hap_reads] if seq!='']
     if seqs:
+        length_counter = {}
+        for seq in seqs:
+            try: length_counter[len(seq)] += 1
+            except KeyError: length_counter[len(seq)] = 1
+        seqs = sorted(seqs, key=lambda x: (-length_counter[len(x)], len(x), x))  # sort by frequency of length then length
         ALT = consensus_seq_poa(seqs)
         allele_length = len(ALT)
     else:

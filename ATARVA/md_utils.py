@@ -3,7 +3,8 @@ from sortedcontainers import SortedList
 from ATARVA.structures import SNP
 
 
-def update_snps(cooper, read, pos, qpos, insertion_point):
+def update_snps(cooper_snp_data, cooper_sorted_snps, cooper_loci_keys, cooper_loci_info, cooper_read_data, cooper_prev_reads,
+                snp_qual_cutoff, is_haploid, is_haplotag, read, pos, qpos, insertion_point, from_md=True):
     """
     update SNP information in cooper.cooper_snp_data and also for this read in read.snps
 
@@ -15,41 +16,50 @@ def update_snps(cooper, read, pos, qpos, insertion_point):
     :return:                   None; updates cooper.cooper_snp_data and read.snps in place
     """
 
-    rpos = read.ref_start + pos
-    for ins in insertion_point:
-        if ins < rpos:
-            qpos += insertion_point[ins]
-        elif ins > rpos: break
+    rpos = 0
+    if from_md:
+        rpos = read.ref_start + pos
 
-    for locus in cooper.cooper_loci_keys:
-        if cooper.cooper_loci_info[locus].start <= rpos <= cooper.cooper_loci_info[locus].end:
+        for ins in insertion_point:
+            if ins < rpos:
+                qpos += insertion_point[ins]
+            # elif ins == rpos:
+            #     return  # if the SNP is next to an insertion ignore it
+            elif ins > rpos: break
+    else: rpos = pos
+
+    if rpos in cooper_read_data[read.index].no_snps:
+        return
+    for locus in cooper_loci_keys:
+        if cooper_loci_info[locus].start <= rpos <= cooper_loci_info[locus].end:
             return
-        if cooper.cooper_loci_info[locus].start > rpos: break
+        if cooper_loci_info[locus].start > rpos: break
 
     sub_qval = read.query_qualities[qpos]
     
-    if sub_qval >= cooper.args.snp_qual and (not cooper.haploid) and (not cooper.args.haplotag):
+    if sub_qval >= snp_qual_cutoff and (not is_haploid) and (not is_haplotag):
         sub_char = read.query_sequence[qpos]
-        cooper.cooper_read_data[read.index].snps.add(rpos)
+        cooper_read_data[read.index].snps.add(rpos)
 
-        for read_index in cooper.cooper_read_data:
-            _read = cooper.cooper_read_data[read_index]
+        for read_index in cooper_prev_reads.copy():
+            _read = cooper_read_data[read_index]
             if _read.start <= rpos <= _read.end and rpos not in _read.snps:
-                if read_index in cooper.prev_reads: cooper.prev_reads.remove(read_index)
+                cooper_prev_reads.remove(read_index)
 
-        if rpos not in cooper.cooper_snp_data:
-            cooper.cooper_snp_data[rpos] = SNP(cov = 1, sub = { sub_char: {read.index} }, qual={ read.index: sub_qval })
-            cooper.cooper_sorted_snps.add(rpos)
+        if rpos not in cooper_snp_data:
+            cooper_snp_data[rpos] = SNP(cov = 1, sub = { sub_char: {read.index} }, qual={ read.index: sub_qval })
+            cooper_sorted_snps.add(rpos)
         else:
-            cooper.cooper_snp_data[rpos].cov += 1
-            cooper.cooper_snp_data[rpos].qual[read.index] = sub_qval
-            if sub_char in cooper.cooper_snp_data[rpos].sub: 
-                cooper.cooper_snp_data[rpos].sub[sub_char].add(read.index)
+            cooper_snp_data[rpos].cov += 1
+            cooper_snp_data[rpos].qual[read.index] = sub_qval
+            if sub_char in cooper_snp_data[rpos].sub: 
+                cooper_snp_data[rpos].sub[sub_char].add(read.index)
 
-            else: cooper.cooper_snp_data[rpos].sub[sub_char] = {read.index}
+            else: cooper_snp_data[rpos].sub[sub_char] = {read.index}
 
 
-def parse_mdtag(cooper, read, qpos, insertion_point):
+def parse_mdtag(cooper_snp_data, cooper_sorted_snps, cooper_loci_keys, cooper_loci_info, cooper_read_data, cooper_prev_reads,
+                snp_qual_cutoff, is_haploid, is_haplotag, read, qpos, insertion_point):
     """
     parse the MD tag of a read to identify SNP positions and update cooper.cooper_snp_data and read.snps accordingly
     :param cooper:             cooper object
@@ -59,8 +69,8 @@ def parse_mdtag(cooper, read, qpos, insertion_point):
     :return:                   None; updates cooper.cooper_snp_data and read.snps in place
     """
         
-    if cooper.cooper_sorted_snps == None:
-        cooper.cooper_sorted_snps = SortedList()
+    if cooper_sorted_snps == None:
+        cooper_sorted_snps = SortedList()
 
     base = 0
     sub_base = '0'
@@ -81,7 +91,8 @@ def parse_mdtag(cooper, read, qpos, insertion_point):
         if i.isnumeric():
             sub_base += i
             if sub_char != '':
-                update_snps(cooper, read, pos, qpos, insertion_point)
+                update_snps(cooper_snp_data, cooper_sorted_snps, cooper_loci_keys, cooper_loci_info, cooper_read_data, cooper_prev_reads,
+                            snp_qual_cutoff, is_haploid, is_haplotag, read, pos, qpos, insertion_point, True)
                 replacing = False
                 qpos+=1
                 sub_char = ''
@@ -95,7 +106,8 @@ def parse_mdtag(cooper, read, qpos, insertion_point):
                 qpos+=int(sub_base)
             else:
                 base+=1
-                update_snps(cooper, read, pos, qpos, insertion_point)
+                update_snps(cooper_snp_data, cooper_sorted_snps, cooper_loci_keys, cooper_loci_info, cooper_read_data, cooper_prev_reads,
+                            snp_qual_cutoff, is_haploid, is_haplotag, read, pos, qpos, insertion_point, True)
                 pos = base - 1
                 qpos+=1
                 sub_char = ''
@@ -109,7 +121,8 @@ def parse_mdtag(cooper, read, qpos, insertion_point):
 
             if replacing:
                 if sub_char != '':
-                    update_snps(cooper, read, pos, qpos, insertion_point)
+                    update_snps(cooper_snp_data, cooper_sorted_snps, cooper_loci_keys, cooper_loci_info, cooper_read_data, cooper_prev_reads,
+                                snp_qual_cutoff, is_haploid, is_haplotag, read, pos, qpos, insertion_point, True)
                     replacing = False
                     qpos+=1
                     sub_char = ''
@@ -120,5 +133,6 @@ def parse_mdtag(cooper, read, qpos, insertion_point):
 
                 
     if sub_char != '':
-        update_snps(cooper, read, pos, qpos, insertion_point)
+        update_snps(cooper_snp_data, cooper_sorted_snps, cooper_loci_keys, cooper_loci_info, cooper_read_data, cooper_prev_reads,
+                    snp_qual_cutoff, is_haploid, is_haplotag, read, pos, qpos, insertion_point, True)
     

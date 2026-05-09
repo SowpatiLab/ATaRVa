@@ -30,6 +30,7 @@ class ReadInfo:
     end:         int   = 0
     snps:        set   = field(default_factory=set)
     dels:        set   = field(default_factory=list)
+    no_snps:     set   = field(default_factory=set)
     methylation: list  = field(default_factory=list)
     mean_qual:   int   = 0
     left_flank:  list  = field(default_factory=list)
@@ -74,7 +75,7 @@ class ReadInfo:
 @dataclass(slots=True)
 class LocusVariation:
     reads:             list  = field(default_factory=list)  # list of all informative read indices for the locus
-    read_haplotags:    list  = field(default_factory=list)  # the haplotag assigned to each read in reads 
+    read_haplotags:    dict  = field(default_factory=dict)  # the haplotag assigned to each read in reads 
     depth:             int   = 0                            # depth of the locus, updated when reads are subset for high coverage loci  
     read_alens:        dict  = field(default_factory=dict)  # read index -> allele length dict for the reads supporting the locus
     read_aseqs:        dict  = field(default_factory=dict)  # read index -> allele sequence dict for the reads supporting the locus, in the format (allele sequence, allele length) 
@@ -82,13 +83,15 @@ class LocusVariation:
     halen_frequency:   dict  = field(default_factory=dict)  # allele length -> count dict for the reads supporting the locus
     alen_frequency:    dict  = field(default_factory=dict)  # allele length ignoring indels in homopolymers
     allele_lengths:    list  = field(default_factory=list)  # list of allele lengths for the reads supporting the locus
+    min_read_qual:     float = float('inf')                            # minimum read quality among the reads supporting the locus
+    min_qual_read:     int   = None          # index of the read with minimum read quality among the reads supporting the locus
 
     neighbors:        set   = field(default_factory=set)    # positions of neighbouring loci with shared reads
 
     # updated when locus has high coverage and reads are subset
     raw_depth:         int   = 0                            # original depth of the locus before subsetting
     raw_reads:         list  = field(default_factory=list)  # original list of read indices supporting the locus before subsetting 
-    raw_haplotags:     list  = field(default_factory=list)  # original list of haplotags for the reads supporting the locus before subsetting
+    raw_haplotags:     dict  = field(default_factory=dict)  # original list of haplotags for the reads supporting the locus before subsetting
 
     # data for genotyping
     hap_read_sets:     tuple = ([], [])       # (hap1 read indices, hap2 read indices)

@@ -6,6 +6,7 @@ from pathlib import Path
 from tqdm import tqdm
 from sortedcontainers import SortedList
 from collections import deque
+import cstag
 
 from ATARVA.structures        import ReadLocusInfo, LocusInfo, ReadInfo, LocusVariation, ExtendedRead
 from ATARVA.vcf_writer        import vcf_writer, write_homozygous_call, write_heterozygous_call, write_fail_call
@@ -138,20 +139,22 @@ class Cooper:
 
         # --- progress bar ---
         self.progress_bar = tqdm(
-            total      = self.cooper_nloci,
-            disable    = self.disable_progress,
-            desc       = 'Processing ',
-            file       = self.terminal_stderr, 
-            ascii      = '_>',
-            ncols      = 75,
-            bar_format = '{l_bar}{bar}{n_fmt}/{total_fmt}'
+            total        = self.cooper_nloci,
+            disable      = self.disable_progress,
+            position     = 1 + 2*thread_idx + 1,
+            desc         = 'Processing ' if args.threads == 1 else f'Processing thread {thread_idx + 1}',
+            file         = self.terminal_stderr, 
+            ascii        = '_>',
+            ncols        = 80,
+            bar_format   = '{l_bar}{bar}{n_fmt}/{total_fmt}',
+            leave        = False,
+            mininterval  = 1      # refresh rate that helps reduce overhead and doesn't cause stray progress bars in multi-thread mode
         )
 
         # --- run genotyping ---
         for cidx, region_range in enumerate(region_ranges):
             chrom = region_range[0]
             bam_stem = Path(bam_file).stem
-            print(f'Processing region {region_range} — sample {bam_stem} — thread {thread_idx}\n')
             self._reinitialise()
             self.cooper_readmode(region_range, cidx)
 
@@ -195,9 +198,6 @@ class Cooper:
         genotyped_count = 0
         read_index      = 0
 
-        if not self.disable_progress:
-            tqdm.write(f'> {chrom} {region_start} {region_end} '
-                       f'Total loci = {self.range_nloci[cidx]}')
         with PysamWarningCapture(self.logfile):
             for raw_read in self.bam.fetch(chrom, region_start, region_end):
 
@@ -294,14 +294,24 @@ class Cooper:
 
                     if locus_key not in self.cooper_loci_data:
                         self.cooper_loci_data[locus_key] = LocusVariation()
-                        self.cooper_loci_info[locus_key] = LocusInfo(chrom=chrom, start=locus_start,
-                                                                    end=locus_end, motif=fields[3],
-                                                                    name=locus_name)
+                        self.cooper_loci_info[locus_key] = LocusInfo(chrom=chrom, start=locus_start, end=locus_end,
+                                                                     motif=fields[3], name=locus_name)
                         self.cooper_loci_ends.append(locus_end)
                         self.cooper_loci_keys.append(locus_key)
 
                 if not read.loci_coords:
                     continue
+
+                read_required = True
+                for key in read.loci_keys:
+                    if self.cooper_loci_data[key].depth >= self.args.max_reads and self.cooper_loci_data[key].min_read_qual >= read.mean_qual:
+                        read_required = False
+                    else:
+                        read_required = True
+                        break
+                # if all loci have enough supporting reads with highest quality; this read is not processed
+                if not read_required: continue
+
 
                 # --- EQX normalisation ---
                 read_sequence = read.sequence
@@ -355,10 +365,36 @@ class Cooper:
                 for locus_key, locus_read_info in read.loci_data.items():
                     if not locus_read_info.seq: continue
                     ldata = self.cooper_loci_data[locus_key]
-                    ldata.reads.append(read.index)
-                    ldata.read_alens[read.index]    = [locus_read_info.halen, locus_read_info.alen]
-                    ldata.read_aseqs[read.index]    = locus_read_info.seq
-                    ldata.read_haplotags.append(read.haplotag[1])
+                    if ldata.depth >= self.args.max_reads:
+                        if read.mean_qual > ldata.min_read_qual:
+                            ldata.reads.append(read.index)
+                            ldata.depth += 1
+                            ldata.read_alens[read.index]     = [locus_read_info.halen, locus_read_info.alen]
+                            ldata.read_aseqs[read.index]     = locus_read_info.seq
+                            ldata.read_haplotags[read.index] = read.haplotag[1]
+                            # remove lowest quality read
+                            if ldata.min_qual_read in ldata.reads:
+                                ldata.reads.remove(ldata.min_qual_read)
+                                del ldata.read_alens[ldata.min_qual_read]
+                                del ldata.read_aseqs[ldata.min_qual_read]
+                                del ldata.read_haplotags[ldata.min_qual_read]
+                                ldata.depth -= 1
+                            # update minimum quality read
+                            ldata.min_read_qual = float('inf')
+                            for r in ldata.reads:
+                                if ldata.min_read_qual > self.cooper_read_data[r].mean_qual:
+                                    ldata.min_read_qual = self.cooper_read_data[r].mean_qual
+                                    ldata.min_qual_read = r
+                            
+                    else:
+                        ldata.reads.append(read.index)
+                        ldata.depth += 1
+                        ldata.read_alens[read.index]     = [locus_read_info.halen, locus_read_info.alen]
+                        ldata.read_aseqs[read.index]     = locus_read_info.seq
+                        ldata.read_haplotags[read.index] = read.haplotag[1]
+                        if ldata.min_read_qual > read.mean_qual:
+                            ldata.min_read_qual = read.mean_qual
+                            ldata.min_qual_read = read.index
 
         # --- flush remaining loci ---
         while self.cooper_loci_ends:
@@ -378,7 +414,7 @@ class Cooper:
         locus       = self.cooper_loci_info[locus_key]
 
         if locus_key not in self.cooper_loci_data:
-            print(f'No reads for locus {locus_key} — skipping.')
+            write_fail_call(self, locus_key)
             return 0
 
         # --- fetch neighbouring loci ---
@@ -441,7 +477,6 @@ class Cooper:
                 msg = SKIP_MESSAGES.get(
                     locus_data.skip_code,
                     "Locus skipped — insufficient significant SNPs.")
-                # tqdm.write(msg)
 
         # --- category 3 — phased / heterozygous ---
         elif locus_data.hap_category == 3:

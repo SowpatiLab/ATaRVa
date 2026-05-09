@@ -66,22 +66,42 @@ def parse_cigar(cooper, read):
 
     insert_positions = {}
 
+    haploid              = cooper.haploid
+    snp_data             = cooper.cooper_snp_data
+    cooper_prev_reads    = cooper.prev_reads
+    is_haplotag          = cooper.args.haplotag
+    reference            = cooper.ref
+    snp_qual_cutoff      = cooper.args.snp_qual
+    cooper_sorted_snps   = cooper.cooper_sorted_snps
+    cooper_loci_keys     = cooper.cooper_loci_keys
+    cooper_loci_info     = cooper.cooper_loci_info
+    cooper_snp_data      = cooper.cooper_snp_data
+    cooper_read_data     = cooper.cooper_read_data
+    is_haploid           = cooper.haploid
+
+    read_index = read.index
+    qseq       = read.query_sequence
+    qquals     = read.query_qualities
+
+    no_snp_range = 3
+
     for cigar in read.cigartuples:
-    
         if cigar[0] == 4: qpos += cigar[1]    # softclip; adjust the qpos but not rpos; also consider the possibility of match after softclip
  
         elif cigar[0] == 2:     # deletion
             deletion_len = cigar[1]
-            if not cooper.haploid:
-                cooper.cooper_read_data[read.index].dels.extend([rpos, rpos + deletion_len])
+            if not haploid:
+                cooper_read_data[read_index].dels.extend([rpos, rpos + deletion_len])
+                cooper_read_data[read_index].no_snps.update(range(rpos-no_snp_range, rpos + deletion_len + 1 + no_snp_range))
             rpos += deletion_len
             repeat_index += deletion_jump(read, rpos, qpos, deletion_len, repeat_index, locus_query_range, flank_query_range, locus_reached, locus_boundary_crossed)
 
         elif cigar[0] == 1:     # insertion
             insert_positions[rpos] = cigar[1]
+            cooper_read_data[read_index].no_snps.update(range(rpos-no_snp_range, rpos + 1 + no_snp_range))
             insert_len = cigar[1]
             homopolymer_insert = False
-            if len(set(read.query_sequence[qpos:qpos+insert_len])) == 1: homopolymer_insert = True
+            if len(set(qseq[qpos:qpos+insert_len])) == 1: homopolymer_insert = True
 
             qpos += insert_len
             repeat_index += insertion_jump(read, rpos, qpos, insert_len, homopolymer_insert, repeat_index, locus_query_range, flank_query_range,
@@ -89,9 +109,9 @@ def parse_cigar(cooper, read):
         
         elif cigar[0] == 0: # match (includes substitutions)
             match_len = cigar[1]
-            if not has_MD and (not cooper.haploid) and (not cooper.args.haplotag):
-                ref_sequence   = cooper.ref.fetch(chrom, rpos, rpos + match_len)
-                query_sequence = read.query_sequence[qpos:qpos + match_len]
+            if not has_MD and (not haploid) and (not is_haplotag):
+                ref_sequence   = reference.fetch(chrom, rpos, rpos + match_len)
+                query_sequence = qseq[qpos:qpos + match_len]
 
                 assert len(ref_sequence) == len(query_sequence), \
                     "Error: fetching sequences based on CIGAR. Please check cigar formats"
@@ -101,21 +121,21 @@ def parse_cigar(cooper, read):
                     if not outside_locus(read.loci_coords, rpos + sub_pos):
                         continue
                     sub_nuc  = query_sequence[sub_pos]
-                    sub_qual = read.query_qualities[qpos + sub_pos]
-                    if sub_qual < cooper.args.snp_qual: continue
+                    sub_qual = qquals[qpos + sub_pos]
+                    if sub_qual < snp_qual_cutoff: continue
 
                     sub_pos = rpos + sub_pos
-                    cooper.cooper_read_data[read.index].snps.add(sub_pos)
-                    if sub_pos not in cooper.cooper_snp_data:
-                        cooper.cooper_snp_data[sub_pos] = SNP(cov = 1, sub = { sub_nuc: {read.index} }, qual={ read.index: sub_qual })
-                        cooper.cooper_sorted_snps.add(sub_pos)
+                    cooper_read_data[read_index].snps.add(sub_pos)
+                    if sub_pos not in snp_data:
+                        snp_data[sub_pos] = SNP(cov = 1, sub = { sub_nuc: {read_index} }, qual={ read_index: sub_qual })
+                        cooper_sorted_snps.add(sub_pos)
                     else:
-                        cooper.cooper_snp_data[sub_pos].cov += 1
-                        cooper.cooper_snp_data[sub_pos].qual[read.index] = sub_qual
-                        if sub_nuc in cooper.cooper_snp_data[sub_pos].sub:
-                            cooper.cooper_snp_data[sub_pos].sub[sub_nuc].add(read.index)
+                        snp_data[sub_pos].cov += 1
+                        snp_data[sub_pos].qual[read_index] = sub_qual
+                        if sub_nuc in snp_data[sub_pos].sub:
+                            snp_data[sub_pos].sub[sub_nuc].add(read_index)
                         else:
-                            cooper.cooper_snp_data[sub_pos].sub[sub_nuc] = {read.index}
+                            snp_data[sub_pos].sub[sub_nuc] = {read_index}
 
             qpos += match_len; rpos += match_len
             repeat_index += match_jump(read, rpos, qpos, match_len, repeat_index, locus_query_range, flank_query_range, locus_reached, locus_boundary_crossed)
@@ -129,21 +149,21 @@ def parse_cigar(cooper, read):
         elif cigar[0] == 8: # substitution (difference)
             has_subop = True
             match_len = cigar[1]
-            if (not cooper.haploid) and outside_locus(read.loci_coords, rpos) and (not cooper.args.haplotag):
-                sub_nuc  = read.query_sequence[qpos]
-                sub_qual = read.query_qualities[qpos]
-                if sub_qual >= cooper.args.snp_qual:
-                    cooper.cooper_read_data[read.index].snps.add(rpos)
-                    if rpos not in cooper.cooper_snp_data:
-                        cooper.cooper_snp_data[rpos] = SNP(cov = 1, sub = { sub_nuc: {read.index} }, qual={ read.index: sub_qual })
-                        cooper.cooper_sorted_snps.add(rpos)
+            if (not haploid) and outside_locus(read.loci_coords, rpos) and (not is_haplotag):
+                sub_nuc  = qseq[qpos]
+                sub_qual = qquals[qpos]
+                if sub_qual >= snp_qual_cutoff:
+                    cooper_read_data[read_index].snps.add(rpos)
+                    if rpos not in snp_data:
+                        snp_data[rpos] = SNP(cov = 1, sub = { sub_nuc: {read_index} }, qual={ read_index: sub_qual })
+                        cooper_sorted_snps.add(rpos)
                     else:
-                        cooper.cooper_snp_data[rpos].cov += 1
-                        cooper.cooper_snp_data[rpos].qual[read.index] = sub_qual
-                        if sub_nuc in cooper.cooper_snp_data[rpos].sub: 
-                            cooper.cooper_snp_data[rpos].sub[sub_nuc].add(read.index)
+                        snp_data[rpos].cov += 1
+                        snp_data[rpos].qual[read_index] = sub_qual
+                        if sub_nuc in snp_data[rpos].sub: 
+                            snp_data[rpos].sub[sub_nuc].add(read_index)
                         else:
-                            cooper.cooper_snp_data[rpos].sub[sub_nuc] = {read.index}
+                            snp_data[rpos].sub[sub_nuc] = {read_index}
 
             qpos += match_len; rpos += match_len
             repeat_index += match_jump(read, rpos, qpos, match_len, repeat_index, locus_query_range, flank_query_range, locus_reached, locus_boundary_crossed)
@@ -152,7 +172,8 @@ def parse_cigar(cooper, read):
         if read.has_tag('MD'):
             if read.cigartuples[0][0] == 4: qpos = read.cigartuples[0][1]
             else: qpos = 0
-            parse_mdtag(cooper, read, qpos, insert_positions)
+            parse_mdtag(cooper_snp_data, cooper_sorted_snps, cooper_loci_keys, cooper_loci_info, cooper_read_data, cooper_prev_reads,
+                        snp_qual_cutoff, is_haploid, is_haplotag, read, qpos, insert_positions)
 
     num_read_loci = len(read.loci_coords)
     for idx, locus_key in enumerate(read.loci_keys):
@@ -168,7 +189,7 @@ def parse_cigar(cooper, read):
 
         left_flank_insertions[idx]  = [(coords[0], coords[1] - flank_query_start, coords[2] - flank_query_start) for coords in left_flank_insertions[idx] ]
         right_flank_insertions[idx] = [(coords[0], coords[1] - flank_query_start, coords[2] - flank_query_start) for coords in right_flank_insertions[idx] ]
-        read.loci_data[locus_key].seq = [read.query_sequence[flank_query_start:flank_query_end],
+        read.loci_data[locus_key].seq = [qseq[flank_query_start:flank_query_end],
                                          locus_query_range[idx],
                                          left_flank_insertions[idx],
                                          right_flank_insertions[idx],
