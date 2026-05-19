@@ -1,4 +1,3 @@
-import numpy as np
 
 
 def haplocluster_reads(cooper, locus_key):
@@ -318,7 +317,7 @@ def qvalue_phasing(cooper, locus, locus_data, sig_snp_data, ordered_sig_snps):
                     score -= (qual_a + qual_b)
             score_matrix.append(score)
 
-    sorted_indices = np.argsort(score_matrix)
+    sorted_indices = sorted(range(len(score_matrix)), key=score_matrix.__getitem__)
 
     num_reads = len(sorted_reads)
     cluster1 = set()

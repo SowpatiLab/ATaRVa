@@ -4,15 +4,26 @@ from threadpoolctl import threadpool_limits
 from sklearn.mixture import GaussianMixture
 from scipy.signal import find_peaks
 from hdbscan import HDBSCAN
+import numpy as np
 
 from ATARVA.vcf_writer import *
-from ATARVA.sub_operation_utils import alt_sequence
-from ATARVA.somatic_utils import *
+from ATARVA.sub_operation_utils import alt_sequence, calculate_methylation
 
-def _assign_genotype(cooper, locus_key, locus_data,
-                     c1_idx, c2_idx, c1_lengths, c2_lengths,
-                     hap_read_sets, min_cluster_size):
-    """Shared genotype assignment logic for all clustering methods."""
+
+def _assign_genotype(cooper, locus_key, locus_data, c1_idx, c2_idx, c1_lengths,
+                     c2_lengths, hap_read_sets, min_cluster_size):
+    """
+    Shared logic to assign genotype after clustering, handles both haploid and diploid cases.
+    :param cooper:            cooper object
+    :param locus_key:         key for the locus
+    :param locus_data:        locus data object to update
+    :param c1_idx:            indices of reads in cluster 1
+    :param c2_idx:            indices of reads in cluster 2
+    :param c1_lengths:        allele lengths for cluster 1
+    :param c2_lengths:        allele lengths for cluster 2
+    :param hap_read_sets:     tuple of (cluster 1 read indices, cluster 2 read indices)
+    :param min_cluster_size:  minimum read count cutoff for a valid cluster
+    """
 
     # ── haploid ───────────────────────────────────────────────────────
     if cooper.haploid:
@@ -217,7 +228,12 @@ def length_genotyper(cooper, locus_key):
 
 
 def length_genotyper_gmm(cooper, locus_key):
-    """Genotype using Gaussian Mixture Model."""
+    """
+    Genotype using Gaussian Mixture Model.
+    
+    :param cooper:     cooper object
+    :param locus_key:  key for the locus
+    """
 
     MIN_READS        = 3
     MIN_CLUSTER_FRAC = 0.15
@@ -293,7 +309,12 @@ def length_genotyper_gmm(cooper, locus_key):
 
 
 def length_genotyper_hdbscan(cooper, locus_key):
-    """Genotype using HDBSCAN — auto cluster count, outlier aware."""
+    """
+    Genotype using HDBSCAN — auto cluster count, outlier aware.
+    
+    :param cooper:     cooper object
+    :param locus_key:  key for the locus
+    """
 
     MIN_READS        = 3
     MIN_CLUSTER_FRAC = 0.15
@@ -327,7 +348,7 @@ def length_genotyper_hdbscan(cooper, locus_key):
     # ── HDBSCAN clustering ────────────────────────────────────────────
     clusterer = HDBSCAN(
         min_cluster_size     = max(MIN_READS, int(MIN_CLUSTER_FRAC * len(filtered_alens))),
-        allow_single_cluster = True    # ✅ handles homozygous
+        allow_single_cluster = True    # handles homozygous
     ).fit(alen_array)
 
     labels     = clusterer.labels_
@@ -371,7 +392,12 @@ def length_genotyper_hdbscan(cooper, locus_key):
 
 
 def length_genotyper_histogram(cooper, locus_key):
-    """Genotype using histogram peak detection — fastest, no sklearn."""
+    """
+    Genotype using histogram peak detection.
+    
+    :param cooper:     cooper object
+    :param locus_key:  key for the locus
+    """
 
     MIN_READS        = 3
     MIN_CLUSTER_FRAC = 0.15

@@ -1,6 +1,5 @@
 import sys
 import pysam
-import numpy as np
 from ATARVA.decompose import motif_decomposition
 
 

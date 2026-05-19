@@ -1,6 +1,22 @@
 from dataclasses import dataclass, field
 import pysam
-import numpy as np
+
+
+def target_length_from_cigar(cigar):
+    length = 0
+    num = ''
+    allowed_ops = {'M', 'X', '=', 'D', 'N'}
+    not_allowed_ops = {'I', 'S', 'H'}
+    for char in cigar:
+        if char.isdigit():
+            num += char
+        else:
+            if char in allowed_ops:  # match or mismatch
+                length += int(num)
+            elif char in not_allowed_ops:  # operations not allowed
+                pass
+            num = ''
+    return length
 
 
 @dataclass(slots=True)
@@ -135,6 +151,7 @@ class ExtendedRead(pysam.AlignedSegment):
         ext.reference_start           = read.reference_start
         ext.ref_start                 = read.reference_start
         ext.ref_end                   = read.reference_end
+        ext.strand                    = '-' if read.is_reverse else '+'
         ext.query_start               = read.query_alignment_start
         ext.query_end                 = read.query_alignment_end
         ext.mapping_quality           = read.mapping_quality
@@ -146,7 +163,7 @@ class ExtendedRead(pysam.AlignedSegment):
         ext.tags                      = read.tags
         ext.has_tag                   = read.has_tag
         if read.has_tag('cs'):
-            ext.cs_tag            = read.cs_tag
+            ext.cs_tag            = read.get_tag('cs')
         if read.has_tag('MD'):
             ext.md_tag            = read.get_tag('MD')
 
@@ -172,4 +189,34 @@ class ExtendedRead(pysam.AlignedSegment):
         ext.methyl_end             = 0
         ext.methylation_calls      = []     # list of tuples (position, probability) for methylation calls in the read
 
+        ext.sa_starts              = []
+        ext.sa_ends                = []
+        ext.sa_lengths             = []
+        ext.sa_chroms              = []
+        ext.sa_strands             = []
+        ext.sa_cigars              = []
+        ext.sa_mapqs               = []
+        ext.sa_nms                 = []
+        ext.passed_sa              = ""
+
         return ext
+
+    def process_satag(self):
+        MINIMUM_SA_MAPQ = 0
+        for satag in self.get_tag('SA').split(';'):
+            if not satag: continue
+            sa_fields = satag.split(',')
+            if sa_fields[0] == self.chrom and sa_fields[2] == self.strand:
+                self.sa_chroms.append(sa_fields[0])
+                self.sa_starts.append(int(sa_fields[1]))
+                self.sa_strands.append(sa_fields[2])
+                self.sa_cigars.append(sa_fields[3])
+                self.sa_mapqs.append(int(sa_fields[4]))
+                self.sa_nms.append(int(sa_fields[5]))
+
+                self.sa_ends.append(self.sa_starts[-1] + target_length_from_cigar(self.sa_cigars[-1]))
+                self.sa_lengths.append(self.sa_ends[-1] - self.sa_starts[-1])
+
+                self.passed_sa += f"{self.sa_chroms[-1]},{self.sa_starts[-1]},{self.sa_strands[-1]},{self.sa_cigars[-1]},{self.sa_mapqs[-1]},{self.sa_nms[-1]};"
+        if len(self.passed_sa) > 0:
+            self.passed_sa = self.passed_sa[:-1]  # remove trailing ';'

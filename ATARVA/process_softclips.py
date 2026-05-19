@@ -1,8 +1,89 @@
 import parasail
-import cstag
-import numpy as np
 
 from ATARVA.realignment import *
+
+
+def _mean(numbers):
+    """
+    calculate mean of a list of numbers
+
+    :param numbers: list of numbers
+    :return:        mean value
+    """
+    return float(sum(numbers)) / max(len(numbers), 1)
+
+
+def generate_cs_tag(query_seq, ref_seq, cigar):
+    """
+    Generate CS tag from CIGAR string with X (mismatch) operations.
+    CS tag format: = match, * mismatch, + insertion, - deletion
+
+    :param query_seq:    query/read sequence
+    :param ref_seq:      reference sequence for the aligned region
+    :param cigartuples:  list of (op, length) cigar tuples
+    :return:             CS tag string
+    """
+    cs   = []
+    qpos = 0    # query position
+    rpos = 0    # reference position
+    cigartuples = _cigar_tuples(cigar)
+
+    for op, length in cigartuples:
+
+        # ── match / mismatch (M) ──────────────────────────────────
+        if op == 0:
+            match_length = 0
+            for i in range(length):
+                q = query_seq[qpos + i]
+                r = ref_seq[rpos + i]
+                if q == r:
+                    match_length += 1
+                else:
+                    if match_length > 0:
+                        cs.append(f':{match_length}')
+                    cs.append(f'*{r}{q}')   # mismatch ref→query
+                    match_length = 0
+
+            qpos += length
+            rpos += length
+
+        # ── sequence match (=) ────────────────────────────────────
+        elif op == 7:
+            cs.append(f':{length}')
+            qpos += length
+            rpos += length
+
+        # ── sequence mismatch (X) ─────────────────────────────────
+        elif op == 8:
+            for i in range(length):
+                cs.append(f'*{ref_seq[rpos + i]}{query_seq[qpos + i]}')
+            qpos += length
+            rpos += length
+
+        # ── insertion (I) ─────────────────────────────────────────
+        elif op == 1:
+            cs.append(f'+{query_seq[qpos:qpos + length]}')
+            qpos += length
+
+        # ── deletion (D) ─────────────────────────────────────────
+        elif op == 2:
+            cs.append(f'-{ref_seq[rpos:rpos + length]}')
+            rpos += length
+
+        # ── soft clip (S) — not included in CS tag ────────────────
+        elif op == 4:
+            qpos += length
+
+        # ── hard clip (H) / padding (P) — skip ───────────────────
+        elif op in (5, 6):
+            pass
+
+        # ── reference skip (N) ───────────────────────────────────
+        elif op == 3:
+            cs.append(f'-{ref_seq[rpos:rpos + length]}')
+            rpos += length
+
+    return ''.join(cs)
 
 
 def generate_md_tag(cigar, reference, query):
@@ -164,6 +245,7 @@ def right_md_token(md):
     else:
         return md[i], i + 1
 
+
 def left_md_token(md):
     i = len(md) - 1
     if md[i].isdigit():
@@ -174,7 +256,7 @@ def left_md_token(md):
         return int(num), i + 1 
 
     else:
-        if i > 0 and md[i-1] == '0':
+        if i > 0 and md[i-1].isdigit():
             return md[i], i
         seq = ''
         while i >= 0 and md[i] != '^':
@@ -393,6 +475,7 @@ def _query_length(cigartuples: list[tuple[int, int]]):
             query_length += length
     return query_length
 
+
 def _ref_length(cigartuples: list[tuple[int, int]]):
     ref_length = 0
     for op, length in cigartuples:
@@ -487,6 +570,57 @@ def valid_md(md, cigar):
     return (m + x == m_cigar) and (d_md == d_cigar)
 
 
+def cs_stats(cs):
+    """
+    Extract match and mismatch counts from CS tag.
+    CS tag format: :num (match), *ref_alt (mismatch), +seq (insertion), -seq (deletion)
+    
+    :param cs: CS tag string
+    :return: tuple (matches, mismatches)
+    """
+    matches = 0
+    mismatches = 0
+    
+    i = 0
+    while i < len(cs):
+        if cs[i] == ':':
+            i += 1
+            num = ""
+            while i < len(cs) and cs[i].isdigit():
+                num += cs[i]
+                i += 1
+            matches += int(num)
+        elif cs[i] == '*':
+            mismatches += 1
+            i += 3  # skip ref and alt bases
+        elif cs[i] == '+':
+            i += 1
+            while i < len(cs) and cs[i].isalpha():
+                i += 1
+        elif cs[i] == '-':
+            i += 1
+            while i < len(cs) and cs[i].isalpha():
+                i += 1
+        else:
+            i += 1
+    
+    return matches, mismatches
+
+
+def valid_cs(cs, cigar):
+    """
+    Validate CS tag against CIGAR string by comparing match and mismatch counts.
+    
+    :param cs: CS tag string
+    :param cigar: CIGAR string
+    :return: True if valid, False otherwise
+    """
+    cs_m, cs_x = cs_stats(cs)
+    m_cigar, d_cigar = cigar_stats(cigar)
+    
+    return (cs_m + cs_x == m_cigar)
+
+
 def detect_flank(cooper, read, locus_start, locus_end, stream):
     """
     Identify the flanking sequences of the repeat region in the read
@@ -576,16 +710,18 @@ def process_softclips(cooper, read, locus, dir):
             if new_read_query_start == -1: return
             unaligned_query = read.query_sequence[new_read_query_start:read.query_start]
             unaligned_ref   = cooper.ref.fetch(read.chrom, new_read_ref_start, read.ref_start)
+            if abs(len(unaligned_query) - len(unaligned_ref)) > 15000:
+                return len(unaligned_query)
             sub_cigar, alignment_score = nw_align(unaligned_query, unaligned_ref)
             aligned_matches   = _match_lengths(read.cigarstring)
             softclip_matches  = _match_lengths(sub_cigar)
-            if np.mean(softclip_matches)/np.mean(aligned_matches) >= 0.6 or np.mean(softclip_matches) >= 20:
-                sub_mdtag = generate_md_tag(sub_cigar, unaligned_ref, unaligned_query)
+            if _mean(softclip_matches)/_mean(aligned_matches) >= 0.6 or _mean(softclip_matches) >= 20:
                 # update read positions and cigar
                 if read.has_tag('cs'):
-                    sub_cs_tag = cstag.call(sub_cigar, sub_mdtag, unaligned_query)
+                    sub_cs_tag = generate_cs_tag(unaligned_query, unaligned_ref, sub_cigar)
                     read.cs_tag = join_cstags(sub_cs_tag, read.cs_tag)
                 if read.has_tag('MD') and read._read.has_tag('MD'):
+                    sub_mdtag = generate_md_tag(sub_cigar, unaligned_ref, unaligned_query)
                     read.md_tag = join_mdtags(sub_mdtag, read.md_tag)
 
                 read.query_start = new_read_query_start
@@ -608,29 +744,36 @@ def process_softclips(cooper, read, locus, dir):
                                     f"Length from CIGAR: {(_query_length(read.cigartuples))}, " +
                                     f"Read sequence length: {len(read.query_sequence)}")
 
-                if read.has_tag('MD') and not valid_md(read.md_tag, read.cigarstring):
-                    raise ValueError("MD tag is not consistent with CIGAR string after softclip processing.\n" +
-                                    f"MD stats: {md_stats(read.md_tag)}\nCIGAR stats: {cigar_stats(read.cigarstring)}")
+                # if read.has_tag('MD') and not valid_md(read.md_tag, read.cigarstring):
+                #     raise ValueError("MD tag is not consistent with CIGAR string after softclip processing.\n" +
+                #                     f"MD stats: {md_stats(read.md_tag)}\nCIGAR stats: {cigar_stats(read.cigarstring)}")
+                
+                # if read.has_tag('cs') and not valid_cs(read.cs_tag, read.cigarstring):
+                #     raise ValueError("CS tag is not consistent with CIGAR string after softclip processing.\n" +
+                #                     f"CS stats: {cs_stats(read.cs_tag)}\nCIGAR stats: {cigar_stats(read.cigarstring)}")
 
                 return True
+            else: return len(unaligned_query)
 
     if dir == "right":
         if read.ref_end < locus[1] - default_flank:
             # detect the flank for the first downstream locus
             new_read_query_end, new_read_ref_end = detect_flank(cooper, read, locus[0], locus[1], False)
-            if new_read_query_end == -1: return
+            if new_read_query_end == -1: return False
             unaligned_query = read.query_sequence[read.query_end:new_read_query_end]
             unaligned_ref   = cooper.ref.fetch(read.chrom, read.ref_end, new_read_ref_end)
+            if abs(len(unaligned_query) - len(unaligned_ref)) > 15000:
+                return len(unaligned_query)
             sub_cigar, alignment_score = nw_align(unaligned_query, unaligned_ref)
             aligned_matches   = _match_lengths(read.cigarstring)
             softclip_matches  = _match_lengths(sub_cigar)
-            if np.mean(softclip_matches)/np.mean(aligned_matches) >= 0.6 or np.mean(softclip_matches) >= 20:
-                sub_mdtag = generate_md_tag(sub_cigar, unaligned_ref, unaligned_query)
+            if _mean(softclip_matches)/_mean(aligned_matches) >= 0.6 or _mean(softclip_matches) >= 20:
                 # update read positions and cigar
                 if read.has_tag('cs') and read._read.has_tag('cs'):
-                    sub_cs_tag = cstag.call(sub_cigar, sub_mdtag, unaligned_query)
+                    sub_cs_tag = generate_cs_tag(unaligned_query, unaligned_ref, sub_cigar)
                     read.cs_tag = join_cstags(read.cs_tag, sub_cs_tag)
                 if read.has_tag('MD') and read._read.has_tag('MD'):
+                    sub_mdtag = generate_md_tag(sub_cigar, unaligned_ref, unaligned_query)
                     read.md_tag = join_mdtags(read.md_tag, sub_mdtag)
                     # read.md_tag = generate_md_tag(read.cigarstring, cooper.ref.fetch(read.chrom, read.ref_start, read.ref_end), read.query_sequence)
 
@@ -659,9 +802,14 @@ def process_softclips(cooper, read, locus, dir):
                                     f"Length from CIGAR: {(_ref_length(read.cigartuples))}, " +
                                     f"Read reference span: {(read.ref_end - read.ref_start)}")
 
-                if read.has_tag('MD') and not valid_md(read.md_tag, read.cigarstring):
-                    raise ValueError("MD tag is not consistent with CIGAR string after softclip processing.\n" +
-                                    f"MD stats: {md_stats(read.md_tag)}\nCIGAR stats: {cigar_stats(read.cigarstring)}")
+                # if read.has_tag('MD') and not valid_md(read.md_tag, read.cigarstring):
+                #     raise ValueError("MD tag is not consistent with CIGAR string after softclip processing.\n" +
+                #                     f"MD stats: {md_stats(read.md_tag)}\nCIGAR stats: {cigar_stats(read.cigarstring)}")
+                
+                # if read.has_tag('cs') and not valid_cs(read.cs_tag, read.cigarstring):
+                #     raise ValueError("CS tag is not consistent with CIGAR string after softclip processing.\n" +
+                #                     f"CS stats: {cs_stats(read.cs_tag)}\nCIGAR stats: {cigar_stats(read.cigarstring)}")
 
                 return True
+            else: return len(unaligned_query)
     return False

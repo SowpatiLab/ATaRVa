@@ -6,7 +6,6 @@ from pathlib import Path
 from tqdm import tqdm
 from sortedcontainers import SortedList
 from collections import deque
-import cstag
 
 from ATARVA.structures        import ReadLocusInfo, LocusInfo, ReadInfo, LocusVariation, ExtendedRead
 from ATARVA.vcf_writer        import vcf_writer, write_homozygous_call, write_heterozygous_call, write_fail_call
@@ -197,6 +196,8 @@ class Cooper:
 
         genotyped_count = 0
         read_index      = 0
+        NONREP_FLANK    = 30        # Minimum non-repetitive flank considered for locus processing from softclip region
+        DROP_DISTANCE   = 100000    # distance beyond which reads and loci are dropped from memory
 
         with PysamWarningCapture(self.logfile):
             for raw_read in self.bam.fetch(chrom, region_start, region_end):
@@ -206,13 +207,19 @@ class Cooper:
 
                 read = ExtendedRead.from_read(raw_read)
 
+                start_softclip = end_softclip = 0
+                if read.cigartuples[0][0] == 4: start_softclip = read.cigartuples[0][1]
+                if read.cigartuples[-1][0] == 4: end_softclip = read.cigartuples[-1][1]
+                fetch_start = max(0, read.ref_start - start_softclip)
+                fetch_end   = min(read.ref_end + end_softclip, last_coords[1])
+
                 # --- flush completed loci ---
-                while self.cooper_loci_ends and read.ref_start > self.cooper_loci_ends[0]:
+                while self.cooper_loci_ends and fetch_start - DROP_DISTANCE > self.cooper_loci_ends[0]:
                     genotyped_count  += self.locus_processor()
                     self.progress_bar.update(1)
 
                 # --- evict expired reads ---
-                while self.cooper_read_ends and read.ref_start > self.cooper_read_ends[0]:
+                while self.cooper_read_ends and fetch_start - DROP_DISTANCE > self.cooper_read_ends[0]:
                     if (self.cooper_loci_ends and self.cooper_read_ends[0] > self.cooper_loci_ends[0]):
                         break
 
@@ -235,21 +242,19 @@ class Cooper:
                     }
 
                 # --- region end reached ---
-                if read.ref_start > region_end:
+                if fetch_start > region_end:
                     while self.cooper_loci_ends:
                         genotyped_count  += self.locus_processor()
                         self.progress_bar.update(1)
                     break
 
-                # start_softclip = end_softclip = 0
-                # if read.cigartuples[0][0] == 4 and read.cigartuples[0][1] >= 50: start_softclip = read.cigartuples[0][1]
-                # if read.cigartuples[-1][0] == 4 and read.cigartuples[-1][1] >= 50: end_softclip = read.cigartuples[-1][1]
-                # fetch_start = max(0, read.ref_start - start_softclip)
-                # fetch_end   = min(read.ref_end + end_softclip, last_coords[1])
-                fetch_start = max(0, read.ref_start)
-                fetch_end   = min(read.ref_end, last_coords[1])
+                # process the SA tag to store relevant supplementary alignments
+                if read.has_tag('SA'): read.process_satag()
+
                 # --- assign loci to read ---
-                processed_left_softclip = processed_right_softclip = False
+                processed_left_softclip = False
+                bad_left_softclip   = 0; bad_right_softclip   = 0
+                left_unaligned_len  = 0; right_unaligned_len  = 0
                 for row in self.tbx.fetch(chrom, fetch_start, fetch_end):
                     fields      = row.split('\t')
                     locus_start = int(fields[1])
@@ -265,16 +270,46 @@ class Cooper:
                         continue
                     if locus_start >= last_coords[1]:
                         break
+
                     if not (first_coords[0] <= locus_start and locus_end <= last_coords[1]):
                         continue
 
-                    # if locus_start < read.ref_start and locus_start - 50 > read.ref_start - start_softclip and not processed_left_softclip:
-                    #     processed_left_softclip = process_softclips(self, read, (locus_start, locus_end), dir='left')
-                    #     start_softclip = read.cigartuples[0][1] if processed_left_softclip else start_softclip
-                    # elif locus_end > read.ref_end and locus_end + 50 < read.ref_end + end_softclip:
-                    #     processed_right_softclip = process_softclips(self, read, (locus_start, locus_end), dir='right')
-                    #     end_softclip = read.cigartuples[-1][1] if processed_right_softclip else end_softclip
+                    if read.has_tag('SA'):
+                        check_start_softclip = False
+                        check_end_softclip   = False
+                        for i in range(len(read.sa_chroms)):
 
+                            # Mimimum length condition either based on absolute length or percentage of softclip length
+                            if locus_start - NONREP_FLANK < read.ref_start and  read.sa_starts[i] <= locus_start - NONREP_FLANK and\
+                                len(set(range(locus_start - NONREP_FLANK, locus_start)).intersection(set(range(read.sa_starts[i], read.sa_ends[i] + 1)))) >= 0.8 * NONREP_FLANK and\
+                                not processed_left_softclip and (bad_left_softclip >= -2 or left_unaligned_len < 10000):
+                                check_start_softclip = True
+                                break
+
+                            if locus_end + NONREP_FLANK > read.ref_end and read.sa_ends[i] >= locus_end + NONREP_FLANK and\
+                                len(set(range(locus_end, locus_end + NONREP_FLANK)).intersection(set(range(read.sa_starts[i], read.sa_ends[i] + 1)))) >= 0.8 * NONREP_FLANK and\
+                                (bad_right_softclip >= -2 or right_unaligned_len < 10000):
+                                check_end_softclip = True
+                                break
+
+                        if check_start_softclip:
+                            left_result = process_softclips(self, read, (locus_start, locus_end), dir='left')
+                            if isinstance(left_result, int) and not isinstance(left_result, bool):
+                                bad_left_softclip += -1
+                                left_unaligned_len = left_result
+                            else:
+                                processed_left_softclip = left_result
+                                left_unaligned_len = 0
+
+                        if check_end_softclip:
+                            right_result = process_softclips(self, read, (locus_start, locus_end), dir='right')
+                            if isinstance(right_result, int) and not isinstance(right_result, bool):
+                                bad_right_softclip += -1
+                                right_unaligned_len = right_result
+                            else:
+                                processed_left_softclip = right_result
+                                bad_right_softclip = 0
+                                right_unaligned_len = 0
                     # read must fully span the locus
                     if not (read.ref_start <= locus_start and locus_end <= read.ref_end):
                         continue
@@ -433,6 +468,7 @@ class Cooper:
 
         locus_data    = self.cooper_loci_data[locus_key]
         read_seqs     = locus_data.read_aseqs
+        # print('\nHap category:', locus_data.hap_category)
         # --- category 1 — homozygous ---
         if locus_data.hap_category == 1:
             read_seqs = [read_seqs[rid][0] for rid in locus_data.reads if read_seqs[rid][0] != '']

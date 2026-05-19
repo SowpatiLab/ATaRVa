@@ -3,7 +3,6 @@ import numpy as np
 from ATARVA.snp_utils import haplocluster_reads
 from ATARVA.vcf_writer import *
 from ATARVA.sub_operation_utils import alt_sequence
-from ATARVA.somatic_utils import *
 from ATARVA.length_utils import *
 
 # NOTE: after genotyping and haplogrouping, before reporting the locus build the ALT sequence

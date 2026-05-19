@@ -54,8 +54,8 @@ def parse_cigar(cooper, read):
     chrom = read.chrom
     repeat_index = 0
 
-    locus_query_range = np.zeros((len(read.loci_coords), 2), dtype=int)
-    flank_query_range = np.zeros((len(read.loci_coords), 2), dtype=int)
+    locus_query_range = [[0, 0] for _ in read.loci_coords]
+    flank_query_range = [[0, 0] for _ in read.loci_coords]
     left_flank_insertions  = [[] for _ in read.loci_coords] # stores insertions in left flank as (rpos, qstart, qend)
     right_flank_insertions = [[] for _ in read.loci_coords] # stores insertions in right flank as (rpos, qstart, qend)
     locus_reached = [False for _ in read.loci_coords]
