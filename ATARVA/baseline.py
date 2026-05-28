@@ -16,7 +16,8 @@ from ATARVA.sub_operation_utils import mm_tag_extract, calculate_methylation
 from ATARVA.locus_utils       import process_locus
 from ATARVA.consensus         import consensus_seq_poa
 from ATARVA.genotype_utils    import analyse_genotype
-from ATARVA.process_softclips import process_softclips
+from ATARVA.process_softclips import process_flank_stretches, check_flank
+from ATARVA.flank_utils       import *
 
 
 SKIP_MESSAGES = {
@@ -146,7 +147,7 @@ class Cooper:
             ascii        = '_>',
             ncols        = 80,
             bar_format   = '{l_bar}{bar}{n_fmt}/{total_fmt}',
-            leave        = False,
+            leave        = True,
             mininterval  = 1      # refresh rate that helps reduce overhead and doesn't cause stray progress bars in multi-thread mode
         )
 
@@ -249,12 +250,13 @@ class Cooper:
                     break
 
                 # process the SA tag to store relevant supplementary alignments
-                if read.has_tag('SA'): read.process_satag()
+                # if read.has_tag('SA'): read.process_satag()
 
                 # --- assign loci to read ---
                 processed_left_softclip = False
                 bad_left_softclip   = 0; bad_right_softclip   = 0
                 left_unaligned_len  = 0; right_unaligned_len  = 0
+                softclip_loci  = {'keys': [], 'loci': [], 'coords': [], 'flags': []}
                 for row in self.tbx.fetch(chrom, fetch_start, fetch_end):
                     fields      = row.split('\t')
                     locus_start = int(fields[1])
@@ -273,44 +275,25 @@ class Cooper:
 
                     if not (first_coords[0] <= locus_start and locus_end <= last_coords[1]):
                         continue
-
-                    if read.has_tag('SA'):
-                        check_start_softclip = False
-                        check_end_softclip   = False
-                        for i in range(len(read.sa_chroms)):
-
-                            # Mimimum length condition either based on absolute length or percentage of softclip length
-                            if locus_start - NONREP_FLANK < read.ref_start and  read.sa_starts[i] <= locus_start - NONREP_FLANK and\
-                                len(set(range(locus_start - NONREP_FLANK, locus_start)).intersection(set(range(read.sa_starts[i], read.sa_ends[i] + 1)))) >= 0.8 * NONREP_FLANK and\
-                                not processed_left_softclip and (bad_left_softclip >= -2 or left_unaligned_len < 10000):
-                                check_start_softclip = True
-                                break
-
-                            if locus_end + NONREP_FLANK > read.ref_end and read.sa_ends[i] >= locus_end + NONREP_FLANK and\
-                                len(set(range(locus_end, locus_end + NONREP_FLANK)).intersection(set(range(read.sa_starts[i], read.sa_ends[i] + 1)))) >= 0.8 * NONREP_FLANK and\
-                                (bad_right_softclip >= -2 or right_unaligned_len < 10000):
-                                check_end_softclip = True
-                                break
-
-                        if check_start_softclip:
-                            left_result = process_softclips(self, read, (locus_start, locus_end), dir='left')
-                            if isinstance(left_result, int) and not isinstance(left_result, bool):
-                                bad_left_softclip += -1
-                                left_unaligned_len = left_result
-                            else:
-                                processed_left_softclip = left_result
-                                left_unaligned_len = 0
-
-                        if check_end_softclip:
-                            right_result = process_softclips(self, read, (locus_start, locus_end), dir='right')
-                            if isinstance(right_result, int) and not isinstance(right_result, bool):
-                                bad_right_softclip += -1
-                                right_unaligned_len = right_result
-                            else:
-                                processed_left_softclip = right_result
-                                bad_right_softclip = 0
-                                right_unaligned_len = 0
-                    # read must fully span the locus
+                    
+                    # check if the locus is outside the read's reference boundaries check if it's in the softclipped region
+                    softclip_result = None
+                    if locus_start < read.ref_start or locus_end > read.ref_end:
+                        softclip_result = check_flank(self, read, locus_start, locus_end, start_softclip, end_softclip)
+                    # result structure {'upstream':   (ref_flank_start, ref_flank_end, query_flank_start, query_flank_end),
+                    #                   'downstream': (ref_flank_start, ref_flank_end, query_flank_start, query_flank_end)}
+                    if softclip_result is not None:
+                        flank_order = check_flank_order(softclip_result, chrom, locus_start, locus_end)
+                        if flank_order:
+                            softclip_loci['keys'].append(f'{chrom}:{locus_start}-{locus_end}')
+                            softclip_loci['loci'].append((chrom, locus_start, locus_end))
+                            softclip_loci['coords'].append(softclip_result)
+                            softclip_loci['flags'].append(None)
+                        else:
+                            softclip_loci['keys'].append(f'{chrom}:{locus_start}-{locus_end}')
+                            softclip_loci['loci'].append((chrom, locus_start, locus_end))
+                            softclip_loci['coords'].append(softclip_result)
+                            softclip_loci['flags'].append('FLANK_ORDER_INVALID')
                     if not (read.ref_start <= locus_start and locus_end <= read.ref_end):
                         continue
 
@@ -336,6 +319,13 @@ class Cooper:
 
                 if not read.loci_coords:
                     continue
+
+                if softclip_loci['coords']:
+                    merged_coords = []
+                    if sum([flag is None for flag in softclip_loci['flags']]) >= 1:
+                        merged_coords = process_flanks(softclip_loci, read.ref_start)
+                    if len(merged_coords) > 0:
+                        process_flank_stretches(self, read, merged_coords)
 
                 read_required = True
                 for key in read.loci_keys:
@@ -468,7 +458,6 @@ class Cooper:
 
         locus_data    = self.cooper_loci_data[locus_key]
         read_seqs     = locus_data.read_aseqs
-        # print('\nHap category:', locus_data.hap_category)
         # --- category 1 — homozygous ---
         if locus_data.hap_category == 1:
             read_seqs = [read_seqs[rid][0] for rid in locus_data.reads if read_seqs[rid][0] != '']

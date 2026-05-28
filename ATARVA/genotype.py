@@ -274,21 +274,53 @@ def genotype_run(args) -> None:
 
         # --- multithreaded ---
         if args.threads > 1:
-            pbar = tqdm(total=args.threads, desc='Processing',
-                        ascii='_>', ncols=75,
-                        bar_format='{l_bar}{bar}{n_fmt}/{total_fmt}')
-            with Pool(processes=args.threads) as pool:
-                for thread_idx in range(args.threads):
-                    pool.apply_async(
-                        worker_init,
-                        args=(bam_file, fetcher[thread_idx],
-                                args, out_file, sample_idx, thread_idx),
-                        callback=lambda _: pbar.update()
-                    )
-                pool.close()
-                pool.join()
+            all_success = True
+            errors      = []
 
-            concat_thread_outputs(out_file, args.threads, debug=args.debug_mode)
+            with tqdm(total=args.threads, desc='Processing',
+                    ascii='_>', ncols=75,
+                    bar_format='{l_bar}{bar}{n_fmt}/{total_fmt}') as pbar:
+
+                def on_success(_): pbar.update()
+
+                def on_error(e):
+                    nonlocal all_success
+                    all_success = False
+                    errors.append(str(e))
+                    pbar.update()
+                    print(f'Thread failed: {e}', file=sys.stderr)
+
+                with Pool(processes=args.threads) as pool:
+                    results = []
+                    for thread_idx in range(args.threads):
+                        r = pool.apply_async(
+                            worker_init,
+                            args     = (bam_file, fetcher[thread_idx],
+                                        args, out_file, sample_idx, thread_idx),
+                            callback = on_success,
+                            error_callback = on_error    # catch thread failures
+                        )
+                        results.append(r)
+                    pool.close()
+                    pool.join()
+
+                # ── verify all threads completed successfully ─────────────────
+                for i, r in enumerate(results):
+                    try:
+                        r.get()                          # raises exception if thread failed
+                    except Exception as e:
+                        all_success = False
+                        errors.append(f'Thread {i}: {e}')
+
+            # ── only concat if all threads succeeded ─────────────────────────
+            if all_success:
+                concat_thread_outputs(out_file, args.threads, debug=args.debug_mode)
+            else:
+                print(f'Skipping concat — {len(errors)} thread(s) failed:',
+                    file=sys.stderr)
+                for err in errors:
+                    print(f'  ✗ {err}', file=sys.stderr)
+                sys.exit(1)
 
         # --- single threaded ---
         else:

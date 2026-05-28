@@ -1,6 +1,23 @@
 import parasail
+import edlib
+import ahocorasick
 
 from ATARVA.realignment import *
+
+
+def build_kmer_automaton(seq: str, k: int = 10):
+    """Build once per sequence X."""
+    A = ahocorasick.Automaton()
+    for i in range(len(seq) - k + 1):
+        A.add_word(seq[i:i + k], (i, seq[i:i + k]))
+    A.make_automaton()
+    return A
+
+
+def has_kmer_match(automaton, Y: str) -> bool:
+    """Fast existence check — O(|Y|)."""
+    return any(automaton.iter(Y))
+
 
 
 def _mean(numbers):
@@ -266,6 +283,9 @@ def left_md_token(md):
 
 
 def join_mdtags(md1, md2):
+    if md1 == '': return md2
+    if md2 == '': return md1
+
     t1, t1_idx = left_md_token(md1)
     t2, t2_idx = right_md_token(md2)
 
@@ -345,6 +365,37 @@ def nw_align(query: str, target: str, gap_open: int = 6, gap_extend: int = 3) ->
         score_matrix        # DNA scoring matrix
     )
     return result.cigar.decode.decode('utf-8'), result.score
+
+
+def align_sequences(query: str, target: str, gap_open: int = 6, gap_extend: int = 3) -> tuple[str, int]:
+    """
+    Align query to target using parasail if both sequences < 10kb, otherwise use edlib.
+    
+    :param query:      query sequence
+    :param target:     reference sequence
+    :param gap_open:   gap open penalty (used only for parasail)
+    :param gap_extend: gap extend penalty (used only for parasail)
+    :return:           (cigar_string, alignment_score)
+    """
+    
+    query_len = len(query)
+    target_len = len(target)
+    threshold = 10000  # 10kb
+
+    # Use parasail if both sequences are below 10kb
+    if query_len < threshold and target_len < threshold:
+        return nw_align(query, target, gap_open, gap_extend)
+    
+    # Use edlib for larger sequences
+    else:
+        alignment = edlib.align(query, target, task='path')
+        
+        cigar = alignment['cigar']
+        # Estimate score from alignment (edlib doesn't provide a direct score, so we use edit distance)
+        # Negative edit distance as a rough score metric
+        score = -alignment['editDistance']
+        
+        return cigar, score
 
 
 def _edit_distance(cigar: str):
@@ -685,131 +736,323 @@ def detect_flank(cooper, read, locus_start, locus_end, stream):
         return [new_read_query_end, new_read_ref_end]
 
 
-def process_softclips(cooper, read, locus, dir):
+def check_flank(cooper, read, locus_start, locus_end, up_softclip, down_softclip):
     """
-    process the soft-clipped regions of the read to process missed repeats
+    Check and identify flanking sequences of a locus in the softclipped regions.
+
     :param cooper: Cooper object containing reference and other data
-    :param read: pysam AlignedSegment object
-    :param softclip_loci: list of tuples (locus_start, locus_end) for the soft-clipped regions to be processed
-
-    :return: None
-             Modifies the read object in place
-             - updates the read cigar
-             - updates read reference start and end positions
-             - updates read query     start and end positions
+    :param read: pysam read object
+    :param locus_start: start coordinate of the repeat in reference
+    :param locus_end: end coordinate of the repeat in reference
+    :param up_softclip: length of soft clip at the start of the read
+    :param down_softclip: length of soft clip at the end of the read
+    :return: dict with 'upstream' and 'downstream' coordinates in read, or None if locus not in softclips
     """
 
-    # start_locus = sorted(softclip_loci, key=lambda x: x[0])[0]
-    # end_locus = sorted(softclip_loci, key=lambda x: x[1])[-1]
-    default_flank = 30
+    NONREP_FLANK = 30
+    score_threshold = int(2 * (0.9 * NONREP_FLANK))  # a match score of 90% as threshold
 
-    if dir == "left":
-        if read.ref_start > locus[0] + default_flank:
-            # detect the flank for the first upstream locus
-            new_read_query_start, new_read_ref_start = detect_flank(cooper, read, locus[0], locus[1], True)
-            if new_read_query_start == -1: return
-            unaligned_query = read.query_sequence[new_read_query_start:read.query_start]
-            unaligned_ref   = cooper.ref.fetch(read.chrom, new_read_ref_start, read.ref_start)
-            if abs(len(unaligned_query) - len(unaligned_ref)) > 15000:
-                return len(unaligned_query)
-            sub_cigar, alignment_score = nw_align(unaligned_query, unaligned_ref)
-            aligned_matches   = _match_lengths(read.cigarstring)
-            softclip_matches  = _match_lengths(sub_cigar)
-            if _mean(softclip_matches)/_mean(aligned_matches) >= 0.6 or _mean(softclip_matches) >= 20:
-                # update read positions and cigar
-                if read.has_tag('cs'):
-                    sub_cs_tag = generate_cs_tag(unaligned_query, unaligned_ref, sub_cigar)
-                    read.cs_tag = join_cstags(sub_cs_tag, read.cs_tag)
-                if read.has_tag('MD') and read._read.has_tag('MD'):
-                    sub_mdtag = generate_md_tag(sub_cigar, unaligned_ref, unaligned_query)
-                    read.md_tag = join_mdtags(sub_mdtag, read.md_tag)
+    # contains reference and read coordinates of upstream and downstream flanks of a locus; initialized to None
+    result = {'upstream': None, 'downstream': None}  
 
-                read.query_start = new_read_query_start
-                read.ref_start   = new_read_ref_start
-                if 'X' in read.cigarstring:
-                    if '=' in read.cigarstring: pass
-                    else: sub_cigar = sub_cigar.replace('=', 'M')
-                else:
-                    if 'M' in read.cigarstring:
-                        sub_cigar = sub_cigar.replace('=', 'M')
-                        sub_cigar = _collapse_mismatches(sub_cigar, 'M')
-                    elif '=' in read.cigarstring:
-                        sub_cigar = _collapse_mismatches(sub_cigar, '=')
-                read.cigarstring = join_cigars(sub_cigar, strip_softclip(read.cigarstring, 'left'))
-                if new_read_query_start > 0:
-                    read.cigarstring = f'{new_read_query_start}S'  + read.cigarstring
-                read.cigartuples = _cigar_tuples(read.cigarstring)
-                if _query_length(read.cigartuples) != len(read.query_sequence):
-                    raise ValueError("Query length after softclip processing does not match read sequence length.\n" +
-                                    f"Length from CIGAR: {(_query_length(read.cigartuples))}, " +
-                                    f"Read sequence length: {len(read.query_sequence)}")
+    # looking for the upstream flank for loci that could be in upstream softclip
+    if locus_start - NONREP_FLANK < read.ref_start and up_softclip > NONREP_FLANK:
+        upstream     = cooper.ref.fetch(read.chrom, locus_start - NONREP_FLANK, locus_start)
+        softclip_seq = read.query_sequence[:up_softclip]
+        # build once per read/sequence X
+        automaton  = build_kmer_automaton(upstream)
+        kmer_match = has_kmer_match(automaton, softclip_seq)
+        if not kmer_match: return None
 
-                # if read.has_tag('MD') and not valid_md(read.md_tag, read.cigarstring):
-                #     raise ValueError("MD tag is not consistent with CIGAR string after softclip processing.\n" +
-                #                     f"MD stats: {md_stats(read.md_tag)}\nCIGAR stats: {cigar_stats(read.cigarstring)}")
-                
-                # if read.has_tag('cs') and not valid_cs(read.cs_tag, read.cigarstring):
-                #     raise ValueError("CS tag is not consistent with CIGAR string after softclip processing.\n" +
-                #                     f"CS stats: {cs_stats(read.cs_tag)}\nCIGAR stats: {cigar_stats(read.cigarstring)}")
+        alignment_score, target_begin, target_end, query_begin, query_end, sCigar = stripSW(Inputs(softclip_seq, upstream), False)
 
-                return True
-            else: return len(unaligned_query)
+        if alignment_score >= score_threshold and target_end > 0:
+            result['upstream'] = (locus_start - NONREP_FLANK + query_begin,
+                                  locus_start - NONREP_FLANK + query_end,
+                                  target_begin, target_end)
+            # check if the downstream flank is already covered by the read
+            overlap            = max((locus_end + NONREP_FLANK) - read.ref_start, target_end + (locus_end - locus_start) + NONREP_FLANK - read.query_start)
 
-    if dir == "right":
-        if read.ref_end < locus[1] - default_flank:
-            # detect the flank for the first downstream locus
-            new_read_query_end, new_read_ref_end = detect_flank(cooper, read, locus[0], locus[1], False)
-            if new_read_query_end == -1: return False
-            unaligned_query = read.query_sequence[read.query_end:new_read_query_end]
-            unaligned_ref   = cooper.ref.fetch(read.chrom, read.ref_end, new_read_ref_end)
-            if abs(len(unaligned_query) - len(unaligned_ref)) > 15000:
-                return len(unaligned_query)
-            sub_cigar, alignment_score = nw_align(unaligned_query, unaligned_ref)
-            aligned_matches   = _match_lengths(read.cigarstring)
-            softclip_matches  = _match_lengths(sub_cigar)
-            if _mean(softclip_matches)/_mean(aligned_matches) >= 0.6 or _mean(softclip_matches) >= 20:
-                # update read positions and cigar
-                if read.has_tag('cs') and read._read.has_tag('cs'):
-                    sub_cs_tag = generate_cs_tag(unaligned_query, unaligned_ref, sub_cigar)
-                    read.cs_tag = join_cstags(read.cs_tag, sub_cs_tag)
-                if read.has_tag('MD') and read._read.has_tag('MD'):
-                    sub_mdtag = generate_md_tag(sub_cigar, unaligned_ref, unaligned_query)
-                    read.md_tag = join_mdtags(read.md_tag, sub_mdtag)
-                    # read.md_tag = generate_md_tag(read.cigarstring, cooper.ref.fetch(read.chrom, read.ref_start, read.ref_end), read.query_sequence)
+            # If upstream flank found and locus <80% covered, look for downstream flank in same softclip
+            if overlap <= 0:
+                softclip_seq  = read.query_sequence[target_end:up_softclip]
+                downstream = cooper.ref.fetch(read.chrom, locus_end, locus_end + NONREP_FLANK)
+                alignment_score_down, target_begin_down, target_end_down, query_begin_down, query_end_down, sCigar_down = stripSW(Inputs(softclip_seq, downstream), False)
 
-                read.query_end = new_read_query_end
-                read.ref_end   = new_read_ref_end
-                if 'X' in read.cigarstring:
-                    if '=' in read.cigarstring: pass
-                    else: sub_cigar = sub_cigar.replace('=', 'M')
-                else:
-                    if 'M' in read.cigarstring:
-                        sub_cigar = sub_cigar.replace('=', 'M')
-                        sub_cigar = _collapse_mismatches(sub_cigar, 'M')
-                    elif '=' in read.cigarstring:
-                        sub_cigar = _collapse_mismatches(sub_cigar, '=')
-                read.cigarstring = join_cigars(strip_softclip(read.cigarstring, 'right'), sub_cigar)
-                if new_read_query_end < len(read.query_sequence):
-                    read.cigarstring += f'{len(read.query_sequence) - new_read_query_end}S'
-                read.cigartuples = _cigar_tuples(read.cigarstring)
-                if _query_length(read.cigartuples) != len(read.query_sequence):
-                    raise ValueError("Query length after softclip processing does not match read sequence length.\n" +
-                                    f"Length from CIGAR: {(_query_length(read.cigartuples))}, " +
-                                    f"Read sequence length: {len(read.query_sequence)}")
+                if alignment_score_down >= score_threshold:
+                    result['downstream'] = (locus_end + query_begin_down,
+                                            locus_end + query_end_down,
+                                            target_begin_down + (target_end),
+                                            target_end_down   + (target_end))
+            else:
+                result['downstream'] = (read.ref_start, read.ref_start, read.query_start, read.query_start)  # Indicate that downstream flank is already covered
 
-                if _ref_length(read.cigartuples) != (read.ref_end - read.ref_start):
-                    raise ValueError("Reference length after softclip processing does not match read reference span.\n" +
-                                    f"Length from CIGAR: {(_ref_length(read.cigartuples))}, " +
-                                    f"Read reference span: {(read.ref_end - read.ref_start)}")
+    # Check if downstream flank region is in right softclip
+    if locus_end + NONREP_FLANK > read.ref_end and down_softclip > NONREP_FLANK:
+        downstream     = cooper.ref.fetch(read.chrom, locus_end, locus_end + NONREP_FLANK)
+        softclip_seq   = read.query_sequence[-down_softclip:]
+        automaton  = build_kmer_automaton(downstream)
+        kmer_match = has_kmer_match(automaton, softclip_seq)
+        if not kmer_match: return None
 
-                # if read.has_tag('MD') and not valid_md(read.md_tag, read.cigarstring):
-                #     raise ValueError("MD tag is not consistent with CIGAR string after softclip processing.\n" +
-                #                     f"MD stats: {md_stats(read.md_tag)}\nCIGAR stats: {cigar_stats(read.cigarstring)}")
-                
-                # if read.has_tag('cs') and not valid_cs(read.cs_tag, read.cigarstring):
-                #     raise ValueError("CS tag is not consistent with CIGAR string after softclip processing.\n" +
-                #                     f"CS stats: {cs_stats(read.cs_tag)}\nCIGAR stats: {cigar_stats(read.cigarstring)}")
+        alignment_score, target_begin, target_end, query_begin, query_end, sCigar = stripSW(Inputs(softclip_seq, downstream), False)
 
-                return True
-            else: return len(unaligned_query)
-    return False
+        if alignment_score >= score_threshold and target_begin < len(softclip_seq):
+            result['downstream'] = (locus_end + query_begin,
+                                    locus_end + query_end,
+                                    read.query_end + target_begin,
+                                    read.query_end + target_end)
+            overlap              = max(read.ref_end - (locus_start - NONREP_FLANK), -(target_begin - ((locus_end - locus_start) + NONREP_FLANK)))
+            # If downstream flank found and locus <80% covered, look for upstream flank in same softclip
+            if overlap <= 0:
+                softclip_seq = read.query_sequence[read.query_end:read.query_end + target_begin]
+                upstream = cooper.ref.fetch(read.chrom, locus_start - NONREP_FLANK, locus_start)
+                alignment_score_up, target_begin_up, target_end_up, query_begin_up, query_end_up, sCigar_up = stripSW(Inputs(softclip_seq, upstream), False)
+
+                if alignment_score_up >= score_threshold:
+                    result['upstream'] = (locus_start - NONREP_FLANK + query_begin_up,
+                                          locus_start - NONREP_FLANK + query_end_up,
+                                          read.query_end + target_begin_up,
+                                          read.query_end + target_end_up)
+            else:
+                result['upstream'] = (read.ref_end, read.ref_end, read.query_end, read.query_end)  # Indicate that upstream flank is already covered
+
+    return result if result['upstream'] or result['downstream'] else None
+
+
+def align_flank_stretch(cooper, read, flank_coords, flank_type):
+    """
+    Align a single flank stretch to reference and generate CIGAR string.
+
+    :param cooper: Cooper object containing reference
+    :param read: pysam read object
+    :param flank_coords: tuple (ref_start, ref_end, query_start, query_end)
+    :param flank_type: 'upstream' or 'downstream'
+    :return: dict with alignment info {cigar, score, ref_start, ref_end, query_start, query_end}
+    """
+
+    if not flank_coords:
+        return None
+
+    ref_start, ref_end, query_start, query_end = flank_coords
+
+    # Extract sequences for this stretch
+    query_seq = read.query_sequence[query_start:query_end]
+    ref_seq = cooper.ref.fetch(read.chrom, ref_start, ref_end)
+
+    # Validate sequence lengths match coordinate ranges
+    if len(query_seq) != (query_end - query_start) or len(ref_seq) != (ref_end - ref_start):
+        print(f"Warning: Sequence lengths do not match coordinate ranges for flank stretch. "
+              f"Query length: {len(query_seq)}, Expected: {query_end - query_start}; "
+              f"Ref length: {len(ref_seq)}, Expected: {ref_end - ref_start}.")
+        return None
+
+    if not query_seq or not ref_seq:
+        print(f"Warning: Empty sequence for flank stretch. Query sequence: '{query_seq}', Ref sequence: '{ref_seq}'.")
+        return None
+
+    # Align reference sequence (ref_start:ref_end) to query sequence (query_start:query_end)
+    # Use parasail for small sequences (< 10kb each), edlib for larger sequences
+    cigar_string, score = align_sequences(query_seq, ref_seq)
+
+    return {
+        'cigar': cigar_string,
+        'md_tag': generate_md_tag(cigar_string, ref_seq, query_seq),
+        'cs_tag': generate_cs_tag(query_seq, ref_seq, cigar_string),
+        'score': score,
+        'ref_start': ref_start,
+        'ref_end': ref_end,
+        'query_start': query_start,
+        'query_end': query_end,
+        'query_length': len(query_seq),
+        'ref_length': len(ref_seq),
+        'flank_type': flank_type,
+        'gap': False
+    }
+
+
+def process_flank_stretches(cooper, read, softclip_loci_coords):
+    """
+    Process and align individual flank stretches from softclipped regions.
+
+    :param cooper: Cooper object containing reference
+    :param read: pysam read object
+    :param softclip_loci: list of tuples (locus_start, locus_end)
+    :param softclip_loci_coords: list of dicts with flank coordinates
+    :return: dict with processed flanks and updated CIGAR info
+    """
+
+    result = {'upstream': [], 'downstream': []}
+    prev_ref_end = 0
+    prev_query_end = 0
+    
+    if len(softclip_loci_coords) == 0:
+        return
+    
+    prev_sofclip_dir = None
+    read_ref_start   = read.ref_start
+    read_ref_end     = read.ref_end
+    read_query_start = read.query_start
+    read_query_end   = read.query_end
+    for coords in softclip_loci_coords:
+        ref_start   = coords['upstream'][0]
+        ref_end     = coords['downstream'][1]
+        query_start = coords['upstream'][2]
+        query_end   = coords['downstream'][3]
+
+        if ref_start < read_ref_start: read_ref_start = ref_start
+        if ref_end > read_ref_end: read_ref_end = ref_end
+        if query_start < read_query_start: read_query_start = query_start
+        if query_end > read_query_end: read_query_end = query_end
+
+        softclip_dir = 'upstream' if ref_end < read.ref_end else 'downstream'
+        coords = (ref_start, ref_end, query_start, query_end)
+        alignment = align_flank_stretch(cooper, read, coords, softclip_dir)
+        if softclip_dir == 'upstream' and prev_query_end == 0 and query_start > 0:
+            result['upstream'].append({'cigar': f'{query_start}S', 'md_tag': '', 'cs_tag': '', 'gap': True, 'flank_type': 'upstream'})
+        if prev_sofclip_dir == softclip_dir:
+            gap = False
+            gap_cigar = ''
+            gap_md    = ''
+            gap_cs    = ''
+            if prev_ref_end > 0:
+                gap_length = ref_start - prev_ref_end
+                if gap_length > 0:
+                    gap = True
+                    gap_cigar += f'{gap_length}D'
+                    gap_cs    += f'-{cooper.ref.fetch(read.chrom, prev_ref_end, ref_start)}'
+                    gap_md    += f'^{cooper.ref.fetch(read.chrom, prev_ref_end, ref_start)}'
+
+            if prev_query_end > 0 and query_start > prev_query_end:
+                gap_length = query_start - prev_query_end
+                if gap_length > 0:
+                    gap = True
+                    gap_cigar += f'{gap_length}I'
+                    gap_cs    += f'+{read.query_sequence[prev_query_end:query_start]}'
+
+            if gap:
+                result[softclip_dir].append({'gap': True, 'cigar': gap_cigar, 'md_tag': gap_md,
+                                             'cs_tag': gap_cs, 'flank_type': softclip_dir})
+
+        result[softclip_dir].append(alignment)
+
+        prev_ref_end = ref_end
+        prev_query_end = query_end
+        prev_sofclip_dir = softclip_dir
+
+    upstream_cigar = ''; upstream_ref_end = 0; upstream_query_end = 0
+    for aln in result['upstream']:
+        if 'ref_end' in aln:
+            upstream_ref_end = aln['ref_end']
+            upstream_query_end = aln['query_end']
+        if upstream_cigar == '':
+            upstream_cigar = aln['cigar']
+        else:
+            upstream_cigar = join_cigars(upstream_cigar, aln['cigar'])
+    
+    read_cigar = read.cigarstring
+    upstream_md = ''; downstream_md = ''
+    upstream_cs = ''; downstream_cs = ''
+
+    if upstream_cigar != '':
+        if read.has_tag('MD'):
+            for aln in result['upstream']:
+                if 'md_tag' in aln:
+                    if upstream_md == '':
+                        upstream_md = aln['md_tag']
+                    else:
+                        upstream_md = join_mdtags(upstream_md, aln['md_tag'])
+        if read.has_tag('cs'):
+            for aln in result['upstream']:
+                if 'cs_tag' in aln:
+                    if upstream_cs == '':
+                        upstream_cs = aln['cs_tag']
+                    else:
+                        upstream_cs = join_cstags(upstream_cs, aln['cs_tag'])
+        
+        if 'X' in read.cigarstring:
+            if '=' in read.cigarstring: pass
+            else: upstream_cigar = upstream_cigar.replace('=', 'M')
+        else:
+            if 'M' in read.cigarstring:
+                upstream_cigar = upstream_cigar.replace('=', 'M')
+                upstream_cigar = _collapse_mismatches(upstream_cigar, 'M')
+            elif '=' in read.cigarstring:
+                upstream_cigar = _collapse_mismatches(upstream_cigar, '=')
+        if upstream_ref_end == read.ref_start and upstream_query_end == read.query_start:
+            read_cigar = join_cigars(upstream_cigar, strip_softclip(read_cigar, 'left'))
+        else:
+            ref_gap = read.ref_start - upstream_ref_end
+            query_gap = read.query_start - upstream_query_end
+            upstream_cigar += f'{ref_gap}D' if ref_gap > 0 else ''
+            upstream_cigar += f'{query_gap}I' if query_gap > 0 else ''
+            read_cigar = join_cigars(upstream_cigar, strip_softclip(read_cigar, 'left'))
+
+    downstream_cigar = ''
+    downstream_ref_start = 0; downstream_query_start = 0
+    downstream_query_end = 0
+    for i, aln  in enumerate(result['downstream']):
+        if i == 0:
+            if 'ref_start' in aln:
+                downstream_ref_start = aln['ref_start']
+                downstream_query_start = aln['query_start']
+        if 'query_end' in aln:
+            downstream_query_end = aln['query_end']
+        if downstream_cigar == '':
+            downstream_cigar = aln['cigar']
+        else:
+            downstream_cigar = join_cigars(downstream_cigar, aln['cigar'])
+    if downstream_cigar != '':
+        if read.has_tag('MD'):
+            for aln in result['downstream']:
+                if 'md_tag' in aln:
+                    if downstream_md == '':
+                        downstream_md = aln['md_tag']
+                    else:
+                        downstream_md = join_mdtags(downstream_md, aln['md_tag'])
+        if read.has_tag('cs'):
+            for aln in result['downstream']:
+                if 'cs_tag' in aln:
+                    if downstream_cs == '':
+                        downstream_cs = aln['cs_tag']
+                    else:
+                        downstream_cs = join_cstags(downstream_cs, aln['cs_tag'])
+        if 'X' in read.cigarstring:
+            if '=' in read.cigarstring: pass
+            else: downstream_cigar = downstream_cigar.replace('=', 'M')
+        else:
+            if 'M' in read.cigarstring:
+                downstream_cigar = downstream_cigar.replace('=', 'M')
+                downstream_cigar = _collapse_mismatches(downstream_cigar, 'M')
+            elif '=' in read.cigarstring:
+                downstream_cigar = _collapse_mismatches(downstream_cigar, '=')
+        
+        if downstream_ref_start == read.ref_end and downstream_query_start == read.query_end:
+            read_cigar = join_cigars(strip_softclip(read_cigar, 'right'), downstream_cigar)
+        else:
+            ref_gap   = downstream_ref_start - read.ref_end
+            query_gap = downstream_query_start - read.query_end
+            sub_cigar = f'{ref_gap}D' if ref_gap > 0 else ''
+            sub_cigar += f'{query_gap}I' if query_gap > 0 else ''
+            downstream_cigar = join_cigars(sub_cigar, downstream_cigar)
+            read_cigar = join_cigars(strip_softclip(read_cigar, 'right'), downstream_cigar)
+        if downstream_query_end < len(read.query_sequence):
+            read_cigar += f'{len(read.query_sequence) - downstream_query_end}S'
+    
+    read.cigarstring = read_cigar
+    read.cigartuples = _cigar_tuples(read_cigar)
+    read.ref_start   = read_ref_start
+    read.ref_end     = read_ref_end
+    read.query_start = read_query_start
+    read.query_end   = read_query_end
+    if read.has_tag('MD'):
+        read.md_tag = join_mdtags(upstream_md, read.md_tag)
+        read.md_tag = join_mdtags(read.md_tag, downstream_md)
+    if read.has_tag('cs'):
+        read.cs_tag = join_cstags(upstream_cs, read.cs_tag)
+        read.cs_tag = join_cstags(read.cs_tag, downstream_cs)
+
+    if _query_length(_cigar_tuples(read.cigarstring)) != _query_length(_cigar_tuples(read_cigar)):
+        raise ValueError("Query length after processing flank stretches does not match read sequence length.\n" +
+                        f"Length from CIGAR: {(_query_length(_cigar_tuples(read_cigar)))}, " +
+                        f"Read sequence length: {len(read.query_sequence)}")
