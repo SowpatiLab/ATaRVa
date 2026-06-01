@@ -3,6 +3,7 @@ import edlib
 import ahocorasick
 
 from ATARVA.realignment import *
+from ATARVA.validation_tests import *
 
 
 def build_kmer_automaton(seq: str, k: int = 10):
@@ -906,7 +907,7 @@ def process_flank_stretches(cooper, read, softclip_loci_coords):
         if query_end > read_query_end: read_query_end = query_end
 
         softclip_dir = 'upstream' if ref_end < read.ref_end else 'downstream'
-        coords = (ref_start, ref_end, query_start, query_end)
+        coords    = (ref_start, ref_end, query_start, query_end)
         alignment = align_flank_stretch(cooper, read, coords, softclip_dir)
         if softclip_dir == 'upstream' and prev_query_end == 0 and query_start > 0:
             result['upstream'].append({'cigar': f'{query_start}S', 'md_tag': '', 'cs_tag': '', 'gap': True, 'flank_type': 'upstream'})
@@ -955,6 +956,20 @@ def process_flank_stretches(cooper, read, softclip_loci_coords):
     upstream_cs = ''; downstream_cs = ''
 
     if upstream_cigar != '':
+
+        if upstream_ref_end < read.ref_start or upstream_query_end < read.query_start:
+            ref_gap   = read.ref_start - upstream_ref_end
+            query_gap = read.query_start - upstream_query_end
+            sub_cigar = f'{ref_gap}D' if ref_gap > 0 else ''
+            sub_cigar += f'{query_gap}I' if query_gap > 0 else ''
+            upstream_cigar = join_cigars(upstream_cigar, sub_cigar)
+            if ref_gap > 0:
+                result['upstream'].append({'gap': True, 'cigar': '', 'md_tag': f'^{cooper.ref.fetch(read.chrom, upstream_ref_end, read.ref_start)}',
+                                             'cs_tag': f'-{cooper.ref.fetch(read.chrom, upstream_ref_end, read.ref_start)}', 'flank_type': softclip_dir})
+            if query_gap > 0:
+                result['upstream'].append({'gap': True, 'cigar': '', 'md_tag': '',
+                                             'cs_tag': f'+{read.query_sequence[upstream_query_end:read.query_start]}', 'flank_type': softclip_dir})
+
         if read.has_tag('MD'):
             for aln in result['upstream']:
                 if 'md_tag' in aln:
@@ -969,7 +984,7 @@ def process_flank_stretches(cooper, read, softclip_loci_coords):
                         upstream_cs = aln['cs_tag']
                     else:
                         upstream_cs = join_cstags(upstream_cs, aln['cs_tag'])
-        
+
         if 'X' in read.cigarstring:
             if '=' in read.cigarstring: pass
             else: upstream_cigar = upstream_cigar.replace('=', 'M')
@@ -979,14 +994,7 @@ def process_flank_stretches(cooper, read, softclip_loci_coords):
                 upstream_cigar = _collapse_mismatches(upstream_cigar, 'M')
             elif '=' in read.cigarstring:
                 upstream_cigar = _collapse_mismatches(upstream_cigar, '=')
-        if upstream_ref_end == read.ref_start and upstream_query_end == read.query_start:
-            read_cigar = join_cigars(upstream_cigar, strip_softclip(read_cigar, 'left'))
-        else:
-            ref_gap = read.ref_start - upstream_ref_end
-            query_gap = read.query_start - upstream_query_end
-            upstream_cigar += f'{ref_gap}D' if ref_gap > 0 else ''
-            upstream_cigar += f'{query_gap}I' if query_gap > 0 else ''
-            read_cigar = join_cigars(upstream_cigar, strip_softclip(read_cigar, 'left'))
+        read_cigar = join_cigars(upstream_cigar, strip_softclip(read_cigar, 'left'))
 
     downstream_cigar = ''
     downstream_ref_start = 0; downstream_query_start = 0
@@ -1003,6 +1011,20 @@ def process_flank_stretches(cooper, read, softclip_loci_coords):
         else:
             downstream_cigar = join_cigars(downstream_cigar, aln['cigar'])
     if downstream_cigar != '':
+
+        if downstream_ref_start > read.ref_end or downstream_query_start > read.query_end:
+            ref_gap   = downstream_ref_start - read.ref_end
+            query_gap = downstream_query_start - read.query_end
+            if query_gap > 0:
+                result['downstream'] = [{'gap': True, 'cigar': '', 'md_tag': '',
+                                             'cs_tag': f'+{read.query_sequence[read.query_end:downstream_query_start]}', 'flank_type': softclip_dir}] + result['downstream']
+            if ref_gap > 0:
+                result['downstream'] = [{'gap': True, 'cigar': '', 'md_tag': f'^{cooper.ref.fetch(read.chrom, read.ref_end, downstream_ref_start )}',
+                                             'cs_tag': f'-{cooper.ref.fetch(read.chrom, read.ref_end, downstream_ref_start)}', 'flank_type': softclip_dir}] + result['downstream']
+            sub_cigar = f'{ref_gap}D' if ref_gap > 0 else ''
+            sub_cigar += f'{query_gap}I' if query_gap > 0 else ''
+            downstream_cigar = join_cigars(sub_cigar, downstream_cigar)
+
         if read.has_tag('MD'):
             for aln in result['downstream']:
                 if 'md_tag' in aln:
@@ -1017,6 +1039,7 @@ def process_flank_stretches(cooper, read, softclip_loci_coords):
                         downstream_cs = aln['cs_tag']
                     else:
                         downstream_cs = join_cstags(downstream_cs, aln['cs_tag'])
+
         if 'X' in read.cigarstring:
             if '=' in read.cigarstring: pass
             else: downstream_cigar = downstream_cigar.replace('=', 'M')
@@ -1026,19 +1049,15 @@ def process_flank_stretches(cooper, read, softclip_loci_coords):
                 downstream_cigar = _collapse_mismatches(downstream_cigar, 'M')
             elif '=' in read.cigarstring:
                 downstream_cigar = _collapse_mismatches(downstream_cigar, '=')
-        
-        if downstream_ref_start == read.ref_end and downstream_query_start == read.query_end:
-            read_cigar = join_cigars(strip_softclip(read_cigar, 'right'), downstream_cigar)
-        else:
-            ref_gap   = downstream_ref_start - read.ref_end
-            query_gap = downstream_query_start - read.query_end
-            sub_cigar = f'{ref_gap}D' if ref_gap > 0 else ''
-            sub_cigar += f'{query_gap}I' if query_gap > 0 else ''
-            downstream_cigar = join_cigars(sub_cigar, downstream_cigar)
-            read_cigar = join_cigars(strip_softclip(read_cigar, 'right'), downstream_cigar)
+        read_cigar = join_cigars(strip_softclip(read_cigar, 'right'), downstream_cigar)
         if downstream_query_end < len(read.query_sequence):
             read_cigar += f'{len(read.query_sequence) - downstream_query_end}S'
-    
+
+    if _query_length(_cigar_tuples(read.cigarstring)) != _query_length(_cigar_tuples(read_cigar)):
+        raise ValueError("Query length after processing flank stretches does not match read sequence length.\n" +
+                        f"Length from CIGAR: {(_query_length(_cigar_tuples(read_cigar)))}, " +
+                        f"Read sequence length: {len(read.query_sequence)}")
+
     read.cigarstring = read_cigar
     read.cigartuples = _cigar_tuples(read_cigar)
     read.ref_start   = read_ref_start
@@ -1048,11 +1067,12 @@ def process_flank_stretches(cooper, read, softclip_loci_coords):
     if read.has_tag('MD'):
         read.md_tag = join_mdtags(upstream_md, read.md_tag)
         read.md_tag = join_mdtags(read.md_tag, downstream_md)
+        if not validate_md_tag(read.md_tag, read.cigarstring).is_valid:
+            raise ValueError(f"Invalid MD tag for read: {read.query_name} with reference start position: {read.ref_start}")
     if read.has_tag('cs'):
         read.cs_tag = join_cstags(upstream_cs, read.cs_tag)
         read.cs_tag = join_cstags(read.cs_tag, downstream_cs)
+        if not validate_cs_cigar(read.cs_tag, read.cigarstring).is_valid:
+            raise ValueError(f"Invalid CS tag for read: {read.query_name} with reference start position: {read.ref_start}")
 
-    if _query_length(_cigar_tuples(read.cigarstring)) != _query_length(_cigar_tuples(read_cigar)):
-        raise ValueError("Query length after processing flank stretches does not match read sequence length.\n" +
-                        f"Length from CIGAR: {(_query_length(_cigar_tuples(read_cigar)))}, " +
-                        f"Read sequence length: {len(read.query_sequence)}")
+

@@ -287,7 +287,7 @@ def check_ref_query_order_consistency(current_coords, next_coords, merged_i, mer
         return 'next', 'ORDER_MISMATCH_EQUAL_DROP_NEXT'
 
 
-def process_flanks(softclip_loci, read_ref_start):
+def process_flanks(softclip_loci, read_ref_start, read_ref_end):
     """
     checks the order of alignment coords of the flanks and merges them
 
@@ -358,9 +358,15 @@ def process_flanks(softclip_loci, read_ref_start):
                 j += 1
                 continue
 
-            if current_locus[1] < read_ref_start and next_locus[1] > read_ref_start:
-                dir_switch = True
-                continue
+            # softclip_dir = 'upstream' if ref_end < read.ref_end else 'downstream'
+            if current_coords['upstream'][1] < read_ref_end:
+                check = False
+                if next_coords['downstream'] is not None and next_coords['downstream'][1] > read_ref_end:
+                    dir_switch = True
+                    check = True
+                elif next_coords['upstream'] is not None and (next_coords['upstream'][1] > read_ref_end or (next_coords['upstream'][0] == read_ref_end and next_coords['upstream'][1] == read_ref_end)):
+                    check = True
+                if check: continue
             
             locus_to_drop, reason = check_ref_query_order_consistency(current_coords, next_coords, merged[i], merged[j])
 

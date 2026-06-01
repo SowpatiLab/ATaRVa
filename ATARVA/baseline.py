@@ -219,14 +219,16 @@ class Cooper:
                     genotyped_count  += self.locus_processor()
                     self.progress_bar.update(1)
 
+                loci_rindices = set()
+                for lk in self.cooper_loci_data: loci_rindices |= set(self.cooper_loci_data[lk].reads)
                 # --- evict expired reads ---
                 while self.cooper_read_ends and fetch_start - DROP_DISTANCE > self.cooper_read_ends[0]:
                     if (self.cooper_loci_ends and self.cooper_read_ends[0] > self.cooper_loci_ends[0]):
                         break
+                    if self.cooper_read_indices[0] in loci_rindices: break
 
                     read_end = self.cooper_read_ends.popleft()
                     rindex   = self.cooper_read_indices.popleft()
-
                     if rindex in self.cooper_read_data:
                         for pos in self.cooper_read_data[rindex].snps:
                             if pos in self.cooper_snp_data:
@@ -294,21 +296,19 @@ class Cooper:
                             softclip_loci['loci'].append((chrom, locus_start, locus_end))
                             softclip_loci['coords'].append(softclip_result)
                             softclip_loci['flags'].append('FLANK_ORDER_INVALID')
-                    if not (read.ref_start <= locus_start and locus_end <= read.ref_end):
+                    if not (read.ref_start <= locus_start and locus_end <= read.ref_end) and not softclip_result:
                         continue
 
-                    left_flank  = min(self.args.flank, locus_start - read.ref_start)
+                    left_flank  = min(self.args.flank, locus_start - read.ref_start) 
                     right_flank = min(self.args.flank, read.ref_end  - locus_end)
 
                     read.left_flanks.append(left_flank)
                     read.right_flanks.append(right_flank)
-                    read.loci_coords.append((locus_start - left_flank,
-                                            locus_end   + right_flank))
+                    read.loci_coords.append((locus_start - left_flank, locus_end + right_flank))
 
                     locus_key = f'{chrom}:{locus_start}-{locus_end}'
                     read.loci_keys.append(locus_key)
                     read.loci_data[locus_key] = ReadLocusInfo(halen=0, alen=0, rlen=locus_len, seq=[])
-
 
                     if locus_key not in self.cooper_loci_data:
                         self.cooper_loci_data[locus_key] = LocusVariation()
@@ -323,7 +323,7 @@ class Cooper:
                 if softclip_loci['coords']:
                     merged_coords = []
                     if sum([flag is None for flag in softclip_loci['flags']]) >= 1:
-                        merged_coords = process_flanks(softclip_loci, read.ref_start)
+                        merged_coords = process_flanks(softclip_loci, read.ref_start, read.ref_end)
                     if len(merged_coords) > 0:
                         process_flank_stretches(self, read, merged_coords)
 
