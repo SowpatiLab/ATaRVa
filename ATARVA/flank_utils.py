@@ -1,7 +1,6 @@
-from itertools import product
 
 
-def check_flank_order(coords, chrom, start, end):
+def check_flank_order(coords):
     """
     Validate that softclip flank coordinates are in reference order and that the
     corresponding query coordinates preserve the same sequential order.
@@ -419,79 +418,3 @@ def process_flanks(softclip_loci, read_ref_start, read_ref_end):
         i = j if j > i + 1 else i + 1
 
     return merged_coords
-
-
-
-# def check_ref_query_order_consistency(current_coords: dict,
-#                                        next_coords:    dict,
-#                                        merged_i:       bool) -> tuple[str | None, str]:
-#     """
-#     Check if query coordinate order matches reference coordinate order
-#     across current and next loci flanking regions.
-
-#     :param current_coords: dict with 'upstream' and 'downstream' coord tuples
-#                            each tuple: (ref_start, ref_end, query_start, query_end)
-#     :param next_coords:    same structure for next locus
-#     :param merged_i:       if True — always drop next
-#     :return:               (locus_to_drop, reason)
-#                            locus_to_drop: 'current', 'next', or None
-#     """
-#     if current_coords is None or next_coords is None:
-#         return None, 'INVALID_COORDS'
-
-#     # ── extract coordinates ───────────────────────────────────────────
-#     curr_up   = current_coords.get('upstream')
-#     curr_down = current_coords.get('downstream')
-#     next_up   = next_coords.get('upstream')
-#     next_down = next_coords.get('downstream')
-
-#     # ── count order mismatches across all valid pairs ─────────────────
-#     pairs = [
-#         (curr_up,   next_up),
-#         (curr_up,   next_down),
-#         (curr_down, next_up),
-#         (curr_down, next_down),
-#     ]
-
-#     total      = 0
-#     mismatches = 0
-
-#     for a, b in pairs:
-#         if a is None or b is None:
-#             continue
-#         total += 1
-#         # ref_start is index 0, query_start is index 2
-#         ref_order   = a[0] < b[0]
-#         query_order = a[2] < b[2]
-#         if ref_order != query_order:
-#             mismatches += 1
-
-#     # ── early exits ───────────────────────────────────────────────────
-#     if total == 0:
-#         return None, 'INSUFFICIENT_COORDS'
-
-#     if mismatches == 0:
-#         return None, 'ORDER_CONSISTENT'
-
-#     # ── compute length discrepancy per locus ──────────────────────────
-#     def discrepancy(up, down) -> float:
-#         """Absolute difference between ref and query span lengths."""
-#         if up is None or down is None:
-#             return float('inf')
-#         ref_len   = down[1] - up[0]   # down.ref_end   - up.ref_start
-#         query_len = down[3] - up[2]   # down.query_end - up.query_start
-#         return abs(query_len - ref_len)
-
-#     # ── decide which locus to drop ────────────────────────────────────
-#     if merged_i:
-#         return 'next', 'ORDER_MISMATCH_NEXT_WORSE'
-
-#     curr_disc = discrepancy(curr_up, curr_down)
-#     next_disc = discrepancy(next_up, next_down)
-
-#     if curr_disc > next_disc:
-#         return 'current', 'ORDER_MISMATCH_CURRENT_WORSE'
-#     elif next_disc > curr_disc:
-#         return 'next',    'ORDER_MISMATCH_NEXT_WORSE'
-#     else:
-#         return 'next',    'ORDER_MISMATCH_EQUAL_DROP_NEXT'

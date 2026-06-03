@@ -17,7 +17,7 @@ from ATARVA.locus_utils       import process_locus
 from ATARVA.consensus         import consensus_seq_poa
 from ATARVA.genotype_utils    import analyse_genotype
 from ATARVA.process_softclips import process_flank_stretches, check_flank
-from ATARVA.flank_utils       import *
+from ATARVA.flank_utils       import check_flank_order, process_flanks
 
 
 SKIP_MESSAGES = {
@@ -117,7 +117,8 @@ class Cooper:
             )
             self.logger = logging.getLogger('ATaRVa_logger')
 
-        self.disable_progress = False
+        self.disable_progress = True
+        if self.args.threads > 1: self.disable_progress = True
 
         # --- count loci per region ---
         self.cooper_nloci  = 0
@@ -285,7 +286,7 @@ class Cooper:
                     # result structure {'upstream':   (ref_flank_start, ref_flank_end, query_flank_start, query_flank_end),
                     #                   'downstream': (ref_flank_start, ref_flank_end, query_flank_start, query_flank_end)}
                     if softclip_result is not None:
-                        flank_order = check_flank_order(softclip_result, chrom, locus_start, locus_end)
+                        flank_order = check_flank_order(softclip_result)
                         if flank_order:
                             softclip_loci['keys'].append(f'{chrom}:{locus_start}-{locus_end}')
                             softclip_loci['loci'].append((chrom, locus_start, locus_end))
@@ -326,6 +327,14 @@ class Cooper:
                         merged_coords = process_flanks(softclip_loci, read.ref_start, read.ref_end)
                     if len(merged_coords) > 0:
                         process_flank_stretches(self, read, merged_coords)
+                        for i, locus_key in enumerate(read.loci_keys):
+                            locus_start, locus_end = map(int, locus_key.split(':')[1].split('-'))
+                            left_flank  = min(self.args.flank, locus_start - read.ref_start) 
+                            right_flank = min(self.args.flank, read.ref_end  - locus_end)
+
+                            read.left_flanks[i] = left_flank
+                            read.right_flanks[i] = right_flank
+                            read.loci_coords[i] = (locus_start - left_flank, locus_end + right_flank)
 
                 read_required = True
                 for key in read.loci_keys:
@@ -336,7 +345,6 @@ class Cooper:
                         break
                 # if all loci have enough supporting reads with highest quality; this read is not processed
                 if not read_required: continue
-
 
                 # --- EQX normalisation ---
                 read_sequence = read.sequence
@@ -379,7 +387,6 @@ class Cooper:
                     parse_cstag(self, read)
                 else:
                     parse_cigar(self, read)
-
                 for mods in mod_bases:
                     if mods[0][0] == 'C' and mods[0][2] == 'm':
                         mm_tag_extract(read, mods[1])
@@ -455,19 +462,19 @@ class Cooper:
 
         # --- process locus ---
         process_locus(self, locus_key)
-
         locus_data    = self.cooper_loci_data[locus_key]
         read_seqs     = locus_data.read_aseqs
+
         # --- category 1 — homozygous ---
         if locus_data.hap_category == 1:
-            read_seqs = [read_seqs[rid][0] for rid in locus_data.reads if read_seqs[rid][0] != '']
+            read_seqs = [read_seqs[rid][0] for rid in locus_data.reads]
             seq_counter = {}
             for seq in read_seqs:
                 try: seq_counter[seq] += 1
                 except KeyError: seq_counter[seq] = 1
             max_allele = max(seq_counter, key=seq_counter.get) if seq_counter else None
 
-            if len(read_seqs) == 0:
+            if len(read_seqs) == 0 or max_allele == '':
                 # homozygous deletion genotype
                 ALT = '<DEL>'
                 locus_data.gt_alens  = (0, 0)

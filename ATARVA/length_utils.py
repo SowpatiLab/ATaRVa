@@ -6,6 +6,8 @@ from scipy.signal import find_peaks
 from hdbscan import HDBSCAN
 import numpy as np
 
+import stringzilla as sz
+
 from ATARVA.vcf_writer import *
 from ATARVA.sub_operation_utils import alt_sequence, calculate_methylation
 
@@ -321,6 +323,7 @@ def length_genotyper_hdbscan(cooper, locus_key):
     WINDOW_FRAC      = 0.1
 
     locus_data = cooper.cooper_loci_data[locus_key]
+    locus      = cooper.cooper_loci_info[locus_key]
     read_alens = locus_data.read_alens
 
     read_indices    = sorted(locus_data.reads)
@@ -337,13 +340,15 @@ def length_genotyper_hdbscan(cooper, locus_key):
             if not any(lo <= alen <= hi for i, (lo, hi) in windows.items() if i != alen):
                 continue
         main_read_ids.append(read_index)
-        filtered_alens.append(alen)
+        edit_dist = sz.edit_distance(cooper.ref.fetch(cooper.chrom, locus.start, locus.end), locus_data.read_aseqs[read_index][0])
+        filtered_alens.append([edit_dist, alen])
 
     if len(filtered_alens) < MIN_READS:
         locus_data.skip_code = 0
         return
 
-    alen_array = np.array(filtered_alens).reshape(-1, 1)
+    alen_array = np.array(filtered_alens)
+    alen_array_normalized = (alen_array - alen_array.mean(axis=0)) / (alen_array.std(axis=0) + 1e-8)
 
     # ── HDBSCAN clustering ────────────────────────────────────────────
     clusterer = HDBSCAN(
@@ -369,8 +374,8 @@ def length_genotyper_hdbscan(cooper, locus_key):
     c1_idx    = clusters[top2[0]]
     c2_idx    = clusters[top2[1]] if len(top2) > 1 else []
 
-    c1_lengths    = [filtered_alens[i] for i in c1_idx]
-    c2_lengths    = [filtered_alens[i] for i in c2_idx]
+    c1_lengths    = [alen_array[i, 1] for i in c1_idx]
+    c2_lengths    = [alen_array[i, 1] for i in c2_idx]
     hap_read_sets = (
         [main_read_ids[i] for i in c1_idx],
         [main_read_ids[i] for i in c2_idx]
@@ -467,11 +472,6 @@ def length_genotyper_histogram(cooper, locus_key):
             min_cluster_size = compute_cluster_cutoff(c1_lengths, c2_lengths)
         elif len(c2_idx) < min_cluster_size <= len(c1_idx):
             min_cluster_size = compute_cluster_cutoff(c2_lengths, c1_lengths)
-
-    # if locus_key == 'chr1:30651346-30651962':
-    #     print(f'Histogram clusters for {locus_key}:')
-    #     print(f'  Cluster 1: {sorted([int(x) for x in c1_lengths])}')
-    #     print(f'  Cluster 2: {sorted([int(x) for x in c2_lengths])}')
 
     _assign_genotype(cooper, locus_key, locus_data,
                      c1_idx, c2_idx, c1_lengths, c2_lengths,

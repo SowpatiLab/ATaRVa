@@ -285,7 +285,7 @@ def qvalue_phasing(cooper, locus, locus_data, sig_snp_data, ordered_sig_snps):
 
     # --- compute quality values for top SNPs ---
     # snp_quals = [max(list([max(x) for x in sig_snp_data[pos]['qual'].values()])) for pos in ordered_sig_snps]
-    snp_quals = [max(list([max(list(x.values())) for x in sig_snp_data[pos]['qual'].values()])) for pos in ordered_sig_snps]
+    snp_quals = [max(max(x.values()) for x in sig_snp_data[pos]['qual'].values()) for pos in ordered_sig_snps]
     snp_quals = ','.join(str(int(q)) for q in snp_quals)
 
     score_matrix = []
