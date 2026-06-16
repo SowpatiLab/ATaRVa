@@ -24,6 +24,10 @@ def dbscan(data, hap_reads, min_cluster_percent = 0.2):
     else:
         data = np.array(data).reshape(-1, 1)
         min_samples = max(10, round(min_cluster_percent*len(data))) # min 20% of the data or 10 reads for amplicon mode
+
+    if min_samples >= len(data): # k value must be less than or equal to the number of training points
+        return [False,None,None]
+    
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=FutureWarning)
         clusterer = hdbscan.HDBSCAN(min_cluster_size=min_samples)
