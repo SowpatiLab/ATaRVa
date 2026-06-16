@@ -757,7 +757,7 @@ def check_flank(cooper, read, locus_start, locus_end, up_softclip, down_softclip
     result = {'upstream': None, 'downstream': None}  
 
     # looking for the upstream flank for loci that could be in upstream softclip
-    if locus_start - NONREP_FLANK < read.ref_start and up_softclip > NONREP_FLANK:
+    if locus_start - NONREP_FLANK < read.ref_start and ((up_softclip > NONREP_FLANK and read.ref_start < locus_end) or up_softclip > (locus_end - locus_start) + NONREP_FLANK):
         upstream     = cooper.ref.fetch(read.chrom, locus_start - NONREP_FLANK, locus_start)
         softclip_seq = read.query_sequence[:up_softclip]
         # build once per read/sequence X
@@ -789,7 +789,7 @@ def check_flank(cooper, read, locus_start, locus_end, up_softclip, down_softclip
                 result['downstream'] = (read.ref_start, read.ref_start, read.query_start, read.query_start)  # Indicate that downstream flank is already covered
 
     # Check if downstream flank region is in right softclip
-    if locus_end + NONREP_FLANK > read.ref_end and down_softclip > NONREP_FLANK:
+    if locus_end + NONREP_FLANK > read.ref_end and ((down_softclip > NONREP_FLANK and read.ref_end > locus_start) or down_softclip > (locus_end - locus_start) + NONREP_FLANK):
         downstream     = cooper.ref.fetch(read.chrom, locus_end, locus_end + NONREP_FLANK)
         softclip_seq   = read.query_sequence[-down_softclip:]
         automaton  = build_kmer_automaton(downstream)
@@ -900,6 +900,8 @@ def process_flank_stretches(cooper, read, softclip_loci_coords):
         ref_end     = coords['downstream'][1]
         query_start = coords['upstream'][2]
         query_end   = coords['downstream'][3]
+
+        if min(query_end-query_start, ref_end-ref_start) > 100000: continue
 
         if ref_start < read_ref_start: read_ref_start = ref_start
         if ref_end > read_ref_end: read_ref_end = ref_end
