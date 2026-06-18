@@ -1,10 +1,12 @@
 import warnings
-from sklearn.cluster import KMeans
-from threadpoolctl import threadpool_limits
-from sklearn.mixture import GaussianMixture
-from scipy.signal import find_peaks
-from hdbscan import HDBSCAN
 import numpy as np
+import stringzilla as sz
+
+from sklearn.cluster import KMeans
+from threadpoolctl   import threadpool_limits
+from sklearn.mixture import GaussianMixture
+from scipy.signal    import find_peaks
+from hdbscan         import HDBSCAN
 
 from ATARVA.vcf_writer import *
 from ATARVA.sub_operation_utils import alt_sequence, calculate_methylation
@@ -48,18 +50,21 @@ def _assign_genotype(cooper, locus_key, locus_data, c1_idx, c2_idx, c1_lengths,
     if c1_valid and c2_valid:
         locus_data.hap_read_sets = hap_read_sets
         locus_data.hap_alen_sets = (c1_lengths, c2_lengths)
+        locus_data.is_genotyped = True
         heterozygous_call(cooper, locus_key)
         return
 
     if c1_valid:
         locus_data.hap_read_sets = (hap_read_sets[0], hap_read_sets[0])
         locus_data.hap_alen_sets = (c1_lengths, c1_lengths)
+        locus_data.is_genotyped = True
         homozygous_call(cooper, locus_key)
         return
 
     if c2_valid:
         locus_data.hap_read_sets = (hap_read_sets[1], hap_read_sets[1])
         locus_data.hap_alen_sets = (c2_lengths, c2_lengths)
+        locus_data.is_genotyped = True
         homozygous_call(cooper, locus_key)
         return
 
@@ -307,7 +312,6 @@ def length_genotyper_gmm(cooper, locus_key):
                      hap_read_sets, min_cluster_size)
 
 
-
 def length_genotyper_hdbscan(cooper, locus_key):
     """
     Genotype using HDBSCAN — auto cluster count, outlier aware.
@@ -317,10 +321,11 @@ def length_genotyper_hdbscan(cooper, locus_key):
     """
 
     MIN_READS        = 3
-    MIN_CLUSTER_FRAC = 0.15
+    MIN_CLUSTER_FRAC = 0.2
     WINDOW_FRAC      = 0.1
 
     locus_data = cooper.cooper_loci_data[locus_key]
+    locus      = cooper.cooper_loci_info[locus_key]
     read_alens = locus_data.read_alens
 
     read_indices    = sorted(locus_data.reads)
@@ -331,6 +336,7 @@ def length_genotyper_hdbscan(cooper, locus_key):
 
     main_read_ids  = []
     filtered_alens = []
+    filtered_seqs  = []
     for read_index in read_indices:
         alen = read_alens[read_index][0]
         if alen in singleton_alens:
@@ -338,18 +344,25 @@ def length_genotyper_hdbscan(cooper, locus_key):
                 continue
         main_read_ids.append(read_index)
         filtered_alens.append(alen)
+        filtered_seqs.append(locus_data.read_aseqs[read_index][0])
 
     if len(filtered_alens) < MIN_READS:
         locus_data.skip_code = 0
         return
 
-    alen_array = np.array(filtered_alens).reshape(-1, 1)
+    # ── compute edit distance from reference allele ──────────────────
+    reference_seq  = cooper.ref.fetch(locus.chrom, locus.start, locus.end)  # use reference sequence as reference
+    edit_distances = [sz.edit_distance(reference_seq, seq) for seq in filtered_seqs]
 
-    # ── HDBSCAN clustering ────────────────────────────────────────────
+    # ── normalize features for clustering ──────────────────────────────
+    dist_normalized = np.array(edit_distances)
+    feature_array = np.column_stack([filtered_alens, dist_normalized])
+
+    # ── HDBSCAN clustering with 2D features ─────────────────────────────
     clusterer = HDBSCAN(
         min_cluster_size     = max(MIN_READS, int(MIN_CLUSTER_FRAC * len(filtered_alens))),
-        allow_single_cluster = True    # handles homozygous
-    ).fit(alen_array)
+        allow_single_cluster = True
+    ).fit(feature_array)
 
     labels     = clusterer.labels_
     unique_labels = set(labels) - {-1}   # -1 = noise/outlier
@@ -467,11 +480,6 @@ def length_genotyper_histogram(cooper, locus_key):
             min_cluster_size = compute_cluster_cutoff(c1_lengths, c2_lengths)
         elif len(c2_idx) < min_cluster_size <= len(c1_idx):
             min_cluster_size = compute_cluster_cutoff(c2_lengths, c1_lengths)
-
-    # if locus_key == 'chr1:30651346-30651962':
-    #     print(f'Histogram clusters for {locus_key}:')
-    #     print(f'  Cluster 1: {sorted([int(x) for x in c1_lengths])}')
-    #     print(f'  Cluster 2: {sorted([int(x) for x in c2_lengths])}')
 
     _assign_genotype(cooper, locus_key, locus_data,
                      c1_idx, c2_idx, c1_lengths, c2_lengths,

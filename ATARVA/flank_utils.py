@@ -1,7 +1,6 @@
-from itertools import product
 
 
-def check_flank_order(coords, chrom, start, end):
+def check_flank_order(coords):
     """
     Validate that softclip flank coordinates are in reference order and that the
     corresponding query coordinates preserve the same sequential order.
@@ -26,8 +25,8 @@ def check_flank_order(coords, chrom, start, end):
     elif upstream is None or downstream is None:
         return True
 
-    upstream_ref_start, upstream_ref_end, upstream_query_start, upstream_query_end = upstream
-    downstream_ref_start, downstream_ref_end, downstream_query_start, downstream_query_end = downstream
+    upstream_ref_start, upstream_ref_end, upstream_query_start, upstream_query_end, _score = upstream
+    downstream_ref_start, downstream_ref_end, downstream_query_start, downstream_query_end, _score = downstream
 
     ref_in_order = (
         upstream_ref_start <= upstream_ref_end <= downstream_ref_start <= downstream_ref_end
@@ -78,12 +77,12 @@ def flag_misaligned_loci(softclip_loci):
         _us = False
         if coords['upstream'] is not None:
             _us = True
-            _, _, uqs, uqe = coords['upstream']  # extract query start
+            _, _, uqs, uqe, _ = coords['upstream']  # extract query start
             indices.append(i)
             ups_starts.append(uqs)
         
         elif coords['downstream'] is not None:
-            _, _, dqs, dqe = coords['downstream']
+            _, _, dqs, dqe, _ = coords['downstream']
             if dqs > prev_uqe:
                 indices.append(i)
                 ups_starts.append(prev_uqe)
@@ -154,8 +153,8 @@ def _merge_coordinates(coord1, coord2, upstream=True):
         return coord2
     if not coord2:
         return coord1
-    start_ref1, end_ref1, start_query1, end_query1 = coord1
-    start_ref2, end_ref2, start_query2, end_query2 = coord2
+    start_ref1, end_ref1, start_query1, end_query1, _ = coord1
+    start_ref2, end_ref2, start_query2, end_query2, _ = coord2
 
     if upstream:
         if start_query1 < start_query2:
@@ -206,8 +205,8 @@ def check_ref_query_order_consistency(current_coords, next_coords, merged_i, mer
     
     # Compare current_upstream with next_upstream
     if curr_upstream is not None and next_upstream is not None:
-        curr_urs, curr_ure, curr_uqs, curr_uqe = curr_upstream
-        next_urs, next_ure, next_uqs, next_uqe = next_upstream
+        curr_urs, curr_ure, curr_uqs, curr_uqe, _ = curr_upstream
+        next_urs, next_ure, next_uqs, next_uqe, _ = next_upstream
         
         curr_ref_order   = curr_urs < next_urs
         curr_query_order = curr_uqs < next_uqs
@@ -217,8 +216,8 @@ def check_ref_query_order_consistency(current_coords, next_coords, merged_i, mer
     
     # Compare current_upstream with next_downstream
     if curr_upstream is not None and next_downstream is not None:
-        curr_urs, curr_ure, curr_uqs, curr_uqe = curr_upstream
-        next_drs, next_dre, next_dqs, next_dqe = next_downstream
+        curr_urs, curr_ure, curr_uqs, curr_uqe, _ = curr_upstream
+        next_drs, next_dre, next_dqs, next_dqe, _ = next_downstream
         
         curr_ref_order   = curr_urs < next_drs
         curr_query_order = curr_uqs < next_dqs
@@ -228,8 +227,8 @@ def check_ref_query_order_consistency(current_coords, next_coords, merged_i, mer
     
     # Compare current_downstream with next_upstream
     if curr_downstream is not None and next_upstream is not None:
-        curr_drs, curr_dre, curr_dqs, curr_dqe = curr_downstream
-        next_urs, next_ure, next_uqs, next_uqe = next_upstream
+        curr_drs, curr_dre, curr_dqs, curr_dqe, _ = curr_downstream
+        next_urs, next_ure, next_uqs, next_uqe, _ = next_upstream
         
         curr_ref_order   = curr_drs < next_urs
         curr_query_order = curr_dqs < next_uqs
@@ -239,8 +238,8 @@ def check_ref_query_order_consistency(current_coords, next_coords, merged_i, mer
     
     # Compare current_downstream with next_downstream
     if curr_downstream is not None and next_downstream is not None:
-        curr_drs, curr_dre, curr_dqs, curr_dqe = curr_downstream
-        next_drs, next_dre, next_dqs, next_dqe = next_downstream
+        curr_drs, curr_dre, curr_dqs, curr_dqe, _ = curr_downstream
+        next_drs, next_dre, next_dqs, next_dqe, _ = next_downstream
         
         curr_ref_order   = curr_drs < next_drs
         curr_query_order = curr_dqs < next_dqs
@@ -258,8 +257,8 @@ def check_ref_query_order_consistency(current_coords, next_coords, merged_i, mer
     
     # If there are mismatches, calculate which locus to drop based on length discrepancy
     if curr_upstream is not None and curr_downstream is not None:
-        curr_urs, curr_ure, curr_uqs, curr_uqe = curr_upstream
-        curr_drs, curr_dre, curr_dqs, curr_dqe = curr_downstream
+        curr_urs, curr_ure, curr_uqs, curr_uqe, _ = curr_upstream
+        curr_drs, curr_dre, curr_dqs, curr_dqe, _ = curr_downstream
         curr_ref_length = curr_dre - curr_urs
         curr_query_length = curr_dqe - curr_uqs
         curr_discrepancy = abs(curr_query_length - curr_ref_length)
@@ -267,8 +266,8 @@ def check_ref_query_order_consistency(current_coords, next_coords, merged_i, mer
         curr_discrepancy = float('inf')
     
     if next_upstream is not None and next_downstream is not None:
-        next_urs, next_ure, next_uqs, next_uqe = next_upstream
-        next_drs, next_dre, next_dqs, next_dqe = next_downstream
+        next_urs, next_ure, next_uqs, next_uqe, _ = next_upstream
+        next_drs, next_dre, next_dqs, next_dqe, _ = next_downstream
         next_ref_length = next_dre - next_urs
         next_query_length = next_dqe - next_uqs
         next_discrepancy = abs(next_query_length - next_ref_length)
@@ -380,11 +379,11 @@ def process_flanks(softclip_loci, read_ref_start, read_ref_end):
                 j += 1
                 continue
 
-            curr_urs, curr_ure, curr_uqs, curr_uqe = current_coords['upstream'] if current_coords['upstream'] else (None, None, None, None)
-            next_urs, next_ure, next_uqs, next_uqe = next_coords['upstream'] if next_coords['upstream'] else (None, None, None, None)
-            curr_drs, curr_dre, curr_dqs, curr_dqe = current_coords['downstream'] if current_coords['downstream'] else (None, None, None, None)
-            next_drs, next_dre, next_dqs, next_dqe = next_coords['downstream'] if next_coords['downstream'] else (None, None, None, None)
-            
+            curr_urs, curr_ure, curr_uqs, curr_uqe, _ = current_coords['upstream'] if current_coords['upstream'] else (None, None, None, None, None)
+            next_urs, next_ure, next_uqs, next_uqe, _ = next_coords['upstream'] if next_coords['upstream'] else (None, None, None, None, None)
+            curr_drs, curr_dre, curr_dqs, curr_dqe, _ = current_coords['downstream'] if current_coords['downstream'] else (None, None, None, None, None)
+            next_drs, next_dre, next_dqs, next_dqe, _ = next_coords['downstream'] if next_coords['downstream'] else (None, None, None, None, None)
+
             # check if there is a missing centre flank and merge the flanks if the coordinates are in the correct order
             missing_centre = current_coords['upstream'] is not None and (current_coords['downstream'] is None or next_coords['upstream'] is None) and next_coords['downstream'] is not None
             if missing_centre:

@@ -31,7 +31,7 @@ class Inputs:
         self.sMatrix = ''  # Set your matrix file if needed
         self.bPath = True  # False
         self.nThr = 0
-        self.bBest = False
+        self.bBest = True
         self.bSam = True  # False
         self.bHeader = False
         self.target = target  # Set your target file path
@@ -81,4 +81,4 @@ def stripSW(args, case):
     if case:
         return sA, [res[4], res[5]]
     else:
-        return [res[0], res[2], res[3], res[4], res[5], sCigar]
+        return [res[0], res[1], res[2], res[3], res[4], res[5], sCigar]

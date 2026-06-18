@@ -19,6 +19,16 @@ METH_ENCODING = { NO_MATCH  : '*',   # error / missing call
                   AMBIGUOUS : '-' }   # ambiguous call
 
 
+def clamp_zero(value):
+    """
+    Clamp negative values to zero for methylation probability calculations.
+
+    :param value: the value to be clamped
+    :return: the clamped value (0 if input is negative, otherwise the original value)
+    """
+    return max(0, value)
+
+
 def mm_tag_extract(read, mod_probs):
     """
     record the positions with methylation calls

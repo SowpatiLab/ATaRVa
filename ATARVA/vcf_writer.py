@@ -254,8 +254,10 @@ def write_heterozygous_call(cooper, locus_key):
             GT = '1|2'
             ALT1 = locus_data.gt_aseqs[0]
             ALT2 = locus_data.gt_aseqs[1]
-            length_GT += f'{len(ALT1)},{len(ALT2)}'
-            units_GT += f'{len(ALT1)//locus.motif_length},{len(ALT2)//locus.motif_length}'
+            ALT_LEN1 = len(ALT1) if ALT1 != "<DEL>" else 0
+            ALT_LEN2 = len(ALT2) if ALT2 != "<DEL>" else 0
+            length_GT += f'{ALT_LEN1},{ALT_LEN2}'
+            units_GT += f'{ALT_LEN1//locus.motif_length},{ALT_LEN2//locus.motif_length}'
 
             SD = f'{len(locus_data.hap_read_sets[0])},{len(locus_data.hap_read_sets[1])}'
 

@@ -365,7 +365,8 @@ def qvalue_phasing(cooper, locus, locus_data, sig_snp_data, ordered_sig_snps):
 
     # --- validate phasing coverage ---
     total_phased = len(cluster1) + len(cluster2)
-    if total_phased >= cooper.args.phasing_read * locus_data.depth:
+    if total_phased >= cooper.args.phasing_read * locus_data.depth and \
+       len(cluster1) >= 0.2*locus_data.depth and len(cluster2) >= 0.2*locus_data.depth:
         locus_data.hap_read_sets      = (list(cluster1), list(cluster2))
         locus_data.hap_alen_sets      = ([locus_data.read_alens[ridx][0] for ridx in cluster1], [locus_data.read_alens[ridx][0] for ridx in cluster2])
         locus_data.is_genotyped       = True

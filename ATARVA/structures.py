@@ -80,7 +80,6 @@ class ReadInfo:
             else:
                 meth_count += 1
                 is_meth     = prob >= upper
-                meth_scores.append(raw_prob)
                 meth_calls.append(int(is_meth))
                 meth_qual  += is_meth
 
@@ -91,7 +90,8 @@ class ReadInfo:
 @dataclass(slots=True)
 class LocusVariation:
     reads:             list  = field(default_factory=list)  # list of all informative read indices for the locus
-    read_haplotags:    dict  = field(default_factory=dict)  # the haplotag assigned to each read in reads 
+    read_names:        list  = field(default_factory=list)  # list of all informative read names for the locus
+    read_haplotags:    dict  = field(default_factory=dict)  # the haplotag assigned to each read in reads
     depth:             int   = 0                            # depth of the locus, updated when reads are subset for high coverage loci  
     read_alens:        dict  = field(default_factory=dict)  # read index -> allele length dict for the reads supporting the locus
     read_aseqs:        dict  = field(default_factory=dict)  # read index -> allele sequence dict for the reads supporting the locus, in the format (allele sequence, allele length) 

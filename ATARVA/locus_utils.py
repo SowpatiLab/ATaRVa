@@ -1,6 +1,6 @@
 import bisect
 
-from ATARVA.realignment import *
+from ATARVA.realignment import stripSW, Inputs
 from ATARVA.vcf_writer  import write_fail_call
 
 
@@ -146,10 +146,11 @@ def process_flank_insertions(flank_insertions, ref_allele, ref_length, query, lo
     for fid, (ins_rpos, ins_qs, ins_qe) in enumerate(flank_insertions):
         ins_len = ins_qe - ins_qs
         if ins_len < locus.motif_length and ins_len < 10: continue
-        if ins_rpos in insert_positions:                  continue
+        if ins_rpos in insert_positions:                  continue  # if the insertion position is already recorded for another locus, skip
         if inrepeat_ins(locus_neighbors, ins_rpos, insert_positions): continue
 
         insert          = query[ins_qs:ins_qe]
+        if insert == "": continue
         alignment, coords = stripSW(Inputs(ref_allele, insert), True)
         align_len       = len(alignment)
         matches         = alignment.count('|')
@@ -200,7 +201,7 @@ def assign_hap_category(locus_data):
     filtered_seqs = {seq: count for seq, count in seq_counter.items() if count > 1}
     max_freq = max(filtered_seqs.values()) if filtered_seqs else 0
     # if len(filtered_seqs) == 1 or max_freq / locus_data.depth >= 0.75:
-    if max_freq / locus_data.depth >= 0.75:
+    if max_freq / locus_data.depth >= 0.9:
         locus_data.hap_category    = 1 # homozygous
         return
 
