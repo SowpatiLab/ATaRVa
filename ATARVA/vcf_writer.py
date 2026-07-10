@@ -105,8 +105,14 @@ def vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, homozygous_a
             deseq = '.'; lpm = f'{motif}-0'
         else:
             deseq = '.'; lpm = '.'
+
     if GT=='0/0':
-        lpm = f'{motif}-{motif_copy}'
+        ## lpm = f'{motif}-{motif_copy}'
+        if motif_size<=10:
+            ref_deseq,_ = motif_decomposition(ref_seq, motif_size)
+            lpm = longest_pure_repeat(ref_deseq, motif)
+        else:
+            lpm = '.'
 
     FORMAT = 'GT:AL:CN:LPM:AR:SD:DP:SN:SQ:MA:MR:DS:MV'
     if not haploid_state:
@@ -233,9 +239,14 @@ def vcf_heterozygous_writer(contig, genotypes, locus_start, locus_end, allele_co
 
     deseq = '.,.'
     lpm = '.,.'
+
+    if motif_size<=10:
+        ref_deseq,_ = motif_decomposition(ref_seq, motif_size)
+        ref_lpm = longest_pure_repeat(ref_deseq, motif)
+    else:
+        ref_lpm = f'{motif}-{len(ref_seq)//motif_size}'
     
     if decomp:
-        ref_lpm = f'{motif}-{len(ref_seq)//motif_size}'
         if motif_size>10:
             deseq = ','.join(['.']*len(alt_seqs))
         else:

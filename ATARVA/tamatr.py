@@ -12,7 +12,7 @@ def processor(process_df, outfile, tidx, each_thread, total_samples):
         genotyped_samples = 0
         sample_wise_full_gt = []
         ALT = []
-        alt_seq_lens = []
+        # alt_seq_lens = []
         alt_seq_count = {}
         for file_id in range(total_samples):
             current_sample = row_dict[f's{file_id}']
@@ -28,16 +28,29 @@ def processor(process_df, outfile, tidx, each_thread, total_samples):
                 genotyped_samples += 1
                 GT = []
                 alt_seqs = splited_sample[0].split(',') if splited_sample[0]!='.' else ""
-                seq_lens = [0 if i=='<DEL>' else len(i) for i in alt_seqs]
-                for idx,lens in enumerate(seq_lens):
-                    if lens in alt_seq_lens:
-                        alt_seq_count[lens] += 1 # count of that alt allele
-                        GT.append(str(alt_seq_lens.index(lens) + 1))
+
+                # seq_lens = [0 if i=='<DEL>' else len(i) for i in alt_seqs]
+                # for idx,lens in enumerate(seq_lens):
+                #     if lens in alt_seq_lens:
+                #         alt_seq_count[lens] += 1 # count of that alt allele
+                #         GT.append(str(alt_seq_lens.index(lens) + 1))
+                #     else:
+                #         ALT.append(alt_seqs[idx])
+                #         alt_seq_lens.append(lens)
+                #         alt_seq_count[lens] = 1 # initialize count of that alt allele
+                #         GT.append(str(len(alt_seq_lens)))
+
+                for idx,cseq in enumerate(alt_seqs):
+                    if cseq in ALT:
+                        alt_index = ALT.index(cseq)
+                        alt_seq_count[alt_index] += 1 # count of that alt allele
+                        GT.append(str(alt_index + 1))
                     else:
-                        ALT.append(alt_seqs[idx])
-                        alt_seq_lens.append(lens)
-                        alt_seq_count[lens] = 1 # initialize count of that alt allele
-                        GT.append(str(len(alt_seq_lens)))
+                        ALT.append(cseq)
+                        alt_len = len(ALT)
+                        alt_seq_count[alt_len-1] = 1 # initialize count of that alt allele
+                        GT.append(str(alt_len))
+
                 alt_count = len(GT)
                 if len(individual_sample_gt) > 1: # autosomes
                     phaser = individual_sample_gt[1] # either '/' or '|'
@@ -65,13 +78,23 @@ def processor(process_df, outfile, tidx, each_thread, total_samples):
             pass
         else:
             continue
-        if alt_seq_lens:
+
+        # if alt_seq_lens:
+        #     AC = []
+        #     for i in alt_seq_lens:
+        #         AC.append(str(alt_seq_count[i]))
+        #     AC = ','.join(AC)
+        # else:
+        #     AC = '0'
+
+        if ALT:
             AC = []
-            for i in alt_seq_lens:
+            for i in range(len(ALT)):
                 AC.append(str(alt_seq_count[i]))
             AC = ','.join(AC)
         else:
             AC = '0'
+
         AN = str(genotyped_samples * 2)
         info = 'AC='+AC+';AN='+AN+';' + row_dict['i']
         ref_seq = row_dict['r']
