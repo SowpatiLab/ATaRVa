@@ -55,7 +55,7 @@ setup(
         'threadpoolctl>=3.3.0',
         ],
     python_requires='>=3.9.0',
-    cmdclass={"build_ext":CustomBuildExt},
+    # cmdclass={"build_ext":CustomBuildExt},
     entry_points={
     'console_scripts': ['ATARVA=ATARVA.core:main']
     },

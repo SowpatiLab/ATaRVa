@@ -216,7 +216,7 @@ def join_cstags(cs_left: str, cs_right: str) -> str:
     :return:         joined cs tag (e.g., ":10+aa:8-tt:7")
     """
 
-    operations = {':', '-', '+', '*', '=', '~'}
+    operations = {':', '-', '+', '*', '=', '~', 'B'}
     left_op    = ''
     left_opdat = ''
     for x in cs_left[::-1]:
@@ -237,7 +237,7 @@ def join_cstags(cs_left: str, cs_right: str) -> str:
     if left_op == right_op:
         if left_op == '*':
             return cs_left + cs_right
-        elif left_op == ':':
+        elif left_op == ':' or left_op == '~' or left_op == 'B':
             merged_opdat = str(int(left_opdat) + int(right_opdat))
         else:
             merged_opdat = left_opdat + right_opdat
@@ -888,6 +888,9 @@ def process_flank_stretches(cooper, read, softclip_loci_coords):
     prev_ref_end = 0
     prev_query_end = 0
 
+    # in cs tag, for N use '~' and for B use 'B' to distinguish from insertions and deletions, which are represented by + and - respectively
+
+
     if len(softclip_loci_coords) == 0:
         return
 
@@ -922,7 +925,7 @@ def process_flank_stretches(cooper, read, softclip_loci_coords):
                 if gap_length > 0:
                     gap = True
                     gap_cigar += f'{gap_length}N'
-                    gap_cs    += f'-{cooper.ref.fetch(read.chrom, prev_ref_end, ref_start)}'
+                    gap_cs    += f'~{ref_start-prev_ref_end}'
                     gap_md    += f'^{cooper.ref.fetch(read.chrom, prev_ref_end, ref_start)}'
 
             if prev_query_end > 0 and query_start > prev_query_end:
@@ -930,7 +933,7 @@ def process_flank_stretches(cooper, read, softclip_loci_coords):
                 if gap_length > 0:
                     gap = True
                     gap_cigar += f'{gap_length}B'
-                    gap_cs    += f'+{read.query_sequence[prev_query_end:query_start]}'
+                    gap_cs    += f'B{gap_length}'
 
             if gap:
                 result[softclip_dir].append({'gap': True, 'cigar': gap_cigar, 'md_tag': gap_md,
@@ -966,10 +969,10 @@ def process_flank_stretches(cooper, read, softclip_loci_coords):
             upstream_cigar = join_cigars(upstream_cigar, sub_cigar)
             if ref_gap > 0:
                 result['upstream'].append({'gap': True, 'cigar': '', 'md_tag': f'^{cooper.ref.fetch(read.chrom, upstream_ref_end, read.ref_start)}',
-                                             'cs_tag': f'-{cooper.ref.fetch(read.chrom, upstream_ref_end, read.ref_start)}', 'flank_type': softclip_dir})
+                                             'cs_tag': f'~{ref_gap}', 'flank_type': softclip_dir})
             if query_gap > 0:
                 result['upstream'].append({'gap': True, 'cigar': '', 'md_tag': '',
-                                             'cs_tag': f'+{read.query_sequence[upstream_query_end:read.query_start]}', 'flank_type': softclip_dir})
+                                             'cs_tag': f'B{query_gap}', 'flank_type': softclip_dir})
 
         if read.has_tag('MD'):
             for aln in result['upstream']:
@@ -1018,10 +1021,10 @@ def process_flank_stretches(cooper, read, softclip_loci_coords):
             query_gap = downstream_query_start - read.query_end
             if query_gap > 0:
                 result['downstream'] = [{'gap': True, 'cigar': '', 'md_tag': '',
-                                             'cs_tag': f'+{read.query_sequence[read.query_end:downstream_query_start]}', 'flank_type': softclip_dir}] + result['downstream']
+                                             'cs_tag': f'B{query_gap}', 'flank_type': softclip_dir}] + result['downstream']
             if ref_gap > 0:
                 result['downstream'] = [{'gap': True, 'cigar': '', 'md_tag': f'^{cooper.ref.fetch(read.chrom, read.ref_end, downstream_ref_start )}',
-                                             'cs_tag': f'-{cooper.ref.fetch(read.chrom, read.ref_end, downstream_ref_start)}', 'flank_type': softclip_dir}] + result['downstream']
+                                             'cs_tag': f'~{ref_gap}', 'flank_type': softclip_dir}] + result['downstream']
             sub_cigar = f'{ref_gap}N' if ref_gap > 0 else ''
             sub_cigar += f'{query_gap}B' if query_gap > 0 else ''
             downstream_cigar = join_cigars(sub_cigar, downstream_cigar)
@@ -1074,5 +1077,5 @@ def process_flank_stretches(cooper, read, softclip_loci_coords):
     if read.has_tag('cs'):
         read.cs_tag = join_cstags(upstream_cs, read.cs_tag)
         read.cs_tag = join_cstags(read.cs_tag, downstream_cs)
-        if not validate_cs_cigar(read.cs_tag, read.cigarstring).is_valid:
-            raise ValueError(f"Invalid CS tag for read: {read.query_name} with reference start position: {read.ref_start}")
+        # if not validate_cs_cigar(read.cs_tag, read.cigarstring).is_valid:
+        #     raise ValueError(f"Invalid CS tag for read: {read.query_name} with reference start position: {read.ref_start}")

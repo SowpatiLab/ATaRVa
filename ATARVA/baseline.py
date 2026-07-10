@@ -82,13 +82,13 @@ class Cooper:
             self.outfile = f'{out_file}.vcf'
             self.logfile = f'{out_file}_debug.log'
             if args.instability:
-                self.insfile = f'{out_file}_instability.tsv'
+                self.insfile = f'{out_file}_instability.jsonl'
         else:
             hidden = _hidden_path(out_file)
             self.outfile = f'{hidden}_thread_{thread_idx}.vcf'
             self.logfile = f'{hidden}_debug_{thread_idx}.log'
             if args.instability:
-                self.insfile = f'{hidden}_instability_{thread_idx}.tsv'
+                self.insfile = f'{hidden}_instability_{thread_idx}.jsonl'
 
         with PysamWarningCapture(self.logfile):
             self.tbx = pysam.Tabixfile(args.regions)
@@ -123,7 +123,7 @@ class Cooper:
             self.logger = logging.getLogger('ATaRVa_logger')
 
         self.disable_progress = False
-        if self.args.threads > 1: self.disable_progress = False
+        if self.args.threads > 1: self.disable_progress = True
 
         # --- count loci per region ---
         self.cooper_nloci  = 0
@@ -546,15 +546,13 @@ class Cooper:
 
         if self.args.instability and locus_data.is_genotyped:
             instability_info = []
+            hap_als = [locus_data.gt_alens[0], locus_data.gt_alens[1]]
             for i, rid in enumerate(locus_data.reads):
                 read_name = locus_data.read_names[i]
                 aseq = locus_data.read_aseqs[rid][0]
                 alen = len(aseq)
-                hap = 'NA'
-                if self.haploid:
-                    hap = 1
-                else:
-                    hap = 1 if rid in locus_data.hap_read_sets[0] else 2
+                hap = 0
+                if not self.haploid: hap = 0 if rid in locus_data.hap_read_sets[0] else 1
 
                 methyl_Cs = None; methyl_probab = None
                 if i in locus_data.read_methylation and  locus_data.read_methylation[i] is not None:
@@ -564,7 +562,7 @@ class Cooper:
                 instability_info.append((read_name, hap, alen, aseq, methyl_Cs, methyl_probab))
             instability_info.sort(key=lambda x: x[1]) # sort by read name for consistent output
             for read_name, hap, alen, aseq, methyl_Cs, methyl_probab in instability_info:
-                self.ins_handle.write(f"{locus.chrom}\t{locus.start}\t{locus.end}\t{locus.motif}\t{read_name}\t{hap}\t{alen}\t{aseq}\t{methyl_Cs}\t{methyl_probab}\n")
+                self.ins_handle.write(f"{locus.chrom}\t{locus.start}\t{locus.end}\t{locus.motif}\t{read_name}\t{hap}\t{hap_als[hap]}\t{alen}\t{aseq}\t{methyl_Cs}\t{methyl_probab}\n")
 
         # --- cleanup ---
         del self.cooper_loci_data[locus_key]

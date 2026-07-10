@@ -78,7 +78,6 @@ def parse_cigar(cooper, read):
     cooper_loci_info     = cooper.cooper_loci_info
     cooper_snp_data      = cooper.cooper_snp_data
     cooper_read_data     = cooper.cooper_read_data
-    is_haploid           = cooper.haploid
 
     read_index = read.index
     qseq       = read.query_sequence
@@ -122,7 +121,6 @@ def parse_cigar(cooper, read):
             cooper_read_data[read_index].no_snps.update(range(rpos-no_snp_range, rpos + 1 + no_snp_range))
             insert_len = cigar[1]
             homopolymer_insert = False
-            if len(set(qseq[qpos:qpos+insert_len])) == 1: homopolymer_insert = True
 
             qpos += insert_len
             repeat_index += B_jump(read, rpos, qpos, insert_len, homopolymer_insert, repeat_index, locus_query_range, flank_query_range,
@@ -194,7 +192,7 @@ def parse_cigar(cooper, read):
             if read.cigartuples[0][0] == 4: qpos = read.cigartuples[0][1]
             else: qpos = 0
             parse_mdtag(cooper_snp_data, cooper_sorted_snps, cooper_loci_keys, cooper_loci_info, cooper_read_data, cooper_prev_reads,
-                        snp_qual_cutoff, is_haploid, is_haplotag, read, qpos, insert_positions)
+                        snp_qual_cutoff, haploid, is_haplotag, read, qpos, insert_positions)
 
     num_read_loci = len(read.loci_coords)
     for idx, locus_key in enumerate(read.loci_keys):
