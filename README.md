@@ -6,12 +6,7 @@ ATaRVa - Analysis of Tandem Repeat Variation (pronunced atharva) is a tool for g
 
 ## Installation
 
-ATaRVa can be directly installed using pip with the package name `atarva`.
-
-```bash
-$ pip install atarva
-```
-Alternatively, it can be installed from the source code:
+This branch of ATaRVa can be installed from the source code:
 
 ```bash
 # Download the git repo
@@ -53,37 +48,49 @@ $ ATARVA --help
 which gives the following output
 
 ```
-usage: core.py [-h] -fi <FILE> --bams <FILE> [<FILE> ...] -bed <FILE> [--format <STR>] [-q <INT>] [--contigs CONTIGS [CONTIGS ...]] [--min-reads <INT>] [--max-reads <INT>] [--snp-dist <INT>] [--snp-count <INT>]
-               [--snp-qual <INT>] [--level-split <INT>] [--snp-read <FLOAT>] [--phasing-read <FLOAT>] [-o <FILE>] [--platform <STR>] [-p <INT>] [-v]
+usage: atarva genotype [-h] -f <FILE> -b <FILE> [<FILE> ...] -r <FILE> [-o <FILE>] [--aln-format <STR>] [--rna] [--instability] [--contigs <STR> [<STR> ...]] [--karyotype <STR> [<STR> ...]] [-q <INT>] [--min-reads <INT>] [--max-reads <INT>] [--flank <INT>]
+                       [--snp-dist <INT>] [--snp-count <INT>] [--snp-qual <INT>] [--snp-read <FLOAT>] [--phasing-read <FLOAT>] [--haplotag <STR>] [--meth-prob <FLOAT>] [--methviz] [--read-wise] [--locus-wise] [--decompose] [-t <INT>] [-log] [-v]
+
+Tandem Repeat Genotyper
 
 Required arguments:
-  -fi <FILE>, --fasta <FILE>
+  -f <FILE>, --fasta <FILE>
                         input reference fasta file
-  --bams <FILE> [<FILE> ...]
-                        samples alignment files. allowed formats: SAM, BAM, CRAM
-  -bed <FILE>, --regions <FILE>
-                        input regions file. the regions file should be strictly in bgzipped tabix format. If the regions input file is in bed format. First sort it using bedtools. Compress it using bgzip. Index the bgzipped
-                        file with tabix command from samtools package.
+  -b <FILE> [<FILE> ...], --bam <FILE> [<FILE> ...]
+                        sample alignment files [SAM | BAM | CRAM]
+  -r <FILE>, --regions <FILE>
+                        bgzipped + tabix-indexed regions file. Prepare: sort with bedtools → bgzip → tabix index
 
 Optional arguments:
-  --format <STR>        format of input alignment file. allowed options: [cram, bam, sam]. default: [bam]
-  -q <INT>, --map-qual <INT>
-                        minimum mapping quality of the reads to be considered. [default: 5]
-  --contigs CONTIGS [CONTIGS ...]
-                        contigs to get genotyped [chr1 chr12 chr22 ..]. If not mentioned every contigs in the region file will be genotyped.
-  --min-reads <INT>     minimum read coverage after quality cutoff at a locus to be genotyped. [default: 10]
-  --max-reads <INT>     maximum number of reads to be used for genotyping a locus. [default: 100]
-  --snp-dist <INT>      maximum distance of the SNP from repeat region to be considered for phasing. [default: 5000]
-  --snp-count <INT>     number of SNPs to be considered for phasing (minimum value = 1). [default: 3]
-  --snp-qual <INT>      minimum basecall quality at the SNP position to be considered for phasing. [default: 13]
-  --snp-read <FLOAT>    a positive float as the minimum fraction of snp's read contribution to be used for phasing. [default: 0.25]
-  --phasing-read <FLOAT>
-                        a positive float as the minimum fraction of total read contribution from the phased read clusters. [default: 0.4]
   -o <FILE>, --vcf <FILE>
-                        name of the output file, output is in vcf format. [default: sys.stdout]
-  --platform <STR>      sequencing platform used for generating the data. changing this will have an affect on phasing which is happening on SNPs. allowed options: [hifi, duplex, simplex-hq, simplex]. default: [simplex]
-  -p <INT>, --processor <INT>
-                        number of processor. [default: 1]
+                        output VCF file [default: stdout]
+  --aln-format <STR>    alignment format [cram | bam | sam] [default: bam]
+  --rna                 if the input alignment data is RNA-seq [default: False]
+  --instability         if instability metrics should be calculated and written to VCF [default: False]
+  --contigs <STR> [<STR> ...]
+                        contigs to genotype e.g. chr1 chr12 [default: all]
+  --karyotype <STR> [<STR> ...]
+                        sample karyotypes e.g. XY XX
+  -q <INT>, --map-qual <INT>
+                        minimum mapping quality [default: 5]
+  --min-reads <INT>     minimum read coverage at a locus [default: 10]
+  --max-reads <INT>     maximum reads per locus [default: 100]
+  --flank <INT>         flank length (bp) to search for insertions [default: 10]
+  --snp-dist <INT>      max SNP distance from repeat [default: 3000]
+  --snp-count <INT>     number of SNPs for phasing [default: 3]
+  --snp-qual <INT>      min base quality at SNP position [default: 20]
+  --snp-read <FLOAT>    min SNP read fraction [default: 0.2]
+  --phasing-read <FLOAT>
+                        min phased read cluster fraction [default: 0.4]
+  --haplotag <STR>      haplotag for phasing e.g. HP [default: None]
+  --meth-prob <FLOAT>   min methylation probability [default: 0.5]
+  --methviz             write methylation-encoded sequence to VCF [default: False]
+  --read-wise           read-wise genotyping for dense BED regions
+  --locus-wise          locus-wise genotyping for sparse BED regions
+  --decompose           write motif-decomposed sequence to VCF
+  -t <INT>, --threads <INT>
+                        number of threads [default: 1]
+  -log, --debug_mode    write debug messages to log file
   -v, --version         show program's version number and exit
 ```
 
