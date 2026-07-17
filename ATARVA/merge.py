@@ -5,6 +5,7 @@ import timeit as ti
 # import argparse as ap
 from multiprocessing import Process
 from ATARVA.tamatr import reader
+from ATARVA.tamatr_n_1 import reader_n_1
 
 def merge_parser(subparsers):
     parser = subparsers.add_parser("merge", help="merging multiple ATaRVa VCF files over specified regions", description="Merge ATaRVa VCF files")
@@ -24,6 +25,11 @@ def merge_parser(subparsers):
     optional.add_argument('--contigs', nargs='+', help='contigs to get merged [chr1 chr12 chr22 ..]. If not mentioned every contigs in the region file will be merged.')
     optional.add_argument('-o', '--outname', type=str, metavar='<STR>', default='', help='name of the output file, output is in vcf format.')
     optional.add_argument('-t',  '--threads', type=int, metavar='<INT>', default=1, help='number of threads. [default: 1]')
+    optional.add_argument('-m', '--merge-mode', type=str, metavar='<STR>', default='full', choices=['full', 'incremental'], help='mode of merging. \
+                          full : Merge multiple VCF files into a new combined VCF. \
+                          incremental : Add one or more VCF files to an existing merged VCF. \
+                          [default: full]')
+    optional.add_argument('--alt-similarity', type=float, metavar='<FLOAT>', default=0.0, help='similarity threshold for assigning an alleles as alt. [default: 0.0; for assigning alt alleles, purely based on length]')
 
     if (len(sys.argv) == 2) and (sys.argv[1] == 'merge'):
         parser.print_help()
@@ -62,6 +68,19 @@ def merge_run(args):
         if arg in ['func', 'command']: continue
         print (arg, getattr(args, arg))
     print('\n')
+
+    merge_mode = args.merge_mode
+    if merge_mode not in ['full', 'incremental']:
+        print('Error: Invalid merge mode. Please choose either "full" or "incremental".')
+        sys.exit(1)
+    default_merge_mode = merge_mode=='full' ## True if "full" else False
+
+    alt_similarity = args.alt_similarity
+    if (type(alt_similarity) is not float) or (alt_similarity < 0.0) or (alt_similarity > 1.0):
+        print('Error: Invalid alt similarity threshold. Please provide a float value between 0.0 and 1.0.')
+        sys.exit(1)
+    else:
+        alt_similarity = round(alt_similarity, 2)
     
     out_file = sys.stdout
     if args.outname:
@@ -161,7 +180,11 @@ def merge_run(args):
             else:
                 reader_contigs = fetcher[initial : track]
             # print('Thread = ', each_reader_thread, ' contig length = ', len(reader_contigs))    
-            thread_x = Process(target = reader, args = (out_file, region_file, ref_file, vcf_list, reader_contigs, each_reader_thread, thread_list[each_reader_thread+1]))
+            if default_merge_mode: ## for standard merging mode
+                thread_x = Process(target = reader, args = (out_file, region_file, ref_file, vcf_list, reader_contigs, each_reader_thread, thread_list[each_reader_thread+1], alt_similarity))
+            else:
+                thread_x = Process(target = reader_n_1, args = (out_file, region_file, ref_file, vcf_list, reader_contigs, each_reader_thread, thread_list[each_reader_thread+1], alt_similarity))
+
             thread_x.start()
             reader_thread_pool.append(thread_x)
             
@@ -188,8 +211,10 @@ def merge_run(args):
         out.close()
         print('Concatenation completed!! ^_^', file=sys.stderr)
 
-    else:
-        reader(out_file, region_file, ref_file, vcf_list, fetcher, -1, 0)
+    elif default_merge_mode: ## for standard merging mode and single threaded
+        reader(out_file, region_file, ref_file, vcf_list, fetcher, -1, 0, alt_similarity)
+    else: ## for incremental merging mode and single threaded
+        reader_n_1(out_file, region_file, ref_file, vcf_list, fetcher, -1, 0, alt_similarity)
 
     time_now = ti.default_timer()
     sys.stderr.write('CPU time: {} seconds\n'.format(time_now - start_time))
