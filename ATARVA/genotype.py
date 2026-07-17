@@ -269,7 +269,7 @@ def genotype_run(args):
         print(f"Processing sample {each_bam.split('/')[-1]}\n")
 
         count = 0
-        aln_file = pysam.AlignmentFile(each_bam, aln_format)
+        aln_file = pysam.AlignmentFile(each_bam, aln_format, reference_filename=args.fasta)
         length = 0
         for read in aln_file.fetch():
             if (read.flag & 0X400) or (read.flag & 0X100): continue 
