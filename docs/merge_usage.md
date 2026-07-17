@@ -72,12 +72,12 @@ ATaRVa uses the `--alt-similarity` parameter to determine whether two alleles sh
 
 By default, `--alt-similarity` is set to **`0.0`**, meaning that allele assignment is based solely on **allele length**. In this mode, alleles with the same length are treated as identical, even if their sequence compositions differ.
 
-The `--alt-similarity` threshold can be set between **`0.0`** and **`1.0`**. When a value greater than `0.0` is specified, allele assignment considers both length and sequence similarity.
+The `--alt-similarity` threshold can be set between **`0.0`** and **`1.0`**. When `--alt-similarity` is greater than `0.0`, alleles are first grouped by length, and sequence similarity is then evaluated among alleles within the same length group. Alleles of different lengths are always considered distinct.
 
 Sequence similarity is calculated as:
 
 ```text
-Sequence Similarity = 1 - EditDistance(seq1, seq2)
+Sequence Similarity = 1 - (EditDistance(seq1, seq2) / sequence_length)
 ```
 
 For example, with:
