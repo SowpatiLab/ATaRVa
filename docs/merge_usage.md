@@ -31,7 +31,76 @@ Optional arguments:
                         name of the output file, output is in vcf format.
   -t <INT>, --threads <INT>
                         number of threads. [default: 1]
+  -m <STR>, --merge-mode <STR>
+                        mode of merging. full : Merge multiple VCF files into a new combined VCF. incremental : Add one or more VCF files to an existing merged VCF. [default: full]
+  --alt-similarity <FLOAT>
+                        similarity threshold for assigning an alleles as alt. [default: 0.0; for assigning alt alleles, purely based on length]
 ```
+
+### `--merge-mode`
+
+ATaRVa supports two modes for merging VCF files:
+
+- **`full`** – Merge multiple individual VCF files into a new combined VCF.
+- **`incremental`** – Add one or more individual VCF files to an existing merged VCF.
+
+#### Full Merge Mode
+
+In **`full`** mode, all input VCFs should be provided as individual VCF files. ATaRVa will merge them into a new combined VCF.
+
+```bash
+atarva merge \
+    --merge-mode full \
+    sample1.vcf sample2.vcf sample3.vcf
+```
+
+#### Incremental Merge Mode
+
+In **`incremental`** mode, the first VCF must be an existing merged VCF, followed by one or more individual VCF files to be added to the merged cohort.
+
+```bash
+atarva merge \
+    --merge-mode incremental \
+    merged_cohort.vcf sample4.vcf sample5.vcf
+```
+
+> **Note:** In `incremental` mode, the first input VCF is always treated as the existing merged VCF, and all subsequent VCFs are assumed to be individual sample VCFs that will be incorporated into it.
+
+### `--alt-similarity`
+
+ATaRVa uses the `--alt-similarity` parameter to determine whether two alleles should be considered the same or represented as distinct alternate alleles in the merged VCF.
+
+By default, `--alt-similarity` is set to **`0.0`**, meaning that allele assignment is based solely on **allele length**. In this mode, alleles with the same length are treated as identical, even if their sequence compositions differ.
+
+The `--alt-similarity` threshold can be set between **`0.0`** and **`1.0`**. When a value greater than `0.0` is specified, allele assignment considers both length and sequence similarity.
+
+Sequence similarity is calculated as:
+
+```text
+Sequence Similarity = 1 - EditDistance(seq1, seq2)
+```
+
+For example, with:
+
+```bash
+--alt-similarity 0.95
+```
+
+- Alleles with a sequence similarity **≥ 0.95** will be considered the same allele.
+- Alleles with a sequence similarity **< 0.95** will be considered distinct alleles and represented separately in the merged VCF.
+
+> **Important:** When using `--merge-mode incremental`, ensure that the same `--alt-similarity` threshold used to create the original merged VCF is provided again. Changing the similarity threshold between merge steps can alter allele grouping and may produce incorrect or inconsistent results in the updated merged VCF.
+
+#### Examples
+
+| Sequence Similarity | `--alt-similarity 0.95` | Result |
+|---------------------|-------------------------|---------|
+| 0.98 | Pass | Same allele |
+| 0.95 | Pass | Same allele |
+| 0.93 | Fail | Different alleles |
+| 0.80 | Fail | Different alleles |
+
+> **Note:** Setting `--alt-similarity 0.0` disables sequence-based comparison and uses allele length alone for alternate allele assignment.
 
 ## Examples
 ### Basic usage

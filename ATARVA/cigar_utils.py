@@ -167,7 +167,8 @@ def parse_cigar_tag(read_index, cigar_tuples, read_start, loci_keys, loci_coords
                 soft_flank_status.append(0) # if its a list (without reaching the soft-clip; sufficient flank already aligned by aligner)
 
             if any(soft_flank_status): # if any of the soft-flanks are not sufficient then dont write
-                pass #continue
+                ###pass
+                continue
             else:
                 pass
             
@@ -181,10 +182,13 @@ def parse_cigar_tag(read_index, cigar_tuples, read_start, loci_keys, loci_coords
         loci_flank_qpos_range[idx][0] = loci_flank_qpos_range[idx][0] - s_pos
         loci_flank_qpos_range[idx][1] = loci_flank_qpos_range[idx][1] - s_pos
 
-        tmp_left_set = out_insertion_qpos_ranges_left[idx]
-        ins_left = [(each_tuple[0]-s_pos, each_tuple[1]-s_pos) for each_tuple in tmp_left_set if len(tmp_left_set)==2 and None not in tmp_left_set]
-        tmp_right_set = out_insertion_qpos_ranges_right[idx]
-        ins_right = [(each_tuple[0]-s_pos, each_tuple[1]-s_pos) for each_tuple in tmp_right_set if len(tmp_right_set)==2 and None not in tmp_right_set]
+        ins_left = [(each_tuple[0]-s_pos, each_tuple[1]-s_pos) for each_tuple in out_insertion_qpos_ranges_left[idx]]
+        ins_right = [(each_tuple[0]-s_pos, each_tuple[1]-s_pos) for each_tuple in out_insertion_qpos_ranges_right[idx]]
+
+        # tmp_left_set = out_insertion_qpos_ranges_left[idx]
+        # ins_left = [(each_tuple[0]-s_pos, each_tuple[1]-s_pos) for each_tuple in tmp_left_set if len(tmp_left_set)==2 and None not in tmp_left_set]
+        # tmp_right_set = out_insertion_qpos_ranges_right[idx]
+        # ins_right = [(each_tuple[0]-s_pos, each_tuple[1]-s_pos) for each_tuple in tmp_right_set if len(tmp_right_set)==2 and None not in tmp_right_set]
 
         read_loci_variations[each_key]['seq'] = [read_sequence[s_pos:e_pos], loci_flank_qpos_range[idx], ins_left, ins_right, left_ins_rpos[idx], right_ins_rpos[idx], s_pos, e_pos]
 
