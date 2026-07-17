@@ -64,7 +64,7 @@ atarva merge \
     merged_cohort.vcf sample4.vcf sample5.vcf
 ```
 
-**Note:** In `incremental` mode, the first input VCF is always treated as the existing merged VCF, and all subsequent VCFs are assumed to be individual sample VCFs that will be incorporated into it.
+**NOTE: In `incremental` mode, the first input VCF is always treated as the existing merged VCF, and all subsequent VCFs are assumed to be individual sample VCFs that will be incorporated into it.**
 
 ### `--alt-similarity`
 
@@ -89,7 +89,8 @@ For example, with:
 - Alleles with a sequence similarity **≥ 0.95** will be considered the same allele.
 - Alleles with a sequence similarity **< 0.95** will be considered distinct alleles and represented separately in the merged VCF.
 
-> [!IMPORTANT] When using `--merge-mode incremental`, ensure that the same `--alt-similarity` threshold used to create the original merged VCF is provided again. Changing the similarity threshold between merge steps can alter allele grouping and may produce incorrect or inconsistent results in the updated merged VCF.
+> [!IMPORTANT]
+> When using `--merge-mode incremental`, ensure that the same `--alt-similarity` threshold used to create the original merged VCF is provided again. Changing the similarity threshold between merge steps can alter allele grouping and may produce incorrect or inconsistent results in the updated merged VCF.
 
 #### Examples
 
@@ -100,7 +101,7 @@ For example, with:
 | 0.93 | Fail | Different alleles |
 | 0.80 | Fail | Different alleles |
 
-**Note:** Setting `--alt-similarity 0.0` disables sequence-based comparison and uses allele length alone for alternate allele assignment.
+**NOTE: Setting `--alt-similarity 0.0` disables sequence-based comparison and uses allele length alone for alternate allele assignment.**
 
 ## Examples
 ### Basic usage
