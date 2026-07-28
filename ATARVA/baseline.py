@@ -212,7 +212,7 @@ class Cooper:
         with PysamWarningCapture(self.logfile):
             for raw_read in self.bam.fetch(chrom, region_start, region_end):
 
-                if raw_read.mapping_quality < self.args.map_qual:
+                if raw_read.mapping_quality < self.args.map_qual and raw_read.is_secondary:
                     continue
 
                 read = ExtendedRead.from_read(raw_read)
