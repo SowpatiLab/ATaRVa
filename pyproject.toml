@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ATaRVa"
-version = "0.8.1"
+version = "0.7.1"
 description = "Analysis of Tandem Repeats Variations"
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
 authors = [
     { name = "Divya Tej Sowpati", email = "tej@ccmb.res.in" }
 ]
@@ -51,4 +51,4 @@ packages = ["ATARVA"]
 ATARVA = ["*.so"]
 
 [project.scripts]
-atarva = "ATARVA.core:main"
+atarva-sa = "ATARVA.core:main"

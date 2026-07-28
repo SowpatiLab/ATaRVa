@@ -81,7 +81,7 @@ def processor(process_df, outfile, tidx, each_thread, total_samples):
         id = '.'
         q = '.'
         alt = ','.join(ALT) if ALT else '.'
-        format = 'GT:AL:AR:SD:DP:SN:SQ:MM:MR'
+        format = 'GT:AL:CN:LPM:AR:SD:DP:SN:SQ:MA:MR:DS:MV'
         #sample = '\t'.join(sample_wise_full_gt)
 
         repeat_info = [chrom, start, id, ref_seq, alt, q, filter, info, format, *sample_wise_full_gt]
@@ -99,6 +99,13 @@ def processor(process_df, outfile, tidx, each_thread, total_samples):
     out.close()
     # print('DONE Processing....')
 
+def sample_name_extract(vcfs):
+    sample_names = []
+    for each_vcf in vcfs:
+        with pysam.VariantFile(each_vcf) as vcf_in:
+            sample_names.extend(list(vcf_in.header.samples))
+    return sample_names
+
 def reader(outfile, bedfile, ref, vcfs, contigs, tidx, process_thread):
 
     total_samples = len(vcfs)
@@ -111,13 +118,15 @@ def reader(outfile, bedfile, ref, vcfs, contigs, tidx, process_thread):
     #print(len(vcf_instance))
     if tidx!=-1: # multi thread
         if tidx==0: # first process
-            vcf_names = [file_path.split("/")[-1].split('.')[0] for file_path in vcfs]
+            # vcf_names = [file_path.split("/")[-1].split('.')[0] for file_path in vcfs]
+            vcf_names = sample_name_extract(vcfs)
             out = open(f'{outfile}.vcf', 'w')
             vcf_writer(out, vcf_names, vcfs[0])
         else:
             out = open(f'{outfile}_thread_{tidx}.vcf', 'w')
     else: # single thread
-        vcf_names = [file_path.split("/")[-1].split('.')[0] for file_path in vcfs]
+        # vcf_names = [file_path.split("/")[-1].split('.')[0] for file_path in vcfs]
+        vcf_names = sample_name_extract(vcfs)
         out = open(f'{outfile}.vcf', 'w')
         vcf_writer(out, vcf_names, vcfs[0])
 
@@ -184,6 +193,8 @@ def reader(outfile, bedfile, ref, vcfs, contigs, tidx, process_thread):
                     
                     motif_value = line[3]
                     ref_value = end-start # +1)//period_value
+                    ID = line[5] if len(line)>5 else "."
+                    REFCN = ref_value // float(line[4])
                     del line
                     
                     ref_string = True
@@ -196,19 +207,20 @@ def reader(outfile, bedfile, ref, vcfs, contigs, tidx, process_thread):
                             if (st-1)!=start: # -1 to match with 0-based coord
                                 continue
 
-                            info = entry[7].split(';', 5)[:5]
+                            info = entry[7].split(';', 5)[:7]
                             en = int(info[4].split('=')[1])
                             if ((st-1)==start) & (en==end): # -1 to match with 0-based coord
                                 has_region = True
                                 file_start.append(st) 
                                 file_end.append(en)
                                 file_ref.append(entry[3])
-                                file_info.append(f"MOTIF={motif_value};START={start};END={end}")
+                                file_info.append(f"MOTIF={motif_value};START={start};END={end};ID={ID};REFCN={REFCN}")
                                 sample = entry[9]
                                 if sample[0]=='.':
                                     file_sample.append(None)
                                 else:
-                                    file_sample.append(entry[4]+':'+':'.join(sample.split(':', 9)[:9]))
+                                    # file_sample.append(entry[4]+':'+':'.join(sample.split(':', 9)[:9]))
+                                    file_sample.append(entry[4]+':'+sample)
                                 del entry
                                 del sample
                             break
@@ -217,7 +229,7 @@ def reader(outfile, bedfile, ref, vcfs, contigs, tidx, process_thread):
                         file_start.append(start+1)
                         file_end.append(end)
                         file_ref.append(ref_file.fetch(chrom, start, end))
-                        file_info.append(f"MOTIF={motif_value};START={start};END={end}")
+                        file_info.append(f"MOTIF={motif_value};START={start};END={end};ID={ID};REFCN={REFCN}")
                         file_sample.append(None)
 
                 file_count += 1
@@ -261,13 +273,14 @@ def reader(outfile, bedfile, ref, vcfs, contigs, tidx, process_thread):
                         continue
                     else:
                         st = int(entry[1])
-                        info = entry[7].split(';', 5)[:5]
+                        info = entry[7].split(';', 5)[:7]
                         en = int(info[4].split('=')[1])
                         
         
                         file_start.append(st)
                         file_end.append(en)
-                        file_sample.append(entry[4]+':'+':'.join(sample.split(':', 9)[:9]))
+                        # file_sample.append(entry[4]+':'+':'.join(sample.split(':', 9)[:9]))
+                        file_sample.append(entry[4]+':'+sample)
                         
                 df = pl.DataFrame(file_data_dict, schema=schema).lazy()
                 df = df.unique(subset=['s', 'e'], keep='first', maintain_order=True)
@@ -395,6 +408,7 @@ def vcf_writer(out, bam_name, source_vcf_path):
 
     for contig, metadata in source_vcf.header.contigs.items():
         vcf_header.contigs.add(contig, length=metadata.length)
+    info_mp_cutoff = source_vcf.header.info["MPC"].description
     source_vcf.close()
     
     #sample_name
@@ -403,24 +417,28 @@ def vcf_writer(out, bam_name, source_vcf_path):
     # FILTER
     vcf_header.filters.add('LESS_READS', number=None, type=None, description="Read depth below threshold")
     # INFO
-    vcf_header.info.add("AC",    number='A', type="Integer", description="Number of alternate alleles in called genotypes")
-    vcf_header.info.add("AN",    number=1,   type="Integer", description="Number of alleles in called genotypes")
-    vcf_header.info.add("MOTIF", number=1,   type="String", description="Repeat motif")
-    vcf_header.info.add("START", number=1,   type="Integer", description="Start position of the repeat region in 0-based coordinate system")
-    vcf_header.info.add("END",   number=1,   type="Integer", description="End position of the repeat region")
-    vcf_header.info.add("ID",    number=1,   type="String", description="Locus identifier tag")
-    vcf_header.info.add("CT",    number=1,   type="String", description="Cluster type")
-    vcf_header.info.add("EAC",   number=1,   type="String", description="Each Allele Count")
+    vcf_header.info.add("AC", number='A', type="Integer", description="Number of alternate alleles in called genotypes")
+    vcf_header.info.add("AN", number=1, type="Integer", description="Number of alleles in called genotypes")
+    vcf_header.info.add("MOTIF", number=1, type="String", description="Repeat motif")
+    vcf_header.info.add("START", number=1, type="Integer", description="Start position of the repeat region in 0-based coordinate system")
+    vcf_header.info.add("END", number=1, type="Integer", description="End position of the repeat region")
+    vcf_header.info.add("ID", number=1, type="String", description="Locus identifier tag")
+    vcf_header.info.add("REFCN", number=1, type="Integer", description="Reference allele copy number")
+    vcf_header.info.add("CT", number=1, type="String", description="Cluster type")
+    vcf_header.info.add("EAC", number=1, type="String", description="Each Allele Count")
+    vcf_header.info.add("MPC", number=1, type="String", description=f"{info_mp_cutoff}")
     # FORMAT
-    vcf_header.formats.add("GT", number=1,   type="String", description="Genotype")
+    vcf_header.formats.add("GT", number=1, type="String", description="Genotype")
     vcf_header.formats.add("AL", number=2, type="Integer", description="Allele length in base pairs")
+    vcf_header.formats.add("CN", number=2, type="Integer", description="Motif copy number for each allele")
+    vcf_header.formats.add("LPM", number=2, type="String", description="Longest pure motif repeat and its copy number for each allele")
     vcf_header.formats.add("AR", number='.', type="String", description="Allele length range")
     vcf_header.formats.add("SD", number='.', type="Integer", description="Number of reads supporting for the alleles")
     vcf_header.formats.add("PC", number=2, type="Integer", description="Number of reads in the phased cluster for each allele")
     vcf_header.formats.add("DP", number=1, type="Integer", description="Number of the supporting reads for the repeat locus")
     vcf_header.formats.add("SN", number='.', type="Integer", description="Number of SNPs used for phasing")
     vcf_header.formats.add("SQ", number='.', type="Float", description="Phred-scale qualities of the SNPs used for phasing")
-    vcf_header.formats.add("MM", number='.', type="Float", description="Mean methylation level for each allele")
+    vcf_header.formats.add("MA", number='.', type="Float", description="Mean methylation level for each allele")
     vcf_header.formats.add("MR", number='.', type="Integer", description="Number of reads providing methylation info for each allele")
     vcf_header.formats.add("DS", number='A', type="String", description="Motif decomposed sequence")
     vcf_header.formats.add("MV", number='.', type="String", description="Visual methylation encodings for the alleles")
