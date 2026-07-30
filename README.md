@@ -45,7 +45,7 @@ $ deactivate
 ```
 Both of the methods add a console command `atarva`, which can be executed from any directory
 
-**NOTE: This tool has been tested and is recommended to be used with Python versions between 3.9 and 3.12 (inclusive).**
+**NOTE: This tool has been tested and is recommended to be used with Python versions between 3.9 and 3.13 (inclusive).**
 
 ### Docker installation
 ATaRVa can also be installed using the provided **Docker** image with the following steps:
@@ -59,6 +59,7 @@ $ docker build --network host -t atarva
 * [Usage](#usage)
 * [`genotype` usage](/docs/genotype_usage.md)
 * [`merge` usage](/docs/merge_usage.md)
+* [`Visualization` usage](/docs/Visualization.md)
 * [FAQs](/docs/FAQ's.md)
 * [Changelog](/docs/changelog.md)
 
@@ -99,7 +100,7 @@ All scripts used for analysis are provided in [ATaRVa_Manuscript](https://github
 If you find ATaRVa useful for your research, please cite it as follows:
 
 ATaRVa: Analysis of Tandem Repeat Variation from Long Read Sequencing data  
-_Abishek Kumar Sivakumar, Sriram Sudarsanam, Anukrati Sharma, Akshay Kumar Avvaru, Divya Tej Sowpati_ <br>
+_Abishek Kumar Sivakumar, Anukrati Sharma, Sriram Sudarsanam, Sai Siddharth Krishnavajjhala, Harriet Dashnow, Akshay Kumar Avvaru, Divya Tej Sowpati_<br>
 _BioRxiv_, **doi:** https://doi.org/10.1101/2025.05.13.653434
 
 ## Contact
