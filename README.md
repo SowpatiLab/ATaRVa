@@ -1,7 +1,6 @@
 # ATaRVa - a tandem repeat genotyper
-![Badge-PyPI](https://img.shields.io/badge/PyPI-v0.6.0-brightgreen)
+![Badge-PyPI](https://img.shields.io/badge/PyPI-v0.7.1-brightgreen)
 ![Badge-License](https://img.shields.io/badge/License-MIT-blue)
-
 
 <p align=center>
   <img src="lib/atrv_logo.png" alt="Logo of ATaRVa" width="200"/>
@@ -46,7 +45,7 @@ $ deactivate
 ```
 Both of the methods add a console command `atarva`, which can be executed from any directory
 
-<!-- **NOTE: This tool has been tested and is recommended to be used with Python versions between 3.9 and 3.12 (inclusive).** -->
+**NOTE: This tool has been tested and is recommended to be used with Python versions between 3.9 and 3.12 (inclusive).**
 
 ### Docker installation
 ATaRVa can also be installed using the provided **Docker** image with the following steps:
