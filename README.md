@@ -59,7 +59,7 @@ $ docker build --network host -t atarva
 * [Usage](#usage)
 * [`genotype` usage](/docs/genotype_usage.md)
 * [`merge` usage](/docs/merge_usage.md)
-* [`Visualization` usage](/docs/Visualization.md)
+* [`Visualization`](/docs/Visualization.md)
 * [FAQs](/docs/FAQ's.md)
 * [Changelog](/docs/changelog.md)
 
