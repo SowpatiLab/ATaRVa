@@ -67,7 +67,7 @@ def vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, homozygous_a
     
     ref_allele_length = locus_end - locus_start
     refcn = str(ref_allele_length // int(float(global_loci_info[locus_key][4])))
-    ref_seq = ref.fetch(contig, locus_start, locus_end)
+    ref_seq = ref.fetch(contig, locus_start, locus_end).upper()
 
     AC = 0; AN = 2; GT = '0/0'; ALT = '.'; alt_state = False
     MA = ','.join(meth_prob)
@@ -142,7 +142,7 @@ def vcf_heterozygous_writer(contig, genotypes, locus_start, locus_end, allele_co
 
     ref_allele_length = locus_end - locus_start
     refcn = str(ref_allele_length // int(float(global_loci_info[locus_key][4])))
-    ref_seq = ref.fetch(contig, locus_start, locus_end)
+    ref_seq = ref.fetch(contig, locus_start, locus_end).upper()
 
     meth_prob = []
     meth_reads = []
@@ -293,7 +293,7 @@ def vcf_fail_writer(contig, locus_key, global_loci_info, ref, out, DP, skip_poin
     FORMAT = 'GT:AL:CN:LPM:AR:SD:DP:SN:SQ:MA:MR:DS:MV'
     SAMPLE = '.:.:.:.:.:.:.:.:.:.:.:.:.'
 
-    print(*[contig, locus_start+1, '.',  ref.fetch(contig, locus_start, locus_end), '.', 0, FILTER, INFO, FORMAT, SAMPLE], file=out, sep='\t')
+    print(*[contig, locus_start+1, '.',  ref.fetch(contig, locus_start, locus_end).upper(), '.', 0, FILTER, INFO, FORMAT, SAMPLE], file=out, sep='\t')
     del global_loci_info[locus_key]
 
 def vcf_multizygous_writer(contig, genotype_dict, locus_start, locus_end, DP, global_loci_info, ref, out, log_bool, decomp, hallele_counter):
@@ -314,7 +314,7 @@ def vcf_multizygous_writer(contig, genotype_dict, locus_start, locus_end, DP, gl
     gt_idx = 0
     ref_allele_length = locus_end - locus_start
     refcn = str(ref_allele_length // int(float(global_loci_info[locus_key][4])))
-    ref_seq = ref.fetch(contig, locus_start, locus_end)
+    ref_seq = ref.fetch(contig, locus_start, locus_end).upper()
     ref_lpm = f'{motif}-{len(ref_seq)//motif_size}'
     for each_genotype in genotype_dict:
         current_gt = genotype_dict[each_genotype]
