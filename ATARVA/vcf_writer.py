@@ -64,12 +64,9 @@ def vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, homozygous_a
     meth_reads = str(meth_info[1]) if meth_info[1] is not None else '.' #number of methylated reads
     meth_prob = [str(meth_prob) if meth_prob is not None else '.']*2 # for homozygous, make it two same values to keep the format consistent
     meth_vistag = [meth_info[2] if meth_info[2] is not None else '.']*2 #methylation visual encoding
-
-    motif = global_loci_info[locus_key][3]
-    motif_size = int(float(global_loci_info[locus_key][4]))
     
     ref_allele_length = locus_end - locus_start
-    refcn = str(ref_allele_length // motif_size)
+    refcn = str(ref_allele_length // int(float(global_loci_info[locus_key][4])))
     ref_seq = ref.fetch(contig, locus_start, locus_end).upper()
 
     AC = 0; AN = 2; GT = '0/0'; ALT = '.'; alt_state = False
@@ -84,20 +81,20 @@ def vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, homozygous_a
         if ALT[0]!='<': alt_state = True
         else: alt_state = None
 
-
+    motif = global_loci_info[locus_key][3]
     if log_bool:
         eac = sorted(hallele_counter.items(), key = lambda x: x[1], reverse=True)
         INFO = 'AC=' + str(AC) + ';AN=' + str(AN) + ';MOTIF=' + motif + ';START=' + str(locus_start) + ';END=' + str(locus_end) + optional_tag + ';REFCN='+ refcn + ';CT=' + tag + ';EAC=' + str(eac)
     else:
         INFO = 'AC=' + str(AC) + ';AN=' + str(AN) + ';MOTIF=' + motif + ';START=' + str(locus_start) + ';END=' + str(locus_end) + optional_tag + ';REFCN='+ refcn
 
-    motif_copy = homozygous_allele // motif_size
-    rounded_motif_copy = round(homozygous_allele / motif_size )
+    motif_copy = homozygous_allele // int(float(global_loci_info[locus_key][4]))
     deseq = '.'
     lpm = '.'
     
     if decomp:
         lpm = f'{motif}-{motif_copy}' # initially assigned for reference seq, will be updated if ALT is different from ref and motif size is <=10
+        motif_size = int(float(global_loci_info[locus_key][4]))
         if alt_state and (motif_size<=10):
             if decomp_seq:
                 deseq = decomp_seq
@@ -108,19 +105,14 @@ def vcf_homozygous_writer(ref, contig, locus_key, global_loci_info, homozygous_a
             deseq = '.'; lpm = f'{motif}-0'
         else:
             deseq = '.'; lpm = '.'
-
     if GT=='0/0':
-        if motif_size<=10:
-            ref_deseq,_ = motif_decomposition(ref_seq, motif_size)
-            lpm = longest_pure_repeat(ref_deseq, motif)
-        else:
-            lpm = '.'
+        lpm = f'{motif}-{motif_copy}'
 
-    FORMAT = 'GT:AL:CN:RCN:LPM:AR:SD:DP:SN:SQ:MA:MR:DS:MV'
+    FORMAT = 'GT:AL:CN:LPM:AR:SD:DP:SN:SQ:MA:MR:DS:MV'
     if not haploid_state:
-        SAMPLE = str(GT) + ':' + str(homozygous_allele) + ',' + str(homozygous_allele) + ':' + f'{motif_copy},{motif_copy}' + ':' + f'{rounded_motif_copy},{rounded_motif_copy}' + ':' + f'{lpm},{lpm}' + ':' + allele_range + ':' + str(reads_len) + ':' + str(DP) + ':.:.' + ':' + MA + ':' + meth_reads + ':' + deseq + ':' + MV
+        SAMPLE = str(GT) + ':' + str(homozygous_allele) + ',' + str(homozygous_allele) + ':' + f'{motif_copy},{motif_copy}' + ':' + f'{lpm},{lpm}' + ':' + allele_range + ':' + str(reads_len) + ':' + str(DP) + ':.:.' + ':' + MA + ':' + meth_reads + ':' + deseq + ':' + MV
     else:
-        SAMPLE = GT[0] + ':' + str(homozygous_allele) + ':' + f'{motif_copy}' + ':' + f'{rounded_motif_copy}' + ':' + lpm + ':' + allele_range + ':' + str(reads_len) + ':' + str(DP) + ':.:.' + ':' + meth_prob[0] + ':' + meth_reads + ':' + deseq + ':' + MV
+        SAMPLE = GT[0] + ':' + str(homozygous_allele) + ':' + f'{motif_copy}' + ':' + lpm + ':' + allele_range + ':' + str(reads_len) + ':' + str(DP) + ':.:.' + ':' + meth_prob[0] + ':' + meth_reads + ':' + deseq + ':' + MV
     
     print(*[contig, locus_start+1, '.',  ref_seq, ALT , 0, 'PASS', INFO, FORMAT, SAMPLE], file=out, sep='\t')
     del ALT_read
@@ -149,7 +141,7 @@ def vcf_heterozygous_writer(contig, genotypes, locus_start, locus_end, allele_co
     alt_seqs = []
 
     ref_allele_length = locus_end - locus_start
-    refcn = str(ref_allele_length // motif_size )
+    refcn = str(ref_allele_length // int(float(global_loci_info[locus_key][4])))
     ref_seq = ref.fetch(contig, locus_start, locus_end).upper()
 
     meth_prob = []
@@ -230,6 +222,7 @@ def vcf_heterozygous_writer(contig, genotypes, locus_start, locus_end, allele_co
             MV = ','.join(meth_vistag)
 
     motif = global_loci_info[locus_key][3]
+    motif_size = int(float(global_loci_info[locus_key][4]))
 
     if PC == '.,.': PC = '.' # due to length genotyper
     if log_bool:
@@ -240,14 +233,9 @@ def vcf_heterozygous_writer(contig, genotypes, locus_start, locus_end, allele_co
 
     deseq = '.,.'
     lpm = '.,.'
-
-    if motif_size<=10:
-        ref_deseq,_ = motif_decomposition(ref_seq, motif_size)
-        ref_lpm = longest_pure_repeat(ref_deseq, motif)
-    else:
-        ref_lpm = f'{motif}-{len(ref_seq)//motif_size}'
     
     if decomp:
+        ref_lpm = f'{motif}-{len(ref_seq)//motif_size}'
         if motif_size>10:
             deseq = ','.join(['.']*len(alt_seqs))
         else:
@@ -275,10 +263,9 @@ def vcf_heterozygous_writer(contig, genotypes, locus_start, locus_end, allele_co
                 lpm = ','.join(lpm_list)
 
     motif_copy = ','.join([str(int(i) // motif_size) for i in heterozygous_allele.split(',')])
-    rounded_motif_copy = ','.join([str(round(int(i) / motif_size)) for i in heterozygous_allele.split(',')])
      
-    FORMAT = 'GT:AL:CN:RCN:LPM:AR:SD:DP:SN:SQ:MA:MR:DS:MV'
-    SAMPLE = str(GT)+':'+heterozygous_allele+':' + motif_copy + ':'  + rounded_motif_copy + ':' + lpm + ':' + allele_range + ':' + SD + ':' + str(DP) + ':' + str(snp_num) + ':' + chosen_snpQ + ':' + MA + ':' + MR + ':' + deseq + ':' + MV
+    FORMAT = 'GT:AL:CN:LPM:AR:SD:DP:SN:SQ:MA:MR:DS:MV'
+    SAMPLE = str(GT)+':'+heterozygous_allele+':' + motif_copy + ':' + lpm + ':' + allele_range + ':' + SD + ':' + str(DP) + ':' + str(snp_num) + ':' + chosen_snpQ + ':' + MA + ':' + MR + ':' + deseq + ':' + MV
 
     del ALT_reads
     del alt_seqs
@@ -303,8 +290,8 @@ def vcf_fail_writer(contig, locus_key, global_loci_info, ref, out, DP, skip_poin
     locus_key = f'{contig}:{locus_start}-{locus_end}'
 
     INFO = 'AC=0;AN=0;MOTIF=' + str(global_loci_info[locus_key][3]) + ';START=' + str(locus_start) + ';END=' + str(locus_end) + optional_tag + ';REFCN='+refcn
-    FORMAT = 'GT:AL:CN:RCN:LPM:AR:SD:DP:SN:SQ:MA:MR:DS:MV'
-    SAMPLE = '.:.:.:.:.:.:.:.:.:.:.:.:.:.'
+    FORMAT = 'GT:AL:CN:LPM:AR:SD:DP:SN:SQ:MA:MR:DS:MV'
+    SAMPLE = '.:.:.:.:.:.:.:.:.:.:.:.:.'
 
     print(*[contig, locus_start+1, '.',  ref.fetch(contig, locus_start, locus_end).upper(), '.', 0, FILTER, INFO, FORMAT, SAMPLE], file=out, sep='\t')
     del global_loci_info[locus_key]
@@ -326,7 +313,7 @@ def vcf_multizygous_writer(contig, genotype_dict, locus_start, locus_end, DP, gl
     GT_dict = {}
     gt_idx = 0
     ref_allele_length = locus_end - locus_start
-    refcn = str(ref_allele_length // motif_size)
+    refcn = str(ref_allele_length // int(float(global_loci_info[locus_key][4])))
     ref_seq = ref.fetch(contig, locus_start, locus_end).upper()
     ref_lpm = f'{motif}-{len(ref_seq)//motif_size}'
     for each_genotype in genotype_dict:
@@ -379,7 +366,6 @@ def vcf_multizygous_writer(contig, genotype_dict, locus_start, locus_end, DP, gl
     GT = '/'.join(GT)
     ALT = ','.join(ALT) if ALT else '.'
     CN = ','.join([str(int(i) // motif_size) for i in AL])
-    RCN = ','.join([str(round(int(i) / motif_size)) for i in AL])
     LPM = ','.join(lpm)
     AL = ','.join(AL)
     AR = ','.join(AR)
@@ -399,9 +385,9 @@ def vcf_multizygous_writer(contig, genotype_dict, locus_start, locus_end, DP, gl
     else:
         deseq = '.'
 
-    FORMAT = 'GT:AL:CN:RCN:LPM:AR:SD:DP:SN:SQ:MA:MR:DS:MV'
-    SAMPLE = GT + ':' + AL + ':' + CN + ':' + RCN + ':' + LPM + ':' + AR + ':' + SD + ':' + str(DP) + ':.:.:' + MA + ':' + MR + ':' + deseq + ':' + MV
+    FORMAT = 'GT:AL:CN:LPM:AR:SD:DP:SN:SQ:MA:MR:DS:MV'
+    SAMPLE = GT + ':' + AL + ':' + CN + ':' + LPM + ':' + AR + ':' + SD + ':' + str(DP) + ':.:.:' + MA + ':' + MR + ':' + deseq + ':' + MV
 
     print(*[contig, locus_start+1, '.',  ref_seq, ALT, 0, 'PASS', INFO, FORMAT, SAMPLE], file=out, sep='\t')
 
-    del GT, ALT, AL, CN, RCN, LPM, AR, SD, MA, MR, MV, deseq, global_loci_info[locus_key]
+    del GT, ALT, AL, CN, LPM, AR, SD, MA, MR, MV, deseq, global_loci_info[locus_key]
