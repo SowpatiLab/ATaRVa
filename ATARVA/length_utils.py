@@ -14,6 +14,7 @@ from ATARVA.vcf_writer import *
 from ATARVA.sub_operation_utils import alt_sequence, calculate_methylation
 from ATARVA.consensus import consensus_seq_poa
 
+
 def _assign_genotype(cooper, locus_key, locus_data, c1_idx, c2_idx, c1_lengths,
                      c2_lengths, hap_read_sets, min_cluster_size):
     """

@@ -8,8 +8,6 @@ import pyabpoa    as pa
 import statistics as stats
 import numpy      as np
 
-
-
 MAX_POA_LEN   = 7000    # POA memory grows ~quadratically with length; tune on your data
 MAX_POA_READS = 50
 

@@ -28,6 +28,8 @@ SKIP_MESSAGES = {
     6: 'Locus skipped - the locus is not a repetitive sequence.'
 }
 
+WINDOW_SIZE      = 1000
+WINDOW_THRESHOLD = 500
 
 def _hidden_path(out_file):
     """Return a hidden-file-prefixed path for thread output files."""
@@ -102,6 +104,8 @@ class Cooper:
         self.haploid    = False
         self.logger     = None
         self.supp_reads = {}
+        self.win_start  = 0
+        self.win_cov    = 0
 
         self.outhandle = open(self.outfile, 'w')
 
@@ -184,6 +188,8 @@ class Cooper:
         self.cooper_insert_positions = defaultdict(set)
         self.cooper_del_positions    = defaultdict(set)
         self.supp_reads              = {}
+        self.win_start               = 0
+        self.win_cov                 = 0
 
     # --- read processing ---
     def cooper_readmode(self, region_range: tuple, cidx: int):
@@ -213,6 +219,15 @@ class Cooper:
 
                 if raw_read.mapping_quality < self.args.map_qual or raw_read.is_secondary: # check the logic here
                     continue
+
+                read_required = True
+                if raw_read.reference_start > self.win_start + WINDOW_SIZE:
+                    self.win_start = raw_read.reference_start
+                    self.win_cov = 0
+                self.win_cov += 1
+                if self.win_cov > WINDOW_THRESHOLD:
+                    read_required = False
+                if not read_required: continue
 
                 read = ExtendedRead.from_read(raw_read)
 
