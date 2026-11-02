@@ -49,6 +49,7 @@ def generate_cs_tag(query_seq, ref_seq, cigar):
     cigartuples = _cigar_tuples(cigar)
 
     for op, length in cigartuples:
+        if length == 0: continue
 
         # ── match / mismatch (M) ──────────────────────────────────
         if op == 0:
@@ -63,6 +64,8 @@ def generate_cs_tag(query_seq, ref_seq, cigar):
                         cs.append(f':{match_length}')
                     cs.append(f'*{r}{q}')   # mismatch ref→query
                     match_length = 0
+            if match_length > 0:
+                cs.append(f':{match_length}')
 
             qpos += length
             rpos += length

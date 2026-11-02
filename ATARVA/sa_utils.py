@@ -1,6 +1,6 @@
 from ATARVA.process_softclips import align_sequences, generate_md_tag, generate_cs_tag
 from ATARVA.process_softclips import _cigar_tuples, _cigar_string, _collapse_mismatches
-from ATARVA.process_softclips import join_cigars, join_mdtags, join_cstags, valid_md
+from ATARVA.process_softclips import join_cigars, join_mdtags, join_cstags, valid_md, valid_cs
 
 import re
 
@@ -375,7 +375,8 @@ def process_upstreamsa(cooper, ref, read, sa_read, sa_start, sa_end, sa_cigar, r
         return False
 
     sa_cigarstring, score = align_sequences(sa_query, sa_target) # faster if the the query is shorter
-    joined_cigar = f'{sa_conf_qpos}S' + join_cigars(sa_cigarstring, _cigar_string(pa_conf_cigar))
+    pa_conf_cigarstring   = _cigar_string(pa_conf_cigar)
+    joined_cigar = f'{sa_conf_qpos}S' + join_cigars(sa_cigarstring, pa_conf_cigarstring)
 
     if primary != "READ":
         read.query_sequence  = query_seq
@@ -388,7 +389,6 @@ def process_upstreamsa(cooper, ref, read, sa_read, sa_start, sa_end, sa_cigar, r
         match_char = 'M' if '=' not in read.cigarstring else '='
         joined_cigar = _collapse_matches(joined_cigar, match_char)
 
-
     read.cigarstring = joined_cigar
     read.cigartuples = _cigar_tuples(joined_cigar)
     read.ref_start   = sa_conf_rpos
@@ -398,8 +398,14 @@ def process_upstreamsa(cooper, ref, read, sa_read, sa_start, sa_end, sa_cigar, r
         qseq        = query_seq[pa_conf_qpos:-end_softclip] if end_softclip > 0 else query_seq[pa_conf_qpos:]
         pa_mdtag    = generate_md_tag(_cigar_string(pa_conf_cigar), ref.fetch(cooper.chrom, pa_conf_rpos, read.ref_end), qseq)
         read.md_tag = join_mdtags(sa_mdtag, pa_mdtag)
+        valid = valid_md(read.md_tag, joined_cigar)
+        assert valid, f"Invalid MD tag: {read.md_tag} for CIGAR: {joined_cigar}"
     if read.has_tag('cs'):
         sa_cstag = generate_cs_tag(sa_query, sa_target, sa_cigarstring)
-        read.cs_tag = join_cstags(sa_cstag, read.cs_tag)
+        qseq     = query_seq[pa_conf_qpos:-end_softclip] if end_softclip > 0 else query_seq[pa_conf_qpos:]
+        pa_cstag = generate_cs_tag(qseq, ref.fetch(cooper.chrom, pa_conf_rpos, read.ref_end), pa_conf_cigarstring)
+        read.cs_tag = join_cstags(sa_cstag, pa_cstag)
+        valid = valid_cs(read.cs_tag, joined_cigar)
+        assert valid, f"Invalid CS tag: {read.cs_tag} for CIGAR: {joined_cigar}"
 
     return True
