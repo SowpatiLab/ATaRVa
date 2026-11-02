@@ -96,16 +96,17 @@ class Cooper:
             self.bam = pysam.AlignmentFile(bam_file, args.aln_format, reference_filename=args.fasta)
             self.ref = pysam.FastaFile(args.fasta)
 
-        self.args       = args
-        self.sample_idx = sample_idx
-        self.thread_idx = thread_idx
-        self.karyotype  = args.karyotype[sample_idx]
-        self.chrom      = None
-        self.haploid    = False
-        self.logger     = None
-        self.supp_reads = {}
-        self.win_start  = 0
-        self.win_cov    = 0
+        self.args         = args
+        self.sample_idx   = sample_idx
+        self.thread_idx   = thread_idx
+        self.karyotype    = args.karyotype[sample_idx]
+        self.chrom        = None
+        self.haploid      = False
+        self.logger       = None
+        self.supp_reads   = {}
+        self.win_start    = 0
+        self.win_cov      = 0
+        self.sa_win_start = 0
 
         self.outhandle = open(self.outfile, 'w')
 
@@ -190,6 +191,7 @@ class Cooper:
         self.supp_reads              = {}
         self.win_start               = 0
         self.win_cov                 = 0
+        self.sa_win_start            = 0
 
     # --- read processing ---
     def cooper_readmode(self, region_range: tuple, cidx: int):
@@ -212,7 +214,8 @@ class Cooper:
 
         softclip_mode   = False
         if self.args.use_softclip or self.args.amplicon: softclip_mode = True
-        DROP_DISTANCE   = 30000 #  if softclip_mode else 0    # distance beyond which reads and loci are dropped from memory
+        DROP_DISTANCE    = 30000 #  if softclip_mode else 0    # distance beyond which reads and loci are dropped from memory
+        SA_DROP_DISTANCE = 500000 # distance beyond which supplementary alignments are dropped from memory
 
         with PysamWarningCapture(self.logfile):
             for raw_read in self.bam.fetch(chrom, region_start, region_end):
@@ -228,6 +231,17 @@ class Cooper:
                 if self.win_cov > WINDOW_THRESHOLD:
                     read_required = False
                 if not read_required: continue
+
+                if raw_read.reference_start > self.sa_win_start + (2 * SA_DROP_DISTANCE):
+                    for rname in list(self.supp_reads.keys()):
+                        remove_supp = True
+                        for sa_read in self.supp_reads[rname][0]:
+                            if sa_read.reference_end > self.sa_win_start + SA_DROP_DISTANCE:
+                                remove_supp = False
+                                break
+                        if remove_supp:
+                            del self.supp_reads[rname]
+                    self.sa_win_start = 0 if raw_read.reference_start - SA_DROP_DISTANCE < 0 else raw_read.reference_start - SA_DROP_DISTANCE
 
                 read = ExtendedRead.from_read(raw_read)
 
@@ -374,13 +388,10 @@ class Cooper:
                     locus_key = f'{chrom}:{locus_start}-{locus_end}-{motif}'
                     read.loci_keys.append(locus_key)
                     read.loci_data[locus_key] = ReadLocusInfo(halen=0, alen=0, rlen=locus_len, seq=[])
-
-                    if locus_key not in self.cooper_loci_data:
+                    if locus_key not in self.cooper_loci_info:
                         self.cooper_loci_info[locus_key] = LocusInfo(chrom=chrom, start=locus_start, end=locus_end,
-                                                                     motif=fields[3], name=locus_name)
-                        self.cooper_loci_data[locus_key] = LocusVariation()
-                        self.cooper_loci_keys.append(locus_key)
-                        self.cooper_loci_ends.append(locus_end)
+                                                                     motif=motif, name=locus_name)
+
 
                 if softclip_mode and softclip_loci['coords']:
                     merged_coords = []
@@ -427,6 +438,7 @@ class Cooper:
 
                 read_required = True
                 for key in read.loci_keys:
+                    if key not in self.cooper_loci_data: continue
                     if self.cooper_loci_data[key].depth < self.args.max_reads or \
                         (self.cooper_loci_data[key].min_read_qual < 20 and  read.mean_qual >= 20) or \
                         (read.mean_qual > 20 and (10**(read.mean_qual/10) - 10**(self.cooper_loci_data[key].min_read_qual/10))) >= 500:
@@ -436,6 +448,15 @@ class Cooper:
                         break
                 # if all loci have enough supporting reads with highest quality; this read is not processed
                 if not read_required: continue
+
+                for locus_key in read.loci_keys:
+                    if locus_key not in self.cooper_loci_data:
+                        locus = self.cooper_loci_info.get(locus_key)
+                        self.cooper_loci_info[locus_key] = LocusInfo(chrom=self.chrom, start=locus.start, end=locus.end,
+                                                                        motif=locus.motif, name=locus.name)
+                        self.cooper_loci_data[locus_key] = LocusVariation()
+                        self.cooper_loci_keys.append(locus_key)
+                        self.cooper_loci_ends.append(locus.end)
 
                 if '=' in read.sequence:
                     read.sequence = clean_eqsign_readseq(read.chrom, read.ref_start, read.cigartuples,
@@ -559,7 +580,8 @@ class Cooper:
 
         softclip_mode   = False
         if self.args.use_softclip or self.args.amplicon: softclip_mode = True
-        SOFT_DISTANCE   = 10000 if softclip_mode else 0    # Should be close to average read length, to capture softclipped reads
+        SOFT_DISTANCE    = 10000 if softclip_mode else 0    # Should be close to average read length, to capture softclipped reads
+        SA_DROP_DISTANCE = 500000 # distance beyond which supplementary alignments are dropped from memory
 
         with PysamWarningCapture(self.logfile):
 
@@ -589,7 +611,7 @@ class Cooper:
 
                     start_softclip = end_softclip = 0
                     if read.cigartuples[0][0]  == 4 and softclip_mode: start_softclip = read.cigartuples[0][1]
-                    if read.cigartuples[-1][0] == 4 and softclip_mode: end_softclip = read.cigartuples[-1][1]
+                    if read.cigartuples[-1][0] == 4 and softclip_mode: end_softclip   = read.cigartuples[-1][1]
 
                     # process the SA tag to store relevant supplementary alignments
                     if read.has_tag('SA'): read.process_satag()
