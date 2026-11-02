@@ -14,8 +14,7 @@ from ATARVA.operation_utils   import clean_eqsign_readseq
 from ATARVA.cstag_utils       import parse_cstag
 from ATARVA.cigar_utils       import parse_cigar
 from ATARVA.sub_operation_utils import mm_tag_extract, calculate_methylation, clamp_zero, alt_sequence
-from ATARVA.locus_utils       import process_locus, break_locuskey
-from ATARVA.consensus         import consensus_seq_poa
+from ATARVA.locus_utils       import process_locus
 from ATARVA.genotype_utils    import analyse_genotype
 from ATARVA.process_softclips import process_flank_stretches, check_flank
 from ATARVA.flank_utils       import check_flank_order, process_flanks
