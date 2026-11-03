@@ -1,4 +1,5 @@
-import numpy as np
+import numpy    as np
+import pyabpoa  as pa
 import pysam
 import sys, os, logging
 
@@ -106,6 +107,7 @@ class Cooper:
         self.win_start    = 0
         self.win_cov      = 0
         self.sa_win_start = 0
+        self.poa_aligner  = {'MF': pa.msa_aligner(cons_algrm='MF'), 'HB': pa.msa_aligner(cons_algrm='HB')}  # lazy initialisation of POA aligners
 
         self.outhandle = open(self.outfile, 'w')
 
@@ -486,7 +488,10 @@ class Cooper:
 
                 # --- methylation extraction ---
                 mod_bases = ()
-                mod_bases = (list(read.mod_bases.items()) if read.mod_bases is not None else [])
+                if read.has_tag('SA'):
+                    mod_bases = (list(read.mod_bases.items()) if read.mod_bases is not None else [])
+                else:
+                    mod_bases = (list(read.modified_bases.items()) if read.modified_bases is not None else [])
 
                 if read.has_tag('cs'):
                     parse_cstag(self, read)
@@ -821,7 +826,7 @@ class Cooper:
                     locus_data.gt_decomp_seqs = (decomp_seq, decomp_seq)
 
             else:
-                ALT, allele_length = alt_sequence(locus_data.read_aseqs, locus_data.reads, self.args.amplicon)
+                ALT, allele_length = alt_sequence(locus_data.read_aseqs, locus_data.reads, self.args.amplicon, self.poa_aligner)
                 meth_data = calculate_methylation(locus_data.reads, locus_data.read_methylation, ALT)
                 locus_data.gt_alens       = (len(ALT), len(ALT))
                 if ucluster: locus_data.gt_ucluster    = ('-'.join(ucluster), '-'.join(ucluster), None)
@@ -859,7 +864,7 @@ class Cooper:
                 ucluster     = [str(a) for a in sorted([x for x in alen_list if x < lower or x > upper])]
 
                 if seqs:
-                    ALT, allele_length = alt_sequence(locus_data.read_aseqs, hap_reads, self.args.amplicon)
+                    ALT, allele_length = alt_sequence(locus_data.read_aseqs, hap_reads, self.args.amplicon, self.poa_aligner)
                     allele_length = len(ALT)
                 else:
                     ALT           = '<DEL>'

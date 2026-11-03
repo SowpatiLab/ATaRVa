@@ -171,7 +171,7 @@ class ExtendedRead(pysam.AlignedSegment):
             ext.cs_tag            = read.get_tag('cs')
         if read.has_tag('MD'):
             ext.md_tag            = read.get_tag('MD')
-        if read.modified_bases:
+        if read.modified_bases and read.has_tag('SA'):
             ext.mod_bases         = read.modified_bases
         else:
             ext.mod_bases         = None

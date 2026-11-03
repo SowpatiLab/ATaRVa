@@ -3,6 +3,8 @@ import os
 import timeit as ti
 from pathlib import Path
 from multiprocessing import Pool
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures.process import BrokenProcessPool
 from tqdm import tqdm
 import pysam
 
@@ -297,27 +299,36 @@ def genotype_run(args) -> None:
                     pbar.update()
                     print(f'Thread failed: {e}', file=sys.stderr)
 
-                with Pool(processes=args.threads) as pool:
-                    results = []
-                    for thread_idx in range(args.threads):
-                        r = pool.apply_async(
-                            worker_init,
-                            args     = (bam_file, fetcher[thread_idx],
-                                        args, out_file, sample_idx, thread_idx),
-                            callback = on_success,
-                            error_callback = on_error    # catch thread failures
-                        )
-                        results.append(r)
-                    pool.close()
-                    pool.join()
+                with ProcessPoolExecutor(max_workers=args.threads) as ex:
+                    futures = {
+                        ex.submit(worker_init, bam_file, fetcher[i], args, out_file, sample_idx, i): i
+                        for i in range(args.threads)
+                    }
 
-                # ── verify all threads completed successfully ─────────────────
-                for i, r in enumerate(results):
-                    try:
-                        r.get()                          # raises exception if thread failed
-                    except Exception as e:
-                        all_success = False
-                        errors.append(f'Thread {i}: {e}')
+                    # ── verify threads as they finish; stop everything on the first failure ──
+                    for f in as_completed(futures):
+                        i = futures[f]
+                        try:
+                            on_success(f.result())           # raises if the worker failed
+                        except BrokenProcessPool:
+                            all_success = False
+                            errors.append(f'Thread {i}: worker was killed (likely out of memory)')
+                            break
+                        except BaseException as e:           # includes MemoryError and KeyboardInterrupt
+                            all_success = False
+                            errors.append(f'Thread {i}: {e!r}')
+                            on_error(e)
+                            break
+
+                    if not all_success:                      # kill the surviving workers right away
+                        for p in list((ex._processes or {}).values()):
+                            p.terminate()
+                        ex.shutdown(wait=False, cancel_futures=True)
+
+                if not all_success:
+                    for msg in errors:
+                        print(msg, file=sys.stderr)
+                    sys.exit(1) 
 
             # ── only concat if all threads succeeded ─────────────────────────
             if all_success:

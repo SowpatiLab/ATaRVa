@@ -12,7 +12,6 @@ from hdbscan           import HDBSCAN
 
 from ATARVA.vcf_writer import *
 from ATARVA.sub_operation_utils import alt_sequence, calculate_methylation
-from ATARVA.consensus import consensus_seq_poa
 
 
 def _assign_genotype(cooper, locus_key, locus_data, c1_idx, c2_idx, c1_lengths,
@@ -98,7 +97,7 @@ def homozygous_call(cooper, locus_key):
     lower, upper = (round(x) for x in np.percentile(np.array(hap_lengths), [2.5, 97.5]))
     ucluster     = [str(a) for a in sorted([x for x in hap_lengths if x < lower or x > upper])]
 
-    ALT, allele_length = alt_sequence(locus_data.read_aseqs, hap_reads, cooper.args.amplicon)
+    ALT, allele_length = alt_sequence(locus_data.read_aseqs, hap_reads, cooper.args.amplicon, cooper.poa_aligner)
 
     locus_data.gt_aseqs        = (ALT, None)
     locus_data.gt_alens        = (allele_length, None)
@@ -135,7 +134,7 @@ def heterozygous_call(cooper, locus_key):
         hap_reads = hap_read_sets[i]
         phased_reads |= set(hap_reads)
         hap_lengths = hap_alen_sets[i]
-        ALT, allele_length = alt_sequence(locus_data.read_aseqs, hap_reads, cooper.args.amplicon)
+        ALT, allele_length = alt_sequence(locus_data.read_aseqs, hap_reads, cooper.args.amplicon, cooper.poa_aligner)
         lower, upper = (round(x) for x in np.percentile(np.array(hap_lengths), [2.5, 97.5]))
         ucluster = [str(a) for a in sorted([x for x in hap_lengths if x < lower or x > upper])]
         if i == 0:

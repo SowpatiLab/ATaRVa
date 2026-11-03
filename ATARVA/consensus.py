@@ -61,7 +61,7 @@ def seq_alter_median(seqs):
     return upper_batch
 
 
-def consensus_seq_poa(seqs, amplicon):
+def consensus_seq_poa(seqs, amplicon, poa_aligner):
     """
     Builds a consensus sequence from a list of sequences using Partial Order Alignment (POA) algorithm.
 
@@ -104,5 +104,5 @@ def consensus_seq_poa(seqs, amplicon):
         return ''.join(Counter(bases).most_common(1)[0][0] for bases in zip(*fseqs))
 
     sorted_seqs = seq_organiser(seqs) if not amplicon else seq_alter_median(seqs)
-    result = pa.msa_aligner(cons_algrm=cons_algrm).msa(sorted_seqs, out_cons=True, out_msa=False)
+    result = poa_aligner[cons_algrm].msa(sorted_seqs, out_cons=True, out_msa=False)
     return result.cons_seq[0]

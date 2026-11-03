@@ -48,7 +48,7 @@ def analyse_genotype(cooper, locus_key):
         hap_reads   = sorted(hap_reads)
         phased_reads |= set(hap_reads)
         hap_lengths = locus_data.hap_alen_sets[i]
-        ALT, allele_length = alt_sequence(locus_data.read_aseqs, hap_reads, cooper.args.amplicon)
+        ALT, allele_length = alt_sequence(locus_data.read_aseqs, hap_reads, cooper.args.amplicon, cooper.poa_aligner)
         lower, upper = (round(x) for x in np.percentile(np.array(hap_lengths), [2.5, 97.5]))
         ucluster = [str(a) for a in sorted([x for x in hap_lengths if x < lower or x > upper])]
         if i == 0:
