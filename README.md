@@ -6,8 +6,9 @@
   <img src="lib/atrv_logo.png" alt="Logo of ATaRVa" width="200"/>
 </p>
 
-ATaRVa (pronounced uh-thur-va, IPA: /əθərvə/, Sanskrit: अथर्व) is a technology-agnostic tandem repeat genotyper, specially designed for long read data. The name expands to **A**nalysis of **Ta**ndem **R**epeat **Va**riation, and is derived from the the Sanskrit word _Atharva_ meaning knowledge.
+ATaRVa (pronounced uh-thur-va, IPA: /əθərvə/, Sanskrit: अथर्व) is a technology-agnostic tandem repeat genotyper, specially designed for long read data. The name expands to **A**nalysis of **Ta**ndem **R**epeat **Va**riation, and is derived from the the Sanskrit word _Atharva_ meaning knowledge. ATaRVa is a collaborative effort between the [Sowpati Lab](https://genomics.ccmb.res.in/sowpatilab/) at CSIR-CCMB, India and [Dashnow Lab](http://dashnowlab.org/) at CU Anschutz, USA.
 
+**Note:** ATaRVa is under rapid development. We are currently doing a full code refactoring and cleanup on the `dev` branch, along with a few improvements to accuracy and addition of new features. If you want to test it out but don't mind some potential bugs, please clone the `dev` branch directly and install.
 
 ## Motivation
 Long-read sequencing propelled comprehensive analysis of tandem repeats (TRs) in genomes. Current long-read TR genotypers are either platform specific or computationally inefficient. ATaRVa outperforms existing tools while running an order of magnitude faster. ATaRVa also supports multi-threading, haplotyping, motif decomposition and methylation profiling, making it an invaluable tool for population scale TR analyses.
