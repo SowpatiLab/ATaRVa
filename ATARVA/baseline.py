@@ -30,6 +30,10 @@ SKIP_MESSAGES = {
 
 WINDOW_SIZE      = 1000
 WINDOW_THRESHOLD = 500
+DROP_DISTANCE    = 30000     #  if softclip_mode else 0    # distance beyond which reads and loci are dropped from memory
+SA_DROP_DISTANCE = 500000    # distance beyond which supplementary alignments are dropped from memory
+NONREP_FLANK     = 30        # Minimum non-repetitive flank considered for locus processing from softclip region
+SOFT_DISTANCE    = 10000
 
 def _hidden_path(out_file):
     """Return a hidden-file-prefixed path for thread output files."""
@@ -211,12 +215,9 @@ class Cooper:
 
         genotyped_count = 0
         read_index      = 0
-        NONREP_FLANK    = 30        # Minimum non-repetitive flank considered for locus processing from softclip region
 
         softclip_mode   = False
         if self.args.use_softclip or self.args.amplicon: softclip_mode = True
-        DROP_DISTANCE    = 30000 #  if softclip_mode else 0    # distance beyond which reads and loci are dropped from memory
-        SA_DROP_DISTANCE = 500000 # distance beyond which supplementary alignments are dropped from memory
 
         with PysamWarningCapture(self.logfile):
             for raw_read in self.bam.fetch(chrom, region_start, region_end):
@@ -580,11 +581,9 @@ class Cooper:
 
         genotyped_count = 0
         read_index      = 0
-        NONREP_FLANK    = 30        # Minimum non-repetitive flank considered for locus processing from softclip region
 
         softclip_mode   = False
         if self.args.use_softclip or self.args.amplicon: softclip_mode = True
-        SOFT_DISTANCE    = 10000 if softclip_mode else 0    # Should be close to average read length, to capture softclipped reads
         SA_DROP_DISTANCE = 500000 # distance beyond which supplementary alignments are dropped from memory
 
         with PysamWarningCapture(self.logfile):
