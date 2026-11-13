@@ -92,9 +92,9 @@ def genotype_parser(subparsers):
     parser.set_defaults(func=genotype_run)
 
 
-def splitfile_threads(tbx, contigs, total_loci, threads):
+def splitregions_density(tbx, contigs, total_loci, threads, read_size):
     """
-    split the input region file into per-thread chunks for parallel processing.
+    Split file based on density of loci. Drop sparse regions.
 
     :param tbx:        pysam Tabixfile object
     :param contigs:    list of contigs to process
@@ -103,6 +103,7 @@ def splitfile_threads(tbx, contigs, total_loci, threads):
     :return:           list of region chunk tuples, one per thread
     """
 
+    GAP = 3 * read_size if 3 * read_size > 100000 else 100000
     split_size  = total_loci // threads
     if split_size == 0:
         split_size = total_loci
@@ -114,6 +115,8 @@ def splitfile_threads(tbx, contigs, total_loci, threads):
 
     for contig in contigs:
         first_in_contig = True
+        prev_start      = None
+        prev_end        = None
 
         for row in tbx.fetch(contig):
             fields = row.split('\t')
@@ -124,6 +127,11 @@ def splitfile_threads(tbx, contigs, total_loci, threads):
                 start_coord = (int(fields[1]), int(fields[2]))
                 first_in_contig = False
 
+            if prev_start is not None and int(fields[1]) - prev_end > GAP:
+                end_coord = (prev_start, prev_end)
+                cur_chunk.append([chrom, start_coord, end_coord])
+                start_coord     = (int(fields[1]), int(fields[2]))
+
             if len(fetcher) < threads - 1 and line_count % split_size == 0:
                 end_coord = (int(fields[1]), int(fields[2]))
                 cur_chunk.append([chrom, start_coord, end_coord])
@@ -131,6 +139,9 @@ def splitfile_threads(tbx, contigs, total_loci, threads):
                 cur_chunk       = []
                 line_count      = 0
                 first_in_contig = True
+
+            prev_start = int(fields[1])
+            prev_end   = int(fields[2])
 
         if not first_in_contig:
             end_coord = (int(fields[1]), int(fields[2]))
@@ -247,7 +258,6 @@ def genotype_run(args) -> None:
     if total_loci < args.threads:
         args.threads = 1
 
-    fetcher = splitfile_threads(tbx, args.contigs, total_loci, args.threads)
     tbx.close()
 
     # --- karyotype setup ---
@@ -272,7 +282,11 @@ def genotype_run(args) -> None:
         sample_name = sample_stem(bam_file)
         print(f'Processing sample: {sample_name}\n', file=sys.stderr)
 
-        check_alnfile(bam_file, args)
+        AVG_READ = check_alnfile(bam_file, args)
+        tbx = pysam.Tabixfile(args.regions)
+        fetcher = splitregions_density(tbx, args.contigs, total_loci, args.threads, AVG_READ)
+        # fetcher = splitfile_threads(tbx, args.contigs, total_loci, args.threads)
+        tbx.close()
 
         # resolve per-sample output path
         if not args.vcf:

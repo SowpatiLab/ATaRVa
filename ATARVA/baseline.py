@@ -607,9 +607,13 @@ class Cooper:
 
         while self.next_locus_key is not None:
             _chrom, _start, _end, _motif = break_locuskey(self.next_locus_key)
-            print(self.chrom, _start + 1, '.', self.ref.fetch(_chrom, _start, _end), '.', 0,
-                  'FAIL', f'AC=0;AN=0;MOTIF={_motif};START={_start};END={_end};ID=.;REFCN={(_end-_start)//len(_motif)}',
-                  'GT:AL:CN:AR:SD:DP:SN:SQ:MA:MR:DS:MV:OL:FV:PS', f'.:.:.:.:.:0:.:.:.:.:.:.:.:.:.', file=self.outhandle, sep='\t')
+            if self.next_locus_key in self.genotyped_loci:
+                print(*self.genotyped_loci[self.next_locus_key], file=self.outhandle, sep='\t')
+                del self.genotyped_loci[self.next_locus_key]
+            else:
+                print(self.chrom, _start + 1, '.', self.ref.fetch(_chrom, _start, _end), '.', 0,
+                    'FAIL', f'AC=0;AN=0;MOTIF={_motif};START={_start};END={_end};ID=.;REFCN={(_end-_start)//len(_motif)}',
+                    'GT:AL:CN:AR:SD:DP:SN:SQ:MA:MR:DS:MV:OL:FV:PS', f'.:.:.:.:.:0:.:.:.:.:.:.:.:.:.', file=self.outhandle, sep='\t')
             self.next_locus_key = next(self.region_itr, None)
 
 

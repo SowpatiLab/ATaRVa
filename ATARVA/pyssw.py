@@ -19,12 +19,12 @@ import ATARVA.ssw_lib as ssw_lib
 def read(sFile):
     """
     read a sequence file
-    @param  sFile   sequence file
+    :param  sFile   sequence file
     """
     def read_one_fasta(f):
         """
         read a fasta file
-        @param  f   file handler
+        :param  f   file handler
         """
         sId = ''
         sSeq = ''
@@ -42,7 +42,7 @@ def read(sFile):
     def read_one_fastq(f):
         """
         read a fastq file
-        @param  f   file handler
+        :param  f   file handler
         """
         sId = ''
         sSeq = ''
@@ -102,7 +102,7 @@ def read(sFile):
 def to_int(seq, lEle, dEle2Int):
     """
     translate a sequence into numbers
-    @param  seq   a sequence
+    :param  seq   a sequence
     """
     num_decl = len(seq) * ct.c_int8
     num = num_decl()
@@ -120,11 +120,11 @@ def to_int(seq, lEle, dEle2Int):
 def align_one(ssw, qProfile, rNum, nRLen, nOpen, nExt, nFlag, nMaskLen):
     """
     align one pair of sequences
-    @param  qProfile   query profile
-    @param  rNum   number array for reference
-    @param  nRLen   length of reference sequence
-    @param  nFlag   alignment flag
-    @param  nMaskLen   mask length
+    :param  qProfile   query profile
+    :param  rNum   number array for reference
+    :param  nRLen   length of reference sequence
+    :param  nFlag   alignment flag
+    :param  nMaskLen   mask length
     """
     res = ssw.ssw_align(qProfile, rNum, ct.c_int32(nRLen), nOpen, nExt, nFlag, 0, 0, nMaskLen)
 
@@ -145,11 +145,11 @@ def align_one(ssw, qProfile, rNum, nRLen, nOpen, nExt, nFlag, nMaskLen):
 def buildPath(q, r, nQryBeg, nRefBeg, lCigar):
     """
     build cigar string and align path based on cigar array returned by ssw_align
-    @param  q   query sequence
-    @param  r   reference sequence
-    @param  nQryBeg   begin position of query sequence
-    @param  nRefBeg   begin position of reference sequence
-    @param  lCigar   cigar array
+    :param  q   query sequence
+    :param  r   reference sequence
+    :param  nQryBeg   begin position of query sequence
+    :param  nRefBeg   begin position of reference sequence
+    :param  lCigar   cigar array
     """
     sCigarInfo = 'MIDNSHP=X'
     sCigar = ''

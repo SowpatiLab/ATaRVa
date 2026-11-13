@@ -76,12 +76,14 @@ def check_alnfile(bamfile, args):
     :param args: command line arguments
     :returns: srs (boolean) - True if SRS mode, False if LRS mode
     """
-    n_reads = 0
-    aln_file = pysam.AlignmentFile(bamfile, args.aln_format)
+    n_reads   = 0
+    aln_file  = pysam.AlignmentFile(bamfile, args.aln_format)
+    bases     = 0
     for read in aln_file.fetch():
         if (read.flag & 0X400) or (read.flag & 0X100): continue 
 
         n_reads += 1
+        bases   += read.query_length
         if read.has_tag('cs'):
             print("CS tag detected. Processing using CS tag...\n")
             break
@@ -92,20 +94,10 @@ def check_alnfile(bamfile, args):
             print("MD tag detected. Processing using MD tag...")
             print("Include CS tag or CIGAR tag with 'X/=' for faster processing.\n")
             break
-        if n_reads > 100:
+        if n_reads > 1000:
             print(f"No tags detected in {bamfile.split('/')[-1]}. Processing without tags...")
             print("Include the CS tag, MD tag, or CIGAR tag with 'X/=' for faster processing.\n")
             break
-    aln_file.close()
 
-    srs = False
-    # if (args.read_wise and args.locus_wise):
-    #     print('Error: Choose either Read-wise or Loci-wise genotyping mode!!')
-    #     sys.exit()
-    # elif args.locus_wise:
-    #     srs = True
-    #     print('Processing in Loci-wise genotyping mode...')
-    # else:
-    #     srs = False
-    #     print('Processing in Read-wise genotyping mode...')
-    return srs
+    aln_file.close()
+    return bases/n_reads if n_reads > 0 else None
