@@ -1,9 +1,11 @@
 import sys
 import pysam
-from ATARVA.decompose import motif_decomposition
-from ATARVA.version import __version__
 import time as ti
 
+from ATARVA.version     import __version__
+from ATARVA.locus_utils import break_locuskey
+
+SA_DROP_DISTANCE = 500000    # distance beyond which supplementary alignments are dropped from memory
 
 INFO_MP_CUTOFF = 0.5
 def set_info_mp_cutoff(val):
@@ -73,6 +75,35 @@ def vcf_writer(args, out, bam, bam_name):
     out.write(str(vcf_header))
 
 
+def ordered_write(cooper, locus_key, record):
+    """
+    Write the VCF record for a locus in order based on the region iterator
+
+    @param cooper: Cooper object containing the locus information
+    @param locus_key: key for the locus in the format 'chrom:start-end'
+    @param record: list of VCF record fields to be written
+    """
+    
+    if locus_key == cooper.next_locus_key:
+        print(*record, file=cooper.outhandle, sep='\t')
+        cooper.next_locus_key = next(cooper.region_itr, None)
+        while cooper.next_locus_key in cooper.genotyped_loci:
+            print(*cooper.genotyped_loci[cooper.next_locus_key], file=cooper.outhandle, sep='\t')
+            del cooper.genotyped_loci[cooper.next_locus_key]
+            cooper.next_locus_key = next(cooper.region_itr, None)
+    else:
+        chrom,   start,  end,  motif = break_locuskey(locus_key)
+        _chrom, _start, _end, _motif = break_locuskey(cooper.next_locus_key)
+        while start - _end > SA_DROP_DISTANCE:
+            print(cooper.chrom, _start + 1, '.', cooper.ref.fetch(_chrom, _start, _end), '.', 0, 'FAIL',
+                  f'AC=0;AN=0;MOTIF={_motif};START={_start};END={_end};ID=.;REFCN={(_end-_start)//len(_motif)}',
+                  'GT:AL:CN:AR:SD:DP:SN:SQ:MA:MR:DS:MV:OL:FV:PS', f'.:.:.:.:.:0:.:.:.:.:.:.:.:.:.',
+                  file=cooper.outhandle, sep='\t')
+            cooper.next_locus_key = next(cooper.region_itr, None)
+            _chrom, _start, _end, _motif = break_locuskey(cooper.next_locus_key)
+        cooper.genotyped_loci[locus_key] = record
+
+
 def write_fail_call(cooper, locus_key):
     """
     entry for vcf failed call
@@ -101,7 +132,8 @@ def write_fail_call(cooper, locus_key):
     FORMAT = 'GT:AL:CN:AR:SD:DP:SN:SQ:MA:MR:DS:MV:OL:FV:PS'
     SAMPLE = f'.:.:.:.:.:{depth}:.:.:.:.:.:.:.:.:.'
 
-    print(*[locus.chrom, locus.start + 1, '.',  cooper.ref.fetch(locus.chrom, locus.start, locus.end), '.', 0, FILTER, INFO, FORMAT, SAMPLE], file=cooper.outhandle, sep='\t')
+    record = [locus.chrom, locus.start + 1, '.',  cooper.ref.fetch(locus.chrom, locus.start, locus.end), '.', 0, FILTER, INFO, FORMAT, SAMPLE]
+    ordered_write(cooper, locus_key, record)
 
 
 def write_homozygous_call(cooper, locus_key):
@@ -209,7 +241,8 @@ def write_homozygous_call(cooper, locus_key):
         )
 
     # --- write VCF record ---
-    print(cooper.chrom, locus.start + 1, '.', ref_seq, ALT, 0, 'PASS', INFO, FORMAT, SAMPLE, file=cooper.outhandle, sep='\t')
+    record = [cooper.chrom, locus.start + 1, '.', ref_seq, ALT, 0, 'PASS', INFO, FORMAT, SAMPLE]
+    ordered_write(cooper, locus_key, record)
 
 
 def write_heterozygous_call(cooper, locus_key):
@@ -348,4 +381,5 @@ def write_heterozygous_call(cooper, locus_key):
             f':{PS}'
         )
 
-    print(*[cooper.chrom, locus.start + 1, '.',  ref_allele, ALT, 0, 'PASS', INFO, FORMAT, SAMPLE], file=cooper.outhandle, sep='\t')
+    record = [cooper.chrom, locus.start + 1, '.',  ref_allele, ALT, 0, 'PASS', INFO, FORMAT, SAMPLE]
+    ordered_write(cooper, locus_key, record)

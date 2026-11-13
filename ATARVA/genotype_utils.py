@@ -4,6 +4,7 @@ from ATARVA.snp_utils import haplocluster_reads
 from ATARVA.vcf_writer import *
 from ATARVA.sub_operation_utils import alt_sequence
 from ATARVA.length_utils import *
+from ATARVA.decompose import motif_decomposition
 
 # NOTE: after genotyping and haplogrouping, before reporting the locus build the ALT sequence
 #       and calculate methylation level for the haplotypes

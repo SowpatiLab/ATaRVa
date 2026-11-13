@@ -1,8 +1,8 @@
 from bisect import bisect_left, bisect_right
 
 from ATARVA.realignment import stripSW, Inputs
-from ATARVA.vcf_writer  import write_fail_call
 from ATARVA.process_softclips import cigar_stats
+
 
 def break_locuskey(locus_key):
     """
