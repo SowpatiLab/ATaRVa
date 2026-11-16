@@ -85,13 +85,6 @@ def test_complete_pipeline(tmp_path):
         text=True
     )
 
-    print("Return code:", result.returncode)
-    print("STDOUT:", result.stdout)
-    print("STDERR:", result.stderr)
-
-    print("Output directory:", tmp_path)
-    print("Output exists:", output_vcf.exists())
-
     # Check successful execution
     assert result.returncode == 0, (
         f"Pipeline failed!\nSTDOUT:\n{result.stdout}\n"
