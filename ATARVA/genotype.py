@@ -11,7 +11,7 @@ import pysam
 from ATARVA.readers       import fasta_check, bam_check, tabix_check
 from ATARVA.version       import __version__
 from ATARVA.baseline      import Cooper
-from ATARVA.readers       import *
+from ATARVA.readers       import check_alnfile
 from ATARVA.vcf_writer    import set_info_mp_cutoff
 from ATARVA.sub_operation_utils import set_methviz_tag
 
@@ -79,6 +79,7 @@ def genotype_parser(subparsers):
                                                                    " first uses KDE modeling for genotyping [default: False]")
     opt.add_argument('--strict',         action='store_true', help="strict mode: stick to the coordinates in the reference catalog. If flank is greater than 0"
                                                                    " and there are indels in the flanking regions, the locus is flagged for format FV as 1. [Default: False]")
+    opt.add_argument('--gvcf',           action='store_true', help="gvcf mode: write gVCF output. Include all loci from the reference catalog in the VCF. [Default: False]")
 
     # Misc
     opt.add_argument('-t',   '--threads',      metavar='<INT>', type=int, default=1, help='number of threads [default: 1]')
@@ -285,7 +286,6 @@ def genotype_run(args) -> None:
         AVG_READ = check_alnfile(bam_file, args)
         tbx = pysam.Tabixfile(args.regions)
         fetcher = splitregions_density(tbx, args.contigs, total_loci, args.threads, AVG_READ)
-        # fetcher = splitfile_threads(tbx, args.contigs, total_loci, args.threads)
         tbx.close()
 
         # resolve per-sample output path

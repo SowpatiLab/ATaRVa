@@ -1,10 +1,10 @@
 import numpy as np
 
 from ATARVA.snp_utils import haplocluster_reads
-from ATARVA.vcf_writer import *
+from ATARVA.vcf_writer import write_heterozygous_call
 from ATARVA.sub_operation_utils import alt_sequence
-from ATARVA.length_utils import *
-from ATARVA.decompose import motif_decomposition
+from ATARVA.length_utils import length_genotyper, length_genotyper_kde, length_genotyper_hdbscan
+from ATARVA.decompose import motif_decomposition, longest_pure_repeat
 
 # NOTE: after genotyping and haplogrouping, before reporting the locus build the ALT sequence
 #       and calculate methylation level for the haplotypes
@@ -60,6 +60,9 @@ def analyse_genotype(cooper, locus_key):
             locus_data.gt_ucluster     = ('-'.join(ucluster), locus_data.gt_ucluster[1])
             if cooper.args.decompose and ALT != '<DEL>':
                 decomp_seq, nonrep_fraction = motif_decomposition(ALT, locus.motif_length)
+                lpm, lpcn  = longest_pure_repeat(ALT, locus.motif)
+                locus_data.gt_lpm          = (lpm,  locus_data.gt_lpm[1])
+                locus_data.gt_lpcn         = (lpcn, locus_data.gt_lpcn[1])
                 locus_data.gt_decomp_seqs  = (decomp_seq, locus_data.gt_decomp_seqs[1])
         else:
             locus_data.gt_aseqs        = (locus_data.gt_aseqs[0], ALT)
@@ -69,6 +72,9 @@ def analyse_genotype(cooper, locus_key):
             locus_data.gt_ucluster     = (locus_data.gt_ucluster[0], '-'.join(ucluster))
             if cooper.args.decompose and ALT != '<DEL>':
                 decomp_seq, nonrep_fraction = motif_decomposition(ALT, locus.motif_length)
+                lpm, lpcn  = longest_pure_repeat(ALT, locus.motif)
+                locus_data.gt_lpm          = (locus_data.gt_lpm[0],  lpm)
+                locus_data.gt_lpcn         = (locus_data.gt_lpcn[0], lpcn)
                 locus_data.gt_decomp_seqs  = (locus_data.gt_decomp_seqs[0], decomp_seq)
 
     ucluster = [len(locus_data.read_aseqs[rid][0]) for rid in locus_data.reads if rid not in phased_reads]

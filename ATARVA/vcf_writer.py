@@ -6,6 +6,9 @@ from ATARVA.version     import __version__
 from ATARVA.locus_utils import break_locuskey
 
 SA_DROP_DISTANCE = 1000000    # distance beyond which supplementary alignments are dropped from memory
+FORMAT  = 'GT:AL:CN:LPM:LPCN:AR:SD:DP:SN:SQ:MA:MR:DS:MV:OL:FV:PS'
+def fail_format(depth=0):
+    return f'.:.:.:.:.:.:.:{depth}:.:.:.:.:.:.:.:.:.'
 
 INFO_MP_CUTOFF = 0.5
 def set_info_mp_cutoff(val):
@@ -56,21 +59,23 @@ def vcf_writer(args, out, bam, bam_name):
     vcf_header.info.add("AFD",   number=1,   type="String",   description="Allele length frequency for the reads supporting the locus")
 
     # FORMAT
-    vcf_header.formats.add("GT", number=1,   type="String",   description="Genotype")
-    vcf_header.formats.add("AL", number=2,   type="Integer",  description="Allele length in base pairs")
-    vcf_header.formats.add("CN", number=2,   type="Integer",  description="Motif copy number for each allele")
-    vcf_header.formats.add("AR", number='.', type="String",   description="Allele length range")
-    vcf_header.formats.add("SD", number='.', type="Integer",  description="Number of reads supporting each haplogroup")
-    vcf_header.formats.add("DP", number=1,   type="Integer",  description="Total supporting reads for the repeat locus")
-    vcf_header.formats.add("SN", number='.', type="Integer",  description="Number of informative SNPs used for phasing")
-    vcf_header.formats.add("SQ", number='.', type="Float",    description="Average Phred-scale base call quality of each informative SNP across the supporting reads")
-    vcf_header.formats.add("MA", number='.', type="Float",    description="Average  methylation level for each allele")
-    vcf_header.formats.add("MR", number='.', type="Integer",  description="Number of informative reads for methylation scoring for each allele")
-    vcf_header.formats.add("DS", number='A', type="String",   description="Motif decomposed sequence for each allele sequence")
-    vcf_header.formats.add("MV", number='.', type="String",   description="Base methylation score encoded for visualization for each allele")
-    vcf_header.formats.add("OL", number='1', type="String",   description="The outlier lengths observed in the phased reads and unphased reads for the locus")
-    vcf_header.formats.add("FV", number='1', type="String",   description="Flag indicating presence of variants in the flank of the repeat locus")
-    vcf_header.formats.add("PS", number='1', type="String",   description="Phase Set assigned in the phasing process if available in alignment file")
+    vcf_header.formats.add("GT",   number=1,   type="String",   description="Genotype")
+    vcf_header.formats.add("AL",   number=2,   type="Integer",  description="Allele length in base pairs")
+    vcf_header.formats.add("CN",   number=2,   type="Integer",  description="Motif copy number for each allele")
+    vcf_header.formats.add("LPM",  number=2,   type="String",   description="Longest pure motif repeat")
+    vcf_header.formats.add("LPCN", number=2,   type="String",   description="Copy number of longest pure motif repeat")
+    vcf_header.formats.add("AR",   number='.', type="String",   description="Allele length range")
+    vcf_header.formats.add("SD",   number='.', type="Integer",  description="Number of reads supporting each haplogroup")
+    vcf_header.formats.add("DP",   number=1,   type="Integer",  description="Total supporting reads for the repeat locus")
+    vcf_header.formats.add("SN",   number='.', type="Integer",  description="Number of informative SNPs used for phasing")
+    vcf_header.formats.add("SQ",   number='.', type="Float",    description="Average Phred-scale base call quality of each informative SNP across the supporting reads")
+    vcf_header.formats.add("MA",   number='.', type="Float",    description="Average  methylation level for each allele")
+    vcf_header.formats.add("MR",   number='.', type="Integer",  description="Number of informative reads for methylation scoring for each allele")
+    vcf_header.formats.add("DS",   number='A', type="String",   description="Motif decomposed sequence for each allele sequence")
+    vcf_header.formats.add("MV",   number='.', type="String",   description="Base methylation score encoded for visualization for each allele")
+    vcf_header.formats.add("OL",   number='1', type="String",   description="The outlier lengths observed in the phased reads and unphased reads for the locus")
+    vcf_header.formats.add("FV",   number='1', type="String",   description="Flag indicating presence of variants in the flank of the repeat locus")
+    vcf_header.formats.add("PS",   number='1', type="String",   description="Phase Set assigned in the phasing process if available in alignment file")
 
     out.write(str(vcf_header))
 
@@ -101,8 +106,7 @@ def ordered_write(cooper, locus_key, record):
             else:
                 print(cooper.chrom, _start + 1, '.', cooper.ref.fetch(_chrom, _start, _end), '.', 0, 'FAIL',
                       f'AC=0;AN=0;MOTIF={_motif};START={_start};END={_end};ID=.;REFCN={(_end-_start)//len(_motif)}',
-                      'GT:AL:CN:AR:SD:DP:SN:SQ:MA:MR:DS:MV:OL:FV:PS', f'.:.:.:.:.:0:.:.:.:.:.:.:.:.:.',
-                      file=cooper.outhandle, sep='\t')
+                      FORMAT, fail_format(), file=cooper.outhandle, sep='\t')
             cooper.next_locus_key = next(cooper.region_itr, None)
             _chrom, _start, _end, _motif = break_locuskey(cooper.next_locus_key)
         cooper.genotyped_loci[locus_key] = record
@@ -132,12 +136,13 @@ def write_fail_call(cooper, locus_key):
     # --- locus optional tag ---
     optional_tag = f';ID={locus.name}' if locus.name else ';ID=.'
 
-    INFO = 'AC=0;AN=0;MOTIF=' + str(locus.motif) + ';START=' + str(locus.start) + ';END=' + str(locus.end) + optional_tag + ';REFCN='+refcn
-    FORMAT = 'GT:AL:CN:AR:SD:DP:SN:SQ:MA:MR:DS:MV:OL:FV:PS'
-    SAMPLE = f'.:.:.:.:.:{depth}:.:.:.:.:.:.:.:.:.'
+    INFO   = 'AC=0;AN=0;MOTIF=' + str(locus.motif) + ';START=' + str(locus.start) + ';END=' + str(locus.end) + optional_tag + ';REFCN='+refcn
+    SAMPLE = fail_format(depth)
 
     record = [locus.chrom, locus.start + 1, '.',  cooper.ref.fetch(locus.chrom, locus.start, locus.end), '.', 0, FILTER, INFO, FORMAT, SAMPLE]
-    ordered_write(cooper, locus_key, record)
+    if cooper.args.gvcf:
+        ordered_write(cooper, locus_key, record)
+    else: print(*record, file=cooper.outhandle, sep='\t')
 
 
 def write_homozygous_call(cooper, locus_key):
@@ -183,9 +188,13 @@ def write_homozygous_call(cooper, locus_key):
     motif_copy = allele_length // locus.motif_length
 
     # --- decomposed sequence ---
+    decomposed_seq = '.'
+    lpm    = '.'
+    lpm_cn = '.'
     if cooper.args.decompose and locus.motif_length <= 10:
-        decomposed_seq = locus_data.gt_decomp_seqs[0] if locus_data.gt_decomp_seqs[0] else None
-    else: decomposed_seq = '.'
+        decomposed_seq = locus_data.gt_decomp_seqs[0] if locus_data.gt_decomp_seqs[0] else '.'
+        lpm    = locus_data.gt_lpm[0]  if locus_data.gt_lpm[0]  else '.'
+        lpm_cn = locus_data.gt_lpcn[0] if locus_data.gt_lpcn[0] else '.'
 
     # --- INFO field ---
     INFO = (
@@ -202,7 +211,6 @@ def write_homozygous_call(cooper, locus_key):
         INFO += f';CT=<TAG>'
 
     # --- SAMPLE field ---
-    FORMAT = 'GT:AL:CN:AR:SD:DP:SN:SQ:MA:MR:DS:MV:OL:FV:PS'
 
     allele_length = 0 if allele == '<DEL>' else len(allele)
     depth         = locus_data.depth
@@ -225,12 +233,13 @@ def write_homozygous_call(cooper, locus_key):
     if locus_data.hap_category == 3 and locus_data.is_phased:
         PS = list(set(locus_data.read_haplotag_ps.values())) if locus_data.read_haplotag_ps is not None else '.'
         if PS != '.': PS = PS[0]
-        FORMAT +=   ':PS'
         SAMPLE += f':{PS}'
     SAMPLE = (
             f'{GT}'
             f':{length_GT}'
             f':{units_GT}'
+            f':{lpm}'
+            f':{lpm_cn}'
             f':{allele_range}'
             f':{hap_depth}'
             f':{depth}'
@@ -246,7 +255,9 @@ def write_homozygous_call(cooper, locus_key):
 
     # --- write VCF record ---
     record = [cooper.chrom, locus.start + 1, '.', ref_seq, ALT, 0, 'PASS', INFO, FORMAT, SAMPLE]
-    ordered_write(cooper, locus_key, record)
+    if cooper.args.gvcf:
+        ordered_write(cooper, locus_key, record)
+    else: print(*record, file=cooper.outhandle, sep='\t')
 
 
 def write_heterozygous_call(cooper, locus_key):
@@ -343,8 +354,12 @@ def write_heterozygous_call(cooper, locus_key):
     INFO = f'AC={AC};AN={AN};MOTIF={locus.motif};START={locus.start};END={locus.end}{optional_tag};REFCN={ref_units}'
 
     decomposed_seqs = '.,.'
+    lpm = '.,.'
+    lpm_cn = '.,.'
     if cooper.args.decompose:
         decomposed_seqs = f'{locus_data.gt_decomp_seqs[0]},{locus_data.gt_decomp_seqs[1]}'
+        lpm    = f'{locus_data.gt_lpm[0]},{locus_data.gt_lpm[1]}'
+        lpm_cn = f'{locus_data.gt_lpcn[0]},{locus_data.gt_lpcn[1]}'
 
     num_snps = 0
     snp_quals = ''
@@ -352,7 +367,6 @@ def write_heterozygous_call(cooper, locus_key):
         num_snps  = locus_data.n_phasing_snps
         snp_quals = locus_data.phasing_snp_quals
     if snp_quals == '': snp_quals = '.'
-    FORMAT = 'GT:AL:CN:AR:SD:DP:SN:SQ:MA:MR:DS:MV:OL:FV:PS'
     FV = '1' if locus_data.flank_var else '0'
     OL = ''
     for uclust in locus_data.gt_ucluster:
@@ -365,12 +379,13 @@ def write_heterozygous_call(cooper, locus_key):
         PS = list(set(locus_data.read_haplotag_ps.values())) if locus_data.read_haplotag_ps is not None else '.'
         if PS != '.':
             PS = PS[0]
-        FORMAT += ':PS'
         SAMPLE += f':{PS}'
     SAMPLE = (
             f'{GT}'
             f':{length_GT}'
             f':{units_GT}'
+            f':{lpm}'
+            f':{lpm_cn}'
             f':{allele_range}'
             f':{SD}'
             f':{str(locus_data.depth)}'
@@ -386,4 +401,6 @@ def write_heterozygous_call(cooper, locus_key):
         )
 
     record = [cooper.chrom, locus.start + 1, '.',  ref_allele, ALT, 0, 'PASS', INFO, FORMAT, SAMPLE]
-    ordered_write(cooper, locus_key, record)
+    if cooper.args.gvcf:
+        ordered_write(cooper, locus_key, record)
+    else: print(*record, file=cooper.outhandle, sep='\t')

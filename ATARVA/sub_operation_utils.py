@@ -2,7 +2,7 @@ import string, sys
 import numpy as np
 from scipy import stats
 
-from ATARVA.consensus import *
+from ATARVA.consensus import consensus_seq_poa
 from ATARVA.decompose import motif_decomposition
 
 methviz_tag = False
@@ -180,7 +180,7 @@ def encode_methylation(call_matrix, pos_matrix, consensus_cgs):
 
         # filter sentinels and compute mean
         avg_base_meth = np.mean(col_array[(col_array != AMBIGUOUS) & (col_array != NO_MATCH)])
-        base64_scaled = round(avg_base_meth * 63)    # scale to 0-64
+        base64_scaled = round([round(avg_base_meth, 2) * 100] / 1.5625 )
         encoded_meth.append(BASE64_CHARS[base64_scaled])
 
     return ''.join(encoded_meth)

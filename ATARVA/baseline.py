@@ -8,7 +8,7 @@ from tqdm import tqdm
 from sortedcontainers import SortedList
 from collections import defaultdict
 
-from ATARVA.decompose import motif_decomposition
+from ATARVA.decompose         import motif_decomposition, longest_pure_repeat
 from ATARVA.structures        import ReadLocusInfo, LocusInfo, ReadInfo, LocusVariation, ExtendedRead
 from ATARVA.vcf_writer        import vcf_writer, write_homozygous_call, write_heterozygous_call, write_fail_call
 from ATARVA.operation_utils   import clean_eqsign_readseq
@@ -34,6 +34,7 @@ DROP_DISTANCE    = 30000     #  if softclip_mode else 0    # distance beyond whi
 SA_DROP_DISTANCE = 500000    # distance beyond which supplementary alignments are dropped from memory
 NONREP_FLANK     = 30        # Minimum non-repetitive flank considered for locus processing from softclip region
 SOFT_DISTANCE    = 10000
+
 
 def _hidden_path(out_file):
     """Return a hidden-file-prefixed path for thread output files."""
@@ -682,7 +683,10 @@ class Cooper:
                 locus_data.hap_meth_data  = (meth_data, meth_data)
                 if self.args.decompose:
                     decomp_seq, nonrep_fraction = motif_decomposition(max_allele, locus.motif_length)
+                    lpm, lpcn  = longest_pure_repeat(max_allele, locus.motif)
                     locus_data.gt_decomp_seqs = (decomp_seq, decomp_seq)
+                    locus_data.gt_lpm         = (lpm, lpm)
+                    locus_data.gt_lpcn        = (lpcn, lpcn)
 
             else:
                 ALT, allele_length = alt_sequence(locus_data.read_aseqs, locus_data.reads, self.args.amplicon, self.poa_aligner)
@@ -694,7 +698,10 @@ class Cooper:
                 locus_data.hap_meth_data  = (meth_data, meth_data)
                 if self.args.decompose:
                     decomp_seq, nonrep_fraction = motif_decomposition(max_allele, locus.motif_length)
+                    lpm, lpcn  = longest_pure_repeat(max_allele, locus.motif)
                     locus_data.gt_decomp_seqs = (decomp_seq, decomp_seq)
+                    locus_data.gt_lpm         = (lpm, lpm)
+                    locus_data.gt_lpcn        = (lpcn, lpcn)
 
             write_homozygous_call(self, locus_key)
             locus_data.is_genotyped = 1
@@ -742,7 +749,10 @@ class Cooper:
                     locus_data.hap_meth_data   = (meth_data, locus_data.hap_meth_data[1])
                     if self.args.decompose and ALT != '<DEL>':
                         decomp_seq, nonrep_fraction = motif_decomposition(ALT, locus.motif_length)
+                        lpm, lpcn  = longest_pure_repeat(ALT, locus.motif_length)
                         locus_data.gt_decomp_seqs  = (decomp_seq, locus_data.gt_decomp_seqs[1])
+                        locus_data.gt_lpm          = (lpm, locus_data.gt_lpm[1])
+                        locus_data.gt_lpcn         = (lpcn, locus_data.gt_lpcn[1])
                 else:
                     locus_data.gt_aseqs        = (locus_data.gt_aseqs[0], ALT)
                     locus_data.gt_alens        = (locus_data.gt_alens[0], allele_length)
@@ -751,7 +761,10 @@ class Cooper:
                     locus_data.hap_meth_data   = (locus_data.hap_meth_data[0], meth_data)
                     if self.args.decompose and ALT != '<DEL>':
                         decomp_seq, nonrep_fraction = motif_decomposition(ALT, locus.motif_length)
+                        lpm, lpcn  = longest_pure_repeat(ALT, locus.motif_length)
                         locus_data.gt_decomp_seqs  = (locus_data.gt_decomp_seqs[0], decomp_seq)
+                        locus_data.gt_lpm          = (locus_data.gt_lpm[0], lpm)
+                        locus_data.gt_lpcn         = (locus_data.gt_lpcn[0], lpcn)
 
             (l1, u1) = np.percentile(alen_lists[0], [2.5, 97.5])
             (l2, u2) = np.percentile(alen_lists[1], [2.5, 97.5])
