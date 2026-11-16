@@ -1,4 +1,3 @@
-/test_data
 /build
 /ATaRVa.egg-info
 /ATARVA/__pycache__
@@ -7,3 +6,5 @@
 /test_data/*
 /scripts/*
 /notebooks/*
+/dist
+/tests/__pycache__
