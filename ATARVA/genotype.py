@@ -73,7 +73,6 @@ def genotype_parser(subparsers):
     opt.add_argument('--methviz',        action='store_true', help='write methylation-encoded sequence to VCF [default: False]')
 
     # Modes
-    opt.add_argument('--locus-wise',     action='store_true', help='read-wise genotyping for dense BED regions')
     opt.add_argument('--decompose',      action='store_true', help='write motif-decomposed sequence to VCF')
     opt.add_argument('--amplicon',       action='store_true', help="genotype mode for target-amplified high depth sequencing of pathogenic regions. This mode"
                                                                    " first uses KDE modeling for genotyping [default: False]")
