@@ -17,10 +17,6 @@ Strategy
 
 Requirements: pysam.   For thousands of inputs:  ulimit -n 65536
 Memory note: each open TabixFile holds its index in RAM -> ~ threads x samples x index size.
-
-Usage:
-  python merge_tr_vcfs_chunked.py -l vcf_list.txt -o merged.vcf.gz -t 16
-  python merge_tr_vcfs_chunked.py -l list.txt -o out.vcf.gz -t 16 --chunks-per-thread 1 --ref-vcf best.vcf.gz
 """
 import argparse
 import heapq
@@ -29,11 +25,13 @@ import re
 import shutil
 import sys
 import tempfile
-from array import array
 from multiprocessing import Pool
 from collections import Counter
 
 import pysam
+import numpy as np
+
+from ATARVA.baseline import PysamWarningCapture
 
 END_RE       = re.compile(r"(?:^|;)END=(\d+)")
 START_RE     = re.compile(r"(?:^|;)START=(\d+)")
@@ -70,7 +68,9 @@ def merge_parser(subparsers):
     optional.add_argument('--contigs',       nargs='+', help="Contigs to get merged [chr1 chr12 chr22 ..]. If not mentioned every contigs in the region file will be merged.")
     optional.add_argument('--format-keys',   nargs='+', metavar='<STR>', default=','.join(DEFAULT_KEYS), help=f"FORMAT keys to keep in output. GT is by default part of the"
                                                                                                                " output. (default: {','.join(DEFAULT_KEYS)})")
+    optional.add_argument('--length-based',  action='store_true', help="Remap GT to the shortest ALT alleles based on their lengths. (default: False)")
     optional.add_argument('-t', '--threads', type=int,  metavar='<INT>', default=1,    help="number of threads. [default: 1]")
+
 
     if (len(sys.argv) == 2) and (sys.argv[1] == 'merge'):
         parser.print_help()
@@ -81,18 +81,22 @@ def merge_parser(subparsers):
 
 def init_worker(paths):
     global _H
-    _H = [pysam.TabixFile(p) for p in paths]
+    with PysamWarningCapture(os.devnull):
+        _H = [pysam.TabixFile(p) for p in paths]
 
 
 def read_header(path):
-    tbx     = pysam.TabixFile(path)
-    hdr     = list(tbx.header)
-    contigs = list(tbx.contigs)
+    """Read header and contig list from a bgzipped + tabix-indexed VCF file."""
+    with PysamWarningCapture(os.devnull):
+        tbx     = pysam.TabixFile(path)
+        hdr     = list(tbx.header)
+        contigs = list(tbx.contigs)
     tbx.close()
     return hdr, contigs
 
 
 def sample_name(header_lines):
+    """Return the sample name from a VCF header."""
     chrom_line = [h for h in header_lines if h.startswith("#CHROM")][0]
     return chrom_line.rstrip("\n").split("\t")[9]
 
@@ -141,6 +145,7 @@ def catalog_iter(tbx, contig, lo, hi, fasta):
 
 
 def remap_gt(gt, amap):
+    """Remap GT alleles according to amap, which maps old allele indices to new merged ones."""
     parts = GT_SPLIT.split(gt)
     for i in range(0, len(parts), 2):
         a = parts[i]
@@ -148,40 +153,70 @@ def remap_gt(gt, amap):
             parts[i] = str(amap[int(a)])
     return "".join(parts)
 
-def count_alleles(gt, counter):
+
+def count_alleles(gt, alleles, counter, length_based):
+    """Count alleles in a GT field, updating counter. If length_based, count by allele length."""
     parts = GT_SPLIT.split(gt)
     for i in range(0, len(parts), 2):
         a = parts[i]
-        if a not in (".", "0", ""):
-            counter[int(a)] += 1
+        if a not in (".", ""):
+            allele = alleles[int(a)]
+            if length_based:
+                counter[len(allele)].update([allele])
+            else:
+                counter.update([allele])
+
 
 def allele_len(allele):
     if allele == "<DEL>": return 0
     else: return len(allele)
 
-def alts_onlen(alts):
+
+def consensus(seqs, min_freq=0.0, no_call="N", return_freqs=False):
     """
-    Calculate the alternates based on their lengths.
+    Majority-rule consensus of equal-length DNA sequences.
+    Positions where several bases tie for the highest count get the
+    IUPAC ambiguity code covering the tied bases (e.g. A/G -> R).
+
+    :param seqs:         list of equal-length strings
+    :param min_freq:     minimum frequency of the top base(s) among counted bases
+                         (A/C/G/T only) required to make a call; else `no_call`
+    :param no_call:      character emitted for uncallable positions
+    :param return_freqs: also return the per-position frequency of the top base(s)
     """
+    # bitmask: A=1, C=2, G=4, T=8  ->  IUPAC code (index 0 = nothing counted)
+    _IUPAC = np.frombuffer(b"-ACMGRSVTWYHKDBN", dtype=np.uint8)
+    seqs = [s.upper() for s in seqs]
+    L = len(seqs[0])
+    if any(len(s) != L for s in seqs):
+        raise ValueError("All sequences must have the same length")
 
-    alts_len = {}
-    for a in alts:
-        alen = allele_len(a)
-        if alen not in alts_len:
-            alts_len[alen] = [a]
-        else:
-            alts_len[alen].append(a)
+    arr = np.frombuffer("".join(seqs).encode("ascii"), dtype=np.uint8).reshape(len(seqs), L)
 
-    alens = sorted(alts_len.keys())
+    # (4, L) counts for A, C, G, T
+    counts = np.stack([(arr == ord(b)).sum(axis=0) for b in "ACGT"])
 
-    return alens, alts_len
+    total = counts.sum(axis=0)
+    top   = counts.max(axis=0)
+    freq  = np.divide(top, total, out=np.zeros(L), where=total > 0)
+
+    # every base tied for the top count (and count > 0) sets its bit
+    tied = (counts == top) & (top > 0)
+    mask = (tied * np.array([1, 2, 4, 8])[:, None]).sum(axis=0)
+
+    out = _IUPAC[mask].copy()
+    out[(total == 0) | (freq < min_freq)] = ord(no_call)
+    cons = out.tobytes().decode("ascii")
+
+    return (cons, freq) if return_freqs else cons
 
 
 def tamatr(args):
 
-    cid, catalog, ref_file, segments, keys, tmpdir = args
-    tbx   = pysam.TabixFile(catalog)
-    fasta = pysam.FastaFile(ref_file)
+    cid, catalog, ref_file, segments, keys, tmpdir, length_based = args
+    with PysamWarningCapture(os.devnull):
+        tbx   = pysam.TabixFile(catalog)
+        fasta = pysam.FastaFile(ref_file)
 
     n = len(_H)
     missing_str = ":".join("./." if k == "GT" else "." for k in keys)
@@ -217,26 +252,31 @@ def tamatr(args):
                 first = None
                 alts  = []
                 cols  = [missing_str] * n
+                ref_allele = None
                 if len(group) > 0:
                     first = group[0][1]
                     alts  = set()
                     for _, f in group:
+                        if ref_allele is None and f[3] != ".": ref_allele = f[3]
                         if f[4] != ".":
                             alts.update(f[4].split(","))
                     alts       = sorted(alts, key=lambda s: (allele_len(s), s))
                     alt_counts = {}
-                    alt_idx = {a: j + 1 for j, a in enumerate(alts)}
-                    # if args.length_based:
-                    #     alens, alts_len = alts_onlen(alts)
-                    #     ref_len = len(first[3])
-                    #     if ref_len in alens: alens.remove(ref_len)
-                    #     alt_idx = {a: j + 1 for j, a in enumerate(alens)}  # remap GT to the shortest ALT alleles
-                    #     alt_idx[ref_len] = 0
-                    #     for x in alt_idx: alt_counts[x] = Counter()
+                    gt_values  = {}
+                    if length_based:
+                        alens = sorted(set([len(a) for a in alts]))
+                        ref_len = len(first[3])
+                        if ref_len in alens: alens.remove(ref_len)
+                        gt_values = {a: j + 1 for j, a in enumerate(alens)}  # remap GT to the shortest ALT alleles
+                        gt_values[ref_len] = 0
+                        for x in gt_values: alt_counts[x] = Counter()
+                    else:
+                        gt_values  = {a: j + 1 for j, a in enumerate(alts)}
+                        alt_counts = Counter()
 
                     cols = [missing_str] * n
                     for i, f in group:
-                        format  = f[8]
+                        format    = f[8]
                         sel_keys  = fmt_cache.get(format)
                         if sel_keys is None:
                             fmt_keys = format.split(":")
@@ -244,17 +284,44 @@ def tamatr(args):
                             fmt_cache[format] = sel_keys
                         sample   = f[9].rstrip("\n").split(":")
                         loc_alts = f[4].split(",") if f[4] != "." else []
-                        # if args.length_based:
-                        #     amap = {j + 1: alt_idx[len(a)] for j, a in enumerate(loc_alts)}
-                        # else:
-                        amap = {j + 1: alt_idx[a] for j, a in enumerate(loc_alts)}
+                        amap = {}
+                        if length_based:
+                            amap = {j + 1: gt_values[len(a)] for j, a in enumerate(loc_alts)}
+                        else: amap = {j + 1: gt_values[a] for j, a in enumerate(loc_alts)}
                         row = []
                         for k, s in zip(keys, sel_keys):
                             v = sample[s] if 0 <= s < len(sample) else "."
                             if k == "GT" and v != ".":
+                                count_alleles(v, [ref_allele] + loc_alts, alt_counts, length_based)
                                 v = remap_gt(v, amap)
                             row.append(v)
                         cols[i-1] = ":".join(row)
+                    if length_based:
+                        new_alts = [None] * (len(gt_values) - 1)
+                        for alen in gt_values:
+                            if alen == len(ref_allele): continue
+                            consensus_seq = consensus(list(alt_counts[alen].elements()))
+                            new_alts[gt_values[alen] - 1] = consensus_seq
+                        alts = new_alts
+                        if "AN" in first[7]:
+                            an_idx = first[7].index("AN=")
+                            sc_idx = first[7].index(";", an_idx) if ";" in first[7][an_idx:] else len(first[7])
+                            first[7] = first[7][:an_idx] + f'AN={len(alts) + 1}' + first[7][sc_idx:]
+                        if "AC" in first[7]:
+                            ac_idx = first[7].index("AC=")
+                            sc_idx = first[7].index(";", ac_idx) if ";" in first[7][ac_idx:] else len(first[7])
+                            ac_value = ",".join([str(len(list(alt_counts[len(a)].elements()))) for a in alts])
+                            first[7] = first[7][:ac_idx] + f'AC={ac_value}' + first[7][sc_idx:]
+                    elif not length_based:
+                        if "AN" in first[7]:
+                            an_idx = first[7].index("AN=")
+                            sc_idx = first[7].index(";", an_idx) if ";" in first[7][an_idx:] else len(first[7])
+                            first[7] = first[7][:an_idx] + f'AN={len(alts) + 1}' + first[7][sc_idx:]
+                        if "AC" in first[7]:
+                            ac_idx = first[7].index("AC=")
+                            sc_idx = first[7].index(";", ac_idx) if ";" in first[7][ac_idx:] else len(first[7])
+                            ac_value = ",".join([str(alt_counts[a]) for a in alts])
+                            first[7] = first[7][:ac_idx] + f'AC={ac_value}' + first[7][sc_idx:]
 
                 elif len(group) == 0:
                     ref_seq = key[-1]
@@ -284,7 +351,8 @@ def splitfile_threads(tbx, contigs, threads):
     :return:           list of region chunk tuples, one per thread
     """
 
-    tbx = pysam.TabixFile(tbx)
+    with PysamWarningCapture(os.devnull):
+        tbx = pysam.TabixFile(tbx)
     total_loci = 0
     for contig in contigs:
         for _ in tbx.fetch(contig):
@@ -375,7 +443,7 @@ def run_merge(args):
 
     tmpdir = tempfile.mkdtemp(prefix="trmerge_", dir=os.path.dirname(os.path.abspath(args.out)))
     try:
-        jobs = [(i, catalog, fasta, segs, keys, tmpdir) for i, segs in enumerate(fetcher)]
+        jobs = [(i, catalog, fasta, segs, keys, tmpdir, args.length_based) for i, segs in enumerate(fetcher)]
         with Pool(min(args.threads, len(jobs)), initializer=init_worker, initargs=(paths,)) as pool:
             results = dict(pool.imap_unordered(tamatr, jobs))
 
