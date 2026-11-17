@@ -12,7 +12,7 @@ The `-i` / `--vcfs` option accepts multiple VCF files as input. Alternatively, a
 
 ## Usage
 ```
-usage: atarva merge [-h] -i <FILE> [<FILE> ...] -r <FILE> -f <FILE> -o <FILE> [--contigs CONTIGS [CONTIGS ...]] [--format-keys <STR> [<STR> ...]] [-t <INT>]
+usage: atarva merge [-h] -i <FILE> [<FILE> ...] -r <FILE> -f <FILE> -o <FILE> [--contigs CONTIGS [CONTIGS ...]] [--format-keys <STR> [<STR> ...]] [--length-based] [-t <INT>]
 
 Merge ATaRVa VCF files
 
@@ -28,9 +28,11 @@ Required arguments:
 
 Optional arguments:
   --contigs CONTIGS [CONTIGS ...]
-                        contigs to get merged [chr1 chr12 chr22 ..]. If not mentioned every contigs in the region file will be merged.
+                        Contigs to get merged [chr1 chr12 chr22 ..]. If not mentioned every contigs in the region file will be merged.
   --format-keys <STR> [<STR> ...]
-                        FORMAT keys to keep in output. GT is by default part of the output. (default: GT,AL,CN,AR,SD,DP,SN,SQ,MA,MR,DS,MV,OL,FV,PS)
+                        FORMAT keys to keep in output. GT is by default part of the output. (default: {','.join(DEFAULT_KEYS)})
+  --length-based        Merge genotypes based on their lengths instead of their sequence. Please note that this option leads to loss of sequence information of 
+                        individual alleles as a consensus is generated for alleles of the same sequence. (default: False)
   -t <INT>, --threads <INT>
                         number of threads. [default: 1]
 ```

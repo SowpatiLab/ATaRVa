@@ -57,8 +57,8 @@ usage: atarva genotype [-h] -f <FILE> -b <FILE> [<FILE> ...] -r <FILE> [-o <FILE
                        [--use-softclip] [--contigs CONTIGS [CONTIGS ...]] [--karyotype <STR> [<STR> ...]]
                        [--map-qual <INT>] [--min-reads <INT>] [--max-reads <INT>] [--flank <INT>] [--snp-dist <INT>]
                        [--snp-count <INT>] [--snp-qual <INT>] [--phased-frac <FLOAT>] [--cluster-frac <FLOAT>]
-                       [--haplotag <STR>] [--meth-prob <FLOAT>] [--methviz] [--locus-wise]
-                       [--decompose] [--amplicon] [--strict] [-t <INT>] [-log] [-v]
+                       [--haplotag <STR>] [--meth-prob <FLOAT>] [--methviz] [--locus-wise] [--decompose]
+                       [--amplicon] [--strict] [--gvcf] [-t <INT>] [-log] [-v]
 
 Required arguments:
   -f <FILE>, --fasta <FILE>
@@ -171,7 +171,7 @@ Optional arguments:
                         sample karyotypes e.g. XY XX
   --map-qual <INT>      minimum mapping quality [default: 5]
   --min-reads <INT>     minimum read coverage at a locus [default: 10]
-  --max-reads <INT>     maximum reads per locus [default: 100]
+  --max-reads <INT>     maximum reads per locus [default: 100; 5000 for amplicon mode]
   --flank <INT>         flank length (bp) to search for insertions [default: 10]
   --snp-dist <INT>      max SNP distance from repeat [default: 3000]
   --snp-count <INT>     number of SNPs for phasing [default: 3]
@@ -179,7 +179,7 @@ Optional arguments:
   --phased-frac <FLOAT>
                         min fraction of total spanning reads that are phased [default: 0.6]
   --cluster-frac <FLOAT>
-                        min fraction of total spanning reads that are phased to one cliuster [default: 0.2]
+                        min fraction of total spanning reads that are phased to one cliuster[default: 0.2, amplicon mode: 0.1]
   --haplotag <STR>      haplotag for phasing e.g. HP [default: None]
   --meth-prob <FLOAT>   min methylation probability [default: 0.5]
   --methviz             write methylation-encoded sequence to VCF [default: False]
@@ -187,6 +187,7 @@ Optional arguments:
   --decompose           write motif-decomposed sequence to VCF
   --amplicon            genotype mode for target-amplified high depth sequencing of pathogenic regions. This mode first uses KDE modeling for genotyping [default: False]
   --strict              strict mode: stick to the coordinates in the reference catalog. If flank is greater than 0 and there are indels in the flanking regions, the locus is flagged for format FV as 1. [Default: False]
+  --gvcf                gvcf mode: write gVCF output. Include all loci from the reference catalog in the VCF. [Default: False]
   -t <INT>, --threads <INT>
                         number of threads [default: 1]
   -log, --debug_mode    write debug messages to log file
@@ -304,6 +305,10 @@ Genotyping mode for targeted sequencing data. In this mode, the default values f
 ### `--strict`
 **Default**: *False*<br>
 When set to `True`, ATaRVa will not considered any flanking indels for genotyping of the locus.
+
+### `--gvcf`
+**Default**: *False*<br>
+When set to `True`, ATaRVa output a gVCF file with all repeat loci as in the input catalog, including those that are not genotyped.
 
 ### `-t or --threads`
 **Expects**: *INTEGER*<br>

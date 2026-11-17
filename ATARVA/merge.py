@@ -38,7 +38,7 @@ START_RE     = re.compile(r"(?:^|;)START=(\d+)")
 MOTIF_RE     = re.compile(r"(?:^|;)MOTIF=([^;]+)")
 TRID_RE      = re.compile(r"(?:^|;)ID=([^;]+)")
 GT_SPLIT     = re.compile(r"([/|])")
-DEFAULT_KEYS = ['GT', 'AL', 'CN', 'AR', 'SD', 'DP', 'SN', 'SQ', 'MA', 'MR', 'DS', 'MV', 'OL', 'FV', 'PS']
+DEFAULT_KEYS = ['GT', 'AL', 'CN', 'LPM', 'LPCN', 'AR', 'SD', 'DP', 'SN', 'SQ', 'MA', 'MR', 'DS', 'MV', 'OL', 'FV', 'PS']
 FLUSH_EVERY  = 100
 
 _H = []  # per-process tabix handles, set by init_worker
@@ -68,7 +68,9 @@ def merge_parser(subparsers):
     optional.add_argument('--contigs',       nargs='+', help="Contigs to get merged [chr1 chr12 chr22 ..]. If not mentioned every contigs in the region file will be merged.")
     optional.add_argument('--format-keys',   nargs='+', metavar='<STR>', default=','.join(DEFAULT_KEYS), help=f"FORMAT keys to keep in output. GT is by default part of the"
                                                                                                                " output. (default: {','.join(DEFAULT_KEYS)})")
-    optional.add_argument('--length-based',  action='store_true', help="Remap GT to the shortest ALT alleles based on their lengths. (default: False)")
+    optional.add_argument('--length-based',  action='store_true', help="Merge genotypes based on their lengths instead of their sequence. "
+                                                                       "Please note that this option leads to loss of sequence information of "
+                                                                       "individual alleles as a consensus is generated for alleles of the same sequence. (default: False)")
     optional.add_argument('-t', '--threads', type=int,  metavar='<INT>', default=1,    help="number of threads. [default: 1]")
 
 

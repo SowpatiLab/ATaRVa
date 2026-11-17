@@ -174,9 +174,7 @@ class Cooper:
             chrom = region_range[0]
             bam_stem = Path(bam_file).stem
             self._reinitialise()
-            if self.args.locus_wise: 
-                self.cooper_locusmode(region_range, cidx)
-            else: self.cooper_readmode(region_range, cidx)
+            self.cooper_readmode(region_range, cidx)
 
         self.bam.close()
         self.ref.close()
