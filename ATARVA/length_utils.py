@@ -107,7 +107,7 @@ def homozygous_call(cooper, locus_key):
     locus_data.gt_ucluster     = ('-'.join(ucluster), None)
     if cooper.args.decompose and ALT != '<DEL>':
         decomp_seq, nonrep_fraction = motif_decomposition(ALT, locus.motif_length)
-        lpm, lpcn  = longest_pure_repeat(ALT, locus.motif)
+        lpm, lpcn  = longest_pure_repeat(decomp_seq, locus.motif)
         locus_data.gt_decomp_seqs  = (decomp_seq, None)
         locus_data.gt_lpm          = (lpm,  None)
         locus_data.gt_lpcn         = (lpcn, None)
@@ -149,7 +149,7 @@ def heterozygous_call(cooper, locus_key):
             locus_data.gt_ucluster      = ('-'.join(ucluster), locus_data.gt_ucluster[1])
             if cooper.args.decompose and ALT != '<DEL>':
                 decomp_seq, nonrep_fraction = motif_decomposition(ALT, locus.motif_length)
-                lpm, lpcn  = longest_pure_repeat(ALT, locus.motif)
+                lpm, lpcn  = longest_pure_repeat(decomp_seq, locus.motif)
                 locus_data.gt_decomp_seqs   = (decomp_seq, locus_data.gt_decomp_seqs[1])
                 locus_data.gt_lpm           = (lpm,  locus_data.gt_lpm[1])
                 locus_data.gt_lpcn          = (lpcn, locus_data.gt_lpcn[1])
@@ -161,7 +161,7 @@ def heterozygous_call(cooper, locus_key):
             locus_data.gt_ucluster      = (locus_data.gt_ucluster[0], '-'.join(ucluster))
             if cooper.args.decompose and ALT != 'DEL':
                 decomp_seq, nonrep_fraction = motif_decomposition(ALT, locus.motif_length)
-                lpm, lpcn  = longest_pure_repeat(ALT, locus.motif)
+                lpm, lpcn  = longest_pure_repeat(decomp_seq, locus.motif)
                 locus_data.gt_decomp_seqs   = (locus_data.gt_decomp_seqs[0], decomp_seq)
                 locus_data.gt_lpm           = (locus_data.gt_lpm[0],  lpm)
                 locus_data.gt_lpcn          = (locus_data.gt_lpcn[0], lpcn)

@@ -6,7 +6,7 @@ from ATARVA.version     import __version__
 from ATARVA.locus_utils import break_locuskey
 
 SA_DROP_DISTANCE = 1000000    # distance beyond which supplementary alignments are dropped from memory
-FORMAT  = 'GT:AL:CN:LPM:LPCN:AR:SD:DP:SN:SQ:MA:MR:DS:MV:OL:FV:PS'
+FORMAT  = 'GT:AL:CN:LPM:LPS:AR:SD:DP:SN:SQ:MA:MR:DS:MV:OL:FV:PS'
 def fail_format(depth=0):
     return f'.:.:.:.:.:.:.:{depth}:.:.:.:.:.:.:.:.:.'
 
@@ -63,7 +63,7 @@ def vcf_writer(args, out, bam, bam_name):
     vcf_header.formats.add("AL",   number=2,   type="Integer",  description="Allele length in base pairs")
     vcf_header.formats.add("CN",   number=2,   type="Integer",  description="Motif copy number for each allele")
     vcf_header.formats.add("LPM",  number=2,   type="String",   description="Longest pure motif repeat")
-    vcf_header.formats.add("LPCN", number=2,   type="String",   description="Copy number of longest pure motif repeat")
+    vcf_header.formats.add("LPS",  number=2,   type="String",   description="Copy number of longest pure motif repeat")
     vcf_header.formats.add("AR",   number='.', type="String",   description="Allele length range")
     vcf_header.formats.add("SD",   number='.', type="Integer",  description="Number of reads supporting each haplogroup")
     vcf_header.formats.add("DP",   number=1,   type="Integer",  description="Total supporting reads for the repeat locus")

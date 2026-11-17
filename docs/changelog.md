@@ -2,9 +2,10 @@
 
 ### v0.9.5
 * Fixed missing entries bug in merged VCF file. Added length-based merging option in VCF merging.
-* Added the LPM and LPCN tags in format field of the output VCF file to match with v0.7.1. LPM - Longest Pure Motif, LPCN - Longest Pure Copy Number.
+* Added the LPM and LPS tags in format field of the output VCF file to match with v0.7.1. LPM - Longest Pure Motif, LPS - Longest Pure Copy Number.
 * Removed locus mode. Splitting the catalog to exclude large regions without repeats consequently skipping reads in those regions.
 * Added a `--gvcf` option to output a gVCF file with all repeat loci as in the input catalog.
+* Filtering out outliers using HDBSCAN in non-amplicon mode before generating the consensus sequence.
 
 ### v0.9.4
 * Fixed read contribution thresholds for each haplogroup to match with ATaRVA v0.7.1.

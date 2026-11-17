@@ -38,7 +38,7 @@ START_RE     = re.compile(r"(?:^|;)START=(\d+)")
 MOTIF_RE     = re.compile(r"(?:^|;)MOTIF=([^;]+)")
 TRID_RE      = re.compile(r"(?:^|;)ID=([^;]+)")
 GT_SPLIT     = re.compile(r"([/|])")
-DEFAULT_KEYS = ['GT', 'AL', 'CN', 'LPM', 'LPCN', 'AR', 'SD', 'DP', 'SN', 'SQ', 'MA', 'MR', 'DS', 'MV', 'OL', 'FV', 'PS']
+DEFAULT_KEYS = ['GT', 'AL', 'CN', 'LPM', 'LPS', 'AR', 'SD', 'DP', 'SN', 'SQ', 'MA', 'MR', 'DS', 'MV', 'OL', 'FV', 'PS']
 FLUSH_EVERY  = 100
 
 _H = []  # per-process tabix handles, set by init_worker

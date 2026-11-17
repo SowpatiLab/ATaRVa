@@ -681,7 +681,7 @@ class Cooper:
                 locus_data.hap_meth_data  = (meth_data, meth_data)
                 if self.args.decompose:
                     decomp_seq, nonrep_fraction = motif_decomposition(max_allele, locus.motif_length)
-                    lpm, lpcn  = longest_pure_repeat(max_allele, locus.motif)
+                    lpm, lpcn  = longest_pure_repeat(decomp_seq, locus.motif)
                     locus_data.gt_decomp_seqs = (decomp_seq, decomp_seq)
                     locus_data.gt_lpm         = (lpm, lpm)
                     locus_data.gt_lpcn        = (lpcn, lpcn)
@@ -695,8 +695,8 @@ class Cooper:
                 locus_data.gt_aseqs       = (ALT, ALT)
                 locus_data.hap_meth_data  = (meth_data, meth_data)
                 if self.args.decompose:
-                    decomp_seq, nonrep_fraction = motif_decomposition(max_allele, locus.motif_length)
-                    lpm, lpcn  = longest_pure_repeat(max_allele, locus.motif)
+                    decomp_seq, nonrep_fraction = motif_decomposition(ALT, locus.motif_length)
+                    lpm, lpcn  = longest_pure_repeat(decomp_seq, locus.motif)
                     locus_data.gt_decomp_seqs = (decomp_seq, decomp_seq)
                     locus_data.gt_lpm         = (lpm, lpm)
                     locus_data.gt_lpcn        = (lpcn, lpcn)
@@ -747,7 +747,7 @@ class Cooper:
                     locus_data.hap_meth_data   = (meth_data, locus_data.hap_meth_data[1])
                     if self.args.decompose and ALT != '<DEL>':
                         decomp_seq, nonrep_fraction = motif_decomposition(ALT, locus.motif_length)
-                        lpm, lpcn  = longest_pure_repeat(ALT, locus.motif_length)
+                        lpm, lpcn  = longest_pure_repeat(decomp_seq, locus.motif)
                         locus_data.gt_decomp_seqs  = (decomp_seq, locus_data.gt_decomp_seqs[1])
                         locus_data.gt_lpm          = (lpm, locus_data.gt_lpm[1])
                         locus_data.gt_lpcn         = (lpcn, locus_data.gt_lpcn[1])
@@ -759,7 +759,7 @@ class Cooper:
                     locus_data.hap_meth_data   = (locus_data.hap_meth_data[0], meth_data)
                     if self.args.decompose and ALT != '<DEL>':
                         decomp_seq, nonrep_fraction = motif_decomposition(ALT, locus.motif_length)
-                        lpm, lpcn  = longest_pure_repeat(ALT, locus.motif_length)
+                        lpm, lpcn  = longest_pure_repeat(decomp_seq, locus.motif)
                         locus_data.gt_decomp_seqs  = (locus_data.gt_decomp_seqs[0], decomp_seq)
                         locus_data.gt_lpm          = (locus_data.gt_lpm[0], lpm)
                         locus_data.gt_lpcn         = (locus_data.gt_lpcn[0], lpcn)
