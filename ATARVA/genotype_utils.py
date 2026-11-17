@@ -1,10 +1,10 @@
 import numpy as np
 
-from ATARVA.snp_utils import haplocluster_reads
-from ATARVA.vcf_writer import write_heterozygous_call
-from ATARVA.sub_operation_utils import alt_sequence
-from ATARVA.length_utils import length_genotyper, length_genotyper_kde, length_genotyper_hdbscan
-from ATARVA.decompose import motif_decomposition, longest_pure_repeat
+from ATARVA.snp_utils           import haplocluster_reads
+from ATARVA.vcf_writer          import write_heterozygous_call
+from ATARVA.length_utils        import length_genotyper, length_genotyper_kde, length_genotyper_hdbscan
+from ATARVA.decompose           import motif_decomposition, longest_pure_repeat
+from ATARVA.sub_operation_utils import alt_sequence, calculate_methylation
 
 # NOTE: after genotyping and haplogrouping, before reporting the locus build the ALT sequence
 #       and calculate methylation level for the haplotypes
