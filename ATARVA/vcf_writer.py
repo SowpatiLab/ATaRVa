@@ -45,6 +45,7 @@ def vcf_writer(args, out, bam, bam_name):
 
     # FILTER
     vcf_header.filters.add('LESS_READS', number=None, type=None, description="Read depth below threshold")
+    vcf_header.filters.add('FAIL',       number=None, type=None, description="Reads not encountered at the locus")
 
     # INFO
     vcf_header.info.add("AC",    number='A', type="Integer",  description="Number of alternate alleles in called genotypes")
