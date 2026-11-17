@@ -3,7 +3,7 @@ import edlib
 import ahocorasick
 
 from ATARVA.realignment import stripSW, Inputs
-from ATARVA.validation_tests import validate_cs_tag, validate_md_tag
+from ATARVA.validation_tests import validate_cs_cigar, validate_md_tag
 
 
 def build_kmer_automaton(seq: str, k: int = 10):

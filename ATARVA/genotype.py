@@ -121,6 +121,8 @@ def splitregions_density(tbx, contigs, total_loci, threads, read_size):
 
         for row in tbx.fetch(contig):
             fields = row.split('\t')
+            if first_in_contig and prev_start == int(fields[1]) and prev_end == int(fields[2]):
+                continue  # skip duplicate rows
             line_count += 1
 
             if first_in_contig:

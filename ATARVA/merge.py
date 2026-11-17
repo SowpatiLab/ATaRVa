@@ -31,10 +31,13 @@ import sys
 import tempfile
 from array import array
 from multiprocessing import Pool
+from collections import Counter
 
 import pysam
 
 END_RE       = re.compile(r"(?:^|;)END=(\d+)")
+START_RE     = re.compile(r"(?:^|;)START=(\d+)")
+MOTIF_RE     = re.compile(r"(?:^|;)MOTIF=([^;]+)")
 TRID_RE      = re.compile(r"(?:^|;)ID=([^;]+)")
 GT_SPLIT     = re.compile(r"([/|])")
 DEFAULT_KEYS = ['GT', 'AL', 'CN', 'AR', 'SD', 'DP', 'SN', 'SQ', 'MA', 'MR', 'DS', 'MV', 'OL', 'FV', 'PS']
@@ -94,41 +97,47 @@ def sample_name(header_lines):
     return chrom_line.rstrip("\n").split("\t")[9]
 
 
-def segment_iter(tbx, contig, lo, hi):
+def vcf_iter(tbx, contig, lo, hi):
     """Yield (key, fields) for records with lo <= POS < hi (hi=None -> open end)."""
     try:
-        it = tbx.fetch(contig, max(lo - 1, 0), None if hi is None else hi - 1)
+        it = tbx.fetch(contig, lo, hi + 1)
     except ValueError:  # contig absent in this file
         return
     for line in it:
         f = line.split("\t", 10)
         pos = int(f[1])
-        if pos < lo or (hi is not None and pos >= hi):
-            continue  # tabix returns overlapping records; keep only those starting here
-        m = END_RE.search(f[7])
-        t = TRID_RE.search(f[7])
-        locus_id = t.group(1) if t else f[2]
-        yield (pos, int(m.group(1)) if m else 0, f[3], locus_id), f
+        start  = START_RE.search(f[7])
+        start  = int(start.group(1)) if start else pos
+        if start < lo: continue
+        if start > hi: break
+        end    = END_RE.search(f[7])
+        end    = int(end.group(1)) if end else pos + len(f[3])
+        motif  = MOTIF_RE.search(f[7])
+        motif  = motif.group(1) if motif else f[3]
+        _id    = TRID_RE.search(f[7])
+        _id    = _id.group(1) if _id else f"{f[0]}-{start}-{end}-{motif}"
+        yield (start, end, motif, _id), f
 
 
 def catalog_iter(tbx, contig, lo, hi, fasta):
     """Yield (key, fields) for records with lo <= POS < hi (hi=None -> open end)."""
     try:
-        it = tbx.fetch(contig, max(lo, 0), hi)
+        it = tbx.fetch(contig, lo, hi + 1)
     except ValueError:  # contig absent in this file
         return
     for line in it:
         f = line.split("\t")
-        pos = int(f[1])
-        end = int(f[2])
+        start = int(f[1])
+        end   = int(f[2])
         motif = f[3]
-        locus_id = f'{f[0]}-{pos}-{end}-{motif}'
+        locus_id = f'{f[0]}-{start}-{end}-{motif}'
 
-        if pos < lo or pos > hi:
-            continue  # tabix returns overlapping records; keep only those starting here
+        if start < lo: continue
+        if start > hi: break
 
-        ref_seq = fasta.fetch(f[0], pos, end)
-        yield (pos+1, int(f[2]), ref_seq, locus_id), f + ["CATALOG"]  # add a sentinel to distinguish catalog records from sample records
+        ref_seq = fasta.fetch(f[0], start, end)
+        f.append("CATALOG") # add a keyword to distinguish catalog records from sample records
+        yield (start, end, motif, locus_id), f 
 
 
 def remap_gt(gt, amap):
@@ -138,6 +147,34 @@ def remap_gt(gt, amap):
         if a not in (".", "0", ""):
             parts[i] = str(amap[int(a)])
     return "".join(parts)
+
+def count_alleles(gt, counter):
+    parts = GT_SPLIT.split(gt)
+    for i in range(0, len(parts), 2):
+        a = parts[i]
+        if a not in (".", "0", ""):
+            counter[int(a)] += 1
+
+def allele_len(allele):
+    if allele == "<DEL>": return 0
+    else: return len(allele)
+
+def alts_onlen(alts):
+    """
+    Calculate the alternates based on their lengths.
+    """
+
+    alts_len = {}
+    for a in alts:
+        alen = allele_len(a)
+        if alen not in alts_len:
+            alts_len[alen] = [a]
+        else:
+            alts_len[alen].append(a)
+
+    alens = sorted(alts_len.keys())
+
+    return alens, alts_len
 
 
 def tamatr(args):
@@ -157,7 +194,7 @@ def tamatr(args):
             contig, lo, hi = segment
             lo = lo[0]
             hi = hi[0]
-            iters = [catalog_iter(tbx, contig, lo, hi, fasta)] + [segment_iter(h, contig, lo, hi) for h in _H]
+            iters = [catalog_iter(tbx, contig, lo, hi, fasta)] + [vcf_iter(h, contig, lo, hi) for h in _H]
             heap = []
             for i, it in enumerate(iters):
                 nxt = next(it, None)
@@ -182,27 +219,38 @@ def tamatr(args):
                 cols  = [missing_str] * n
                 if len(group) > 0:
                     first = group[0][1]
-                    alts = set()
+                    alts  = set()
                     for _, f in group:
                         if f[4] != ".":
                             alts.update(f[4].split(","))
-                    alts = sorted(alts, key=lambda s: (len(s), s))
+                    alts       = sorted(alts, key=lambda s: (allele_len(s), s))
+                    alt_counts = {}
                     alt_idx = {a: j + 1 for j, a in enumerate(alts)}
+                    # if args.length_based:
+                    #     alens, alts_len = alts_onlen(alts)
+                    #     ref_len = len(first[3])
+                    #     if ref_len in alens: alens.remove(ref_len)
+                    #     alt_idx = {a: j + 1 for j, a in enumerate(alens)}  # remap GT to the shortest ALT alleles
+                    #     alt_idx[ref_len] = 0
+                    #     for x in alt_idx: alt_counts[x] = Counter()
 
                     cols = [missing_str] * n
                     for i, f in group:
-                        fmt = f[8]
-                        sel = fmt_cache.get(fmt)
-                        if sel is None:
-                            names = fmt.split(":")
-                            sel = [names.index(k) if k in names else -1 for k in keys]
-                            fmt_cache[fmt] = sel
-                        vals = f[9].rstrip("\n").split(":")
-                        local = f[4].split(",") if f[4] != "." else []
-                        amap = {j + 1: alt_idx[a] for j, a in enumerate(local)}
+                        format  = f[8]
+                        sel_keys  = fmt_cache.get(format)
+                        if sel_keys is None:
+                            fmt_keys = format.split(":")
+                            sel_keys = [fmt_keys.index(k) if k in fmt_keys else -1 for k in keys]
+                            fmt_cache[format] = sel_keys
+                        sample   = f[9].rstrip("\n").split(":")
+                        loc_alts = f[4].split(",") if f[4] != "." else []
+                        # if args.length_based:
+                        #     amap = {j + 1: alt_idx[len(a)] for j, a in enumerate(loc_alts)}
+                        # else:
+                        amap = {j + 1: alt_idx[a] for j, a in enumerate(loc_alts)}
                         row = []
-                        for k, s in zip(keys, sel):
-                            v = vals[s] if 0 <= s < len(vals) else "."
+                        for k, s in zip(keys, sel_keys):
+                            v = sample[s] if 0 <= s < len(sample) else "."
                             if k == "GT" and v != ".":
                                 v = remap_gt(v, amap)
                             row.append(v)
@@ -210,14 +258,11 @@ def tamatr(args):
 
                 elif len(group) == 0:
                     ref_seq = key[-1]
-                    first = [locus[0], str(int(locus[1])+1), '.', ref_seq, '0', 'FAIL', '.', ':'.join(keys)]
-                    alts = []
+                    info = f'AC=0;AN=0;MOTIF={key[-1]};START={key[0]};END={key[1]};ID=.;REFCN={(key[1]-key[0])//len(ref_seq)}'
+                    first = [locus[0], str(int(locus[1])+1), '.', ref_seq, '0', 'FAIL', '.', info]
 
-                buf.append(
-                    "\t".join([first[0], first[1], first[2], first[3], ",".join(alts) or ".",
-                               ".", "PASS", first[7], ":".join(keys)])
-                    + "\t" + "\t".join(cols) + "\n"
-                )
+                entry = first[:4] + [",".join(alts) or "."] + [".", "PASS", first[7], ":".join(keys)] + cols
+                buf.append( "\t".join(entry) + "\n")
                 if len(buf) >= FLUSH_EVERY:
                     out.write("".join(buf).encode())
                     buf.clear()
@@ -229,18 +274,17 @@ def tamatr(args):
     return cid, out_path
 
 
-def splitfile_threads(regions, contigs, threads):
+def splitfile_threads(tbx, contigs, threads):
     """
     split the input region file into per-thread chunks for parallel processing.
 
     :param tbx:        pysam Tabixfile object
     :param contigs:    list of contigs to process
-    :param total_loci: total number of loci across all contigs
     :param threads:    number of parallel threads
     :return:           list of region chunk tuples, one per thread
     """
 
-    tbx = pysam.TabixFile(regions)
+    tbx = pysam.TabixFile(tbx)
     total_loci = 0
     for contig in contigs:
         for _ in tbx.fetch(contig):
@@ -255,49 +299,38 @@ def splitfile_threads(regions, contigs, threads):
     chrom       = None
     start_coord = None
 
+    _start, _end = None, None
+
     for contig in contigs:
         first_in_contig = True
-        itr = tbx.fetch(contig)
 
-        for row in itr:
+        fields = None
+        for row in tbx.fetch(contig):
             fields = row.split('\t')
             line_count += 1
+            if first_in_contig and _start == int(fields[1]) and _end == int(fields[2]):
+                continue  # skip duplicate rows
 
             if first_in_contig:
                 chrom       = fields[0]
                 start_coord = (int(fields[1]), int(fields[2]))
                 first_in_contig = False
 
-            if len(fetcher) < threads - 1 and line_count >= split_size:
-                while True:
-                    try: row = next(itr)
-                    except StopIteration:
-                        end_coord = (int(fields[1]), int(fields[2]))
-                        cur_chunk.append([chrom, start_coord, end_coord])
-                        fetcher.append(tuple(cur_chunk))
-                        cur_chunk       = []
-                        start_coord     = None
-                        line_count      = 0
-                        first_in_contig = True
-                        break
-                    _fields = row.split('\t')
+            if len(fetcher) < threads - 1 and line_count % split_size == 0:
+                end_coord = (int(fields[1]), int(fields[2]))
+                cur_chunk.append([chrom, start_coord, end_coord])
+                fetcher.append(tuple(cur_chunk))
+                cur_chunk       = []
+                line_count      = 0
+                first_in_contig = True
 
-                    if int(_fields[1]) > int(fields[2]) + 10:
-                        end_coord = (int(fields[1]), int(fields[2]))
-                        cur_chunk.append([chrom, start_coord, end_coord])
-                        fetcher.append(tuple(cur_chunk))
-                        cur_chunk       = []
-                        start_coord     = (int(_fields[1]), int(_fields[2]))
-                        line_count      = 1
-                        first_in_contig = True
-                        break
+            _start, _end = int(fields[1]), int(fields[2])
 
         if not first_in_contig:
             end_coord = (int(fields[1]), int(fields[2]))
             cur_chunk.append([chrom, start_coord, end_coord])
 
     fetcher.append(tuple(cur_chunk)) # pad with empty chunks if needed
-    tbx.close()
     return fetcher, total_loci
 
 

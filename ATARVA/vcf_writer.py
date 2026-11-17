@@ -104,9 +104,10 @@ def ordered_write(cooper, locus_key, record):
                 print(*cooper.genotyped_loci[cooper.next_locus_key], file=cooper.outhandle, sep='\t')
                 del cooper.genotyped_loci[cooper.next_locus_key]
             else:
-                print(cooper.chrom, _start + 1, '.', cooper.ref.fetch(_chrom, _start, _end), '.', 0, 'FAIL',
-                      f'AC=0;AN=0;MOTIF={_motif};START={_start};END={_end};ID=.;REFCN={(_end-_start)//len(_motif)}',
-                      FORMAT, fail_format(), file=cooper.outhandle, sep='\t')
+                if cooper.args.gvcf:
+                    print(cooper.chrom, _start + 1, '.', cooper.ref.fetch(_chrom, _start, _end), '.', 0, 'FAIL',
+                        f'AC=0;AN=0;MOTIF={_motif};START={_start};END={_end};ID=.;REFCN={(_end-_start)//len(_motif)}',
+                        FORMAT, fail_format(), file=cooper.outhandle, sep='\t')
             cooper.next_locus_key = next(cooper.region_itr, None)
             _chrom, _start, _end, _motif = break_locuskey(cooper.next_locus_key)
         cooper.genotyped_loci[locus_key] = record
@@ -140,9 +141,7 @@ def write_fail_call(cooper, locus_key):
     SAMPLE = fail_format(depth)
 
     record = [locus.chrom, locus.start + 1, '.',  cooper.ref.fetch(locus.chrom, locus.start, locus.end), '.', 0, FILTER, INFO, FORMAT, SAMPLE]
-    if cooper.args.gvcf:
-        ordered_write(cooper, locus_key, record)
-    else: print(*record, file=cooper.outhandle, sep='\t')
+    ordered_write(cooper, locus_key, record)
 
 
 def write_homozygous_call(cooper, locus_key):
@@ -255,9 +254,7 @@ def write_homozygous_call(cooper, locus_key):
 
     # --- write VCF record ---
     record = [cooper.chrom, locus.start + 1, '.', ref_seq, ALT, 0, 'PASS', INFO, FORMAT, SAMPLE]
-    if cooper.args.gvcf:
-        ordered_write(cooper, locus_key, record)
-    else: print(*record, file=cooper.outhandle, sep='\t')
+    ordered_write(cooper, locus_key, record)
 
 
 def write_heterozygous_call(cooper, locus_key):
@@ -401,6 +398,4 @@ def write_heterozygous_call(cooper, locus_key):
         )
 
     record = [cooper.chrom, locus.start + 1, '.',  ref_allele, ALT, 0, 'PASS', INFO, FORMAT, SAMPLE]
-    if cooper.args.gvcf:
-        ordered_write(cooper, locus_key, record)
-    else: print(*record, file=cooper.outhandle, sep='\t')
+    ordered_write(cooper, locus_key, record)

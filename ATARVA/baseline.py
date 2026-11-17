@@ -97,10 +97,10 @@ class Cooper:
             if args.debug_mode: self.logfile = f'{hidden}_debug_{thread_idx}.log'
 
         with PysamWarningCapture(self.logfile):
-            self.tbx = pysam.Tabixfile(args.regions)
+            self.tbx  = pysam.Tabixfile(args.regions)
             self._tbx = pysam.Tabixfile(args.regions)
-            self.bam = pysam.AlignmentFile(bam_file, args.aln_format, reference_filename=args.fasta)
-            self.ref = pysam.FastaFile(args.fasta)
+            self.bam  = pysam.AlignmentFile(bam_file, args.aln_format, reference_filename=args.fasta)
+            self.ref  = pysam.FastaFile(args.fasta)
 
         self.args           = args
         self.sample_idx     = sample_idx
