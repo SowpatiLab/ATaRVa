@@ -18,15 +18,16 @@ def fasta_check(path):
         sys.exit()
 
 
-def bam_check(path, aln_format):
+def bam_check(path, aln_format, fasta):
     """
     checks file existence and format of alignment file
 
     :param path: path to alignment file
     :param aln_format: format of the alignment file
+    :param fasta: path to reference fasta file (required to decode CRAM).
     """
     try:
-        b = pysam.AlignmentFile(path, aln_format)
+        b = pysam.AlignmentFile(path, aln_format, reference_filename=fasta)
         header = b.header
         if 'HD' in header and 'SO' in header['HD']:
             sort_order = header['HD']['SO']
@@ -77,7 +78,7 @@ def check_alnfile(bamfile, args):
     :returns: srs (boolean) - True if SRS mode, False if LRS mode
     """
     n_reads = 0
-    aln_file = pysam.AlignmentFile(bamfile, args.aln_format)
+    aln_file = pysam.AlignmentFile(bamfile, args.aln_format, reference_filename=args.fasta)
     for read in aln_file.fetch():
         if (read.flag & 0X400) or (read.flag & 0X100): continue 
 

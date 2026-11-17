@@ -225,7 +225,7 @@ def genotype_run(args) -> None:
     args.aln_format = FORMAT_MAP.get(args.aln_format, 'rb')
 
     for bam in args.bam:
-        bam_check(bam, args.aln_format)
+        bam_check(bam, args.aln_format, args.fasta)
 
     # --- VCF output setup ---
     set_info_mp_cutoff(args.meth_prob)
