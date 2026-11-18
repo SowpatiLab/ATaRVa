@@ -2,6 +2,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+def split_values(text, cast=str):
+    """'0.0,.' -> [0.0]   (a '.' means 'no value for this allele' and is skipped)."""
+    return [cast(v) for v in text.split(',') if v != '.']
+
 def extract_vcf_fields(vcf_file):
     """
     Extracts the CHROM, POS, REF, ALT, Allele, Meth and Meth_tag   fields from a VCF file.
@@ -15,7 +19,7 @@ def extract_vcf_fields(vcf_file):
             if line.startswith('#'):
                 continue  # Skip header lines
             columns = line.strip().split('\t')
-            if len(columns) < 8:
+            if len(columns) < 10:
                 continue  # Skip malformed lines
             chrom = columns[0]
             ref = columns[3]
@@ -26,18 +30,51 @@ def extract_vcf_fields(vcf_file):
             format_field = columns[8].split(':')
             sample_fields = columns[9].split(':')
 
-            # Extract Allele, Meth and Meth_tag from the SAMPLE field
+            # Extract Allele, Meth, DS and Meth_tag from the SAMPLE field
             sample_dict = dict(zip(format_field, sample_fields))
             allele = [int(i) for i in sample_dict.get('AL').split(',')] if '.' not in sample_dict.get('AL') else []
             meth = [float(i) for i in sample_dict.get('MA').split(',')] if '0' in sample_dict.get('MA') else []
+            ds = split_values(sample_dict['DS'])
             meth_tag = sample_dict.get('MV').split(',') if '.' not in sample_dict.get('MV') else []
 
-            extracted_data[f'{chrom}:{start}-{end}'] = (allele, meth, meth_tag)
+            extracted_data[f'{chrom}:{start}-{end}'] = (allele, meth, ds, meth_tag)
     return extracted_data
 
-expected_data = {'chr4:1000-1093' : ([108, 87], [0.0, 0.01], ['AAAAAAAA', 'AEEAAAAA']), # CAG - HD_HTT HG002 sample
-                 'chrX:1000-1062' : ([95, 95], [0.01, 0.01], ['AAAAADADAAAAAAADAADAAAADAADAA', 'AAAAADADAAAAAAADAADAAAADAADAA']), # CGG - FMR1 HG002 sample
-                 }
+expected_data = {
+'chr1:1000-1046': ([71, 71],
+                    [],
+                    ['TTTA-(TTTC)8-(TTTA)8-TTT', 'TTTA-(TTTC)9-(TTTA)7-TTT'],
+                    []),  # TTAT
+'chr10:1000-1007': ([7, 7],
+                    [],
+                    ['(GGA)2-A'],
+                    []),  # GGA
+'chr16:1000-1025': ([25, 25],
+                    [],
+                    ['TA-(GATG)5-GAT'],
+                    []),  # TGGA
+'chr2:1000-1053': ([67, 45],
+                    [],
+                    ['(TCTA)10-(TA)4-TC-(TA)6-TCTAT', '(TC)2-(TCTA)7-(TA)4-TCTAT'],
+                    []),  # TCTA
+'chr3:1000-1036': ([51, 48],
+                    [0.0],
+                    ['(AAGG)8-GGCGAGCAAGGAATGAAGG', '(AAGG)12'],
+                    ['A']),  # CT
+'chr4:1000-1057': ([72, 51],
+                    [],
+                    ['(CAG)24', '(CAG)17'],
+                    []),  # CAG
+'chr9:1000-1026': ([26, 26],
+                    [],
+                    [],
+                    []),  # AAAAT
+'chrX:1000-1060': ([93],
+                    [0.01],
+                    ['(CGG)10-AGG-(CGG)9-AGG-(CGG)10'],
+                    ['AAAAAEAAAAAAAAAEAAAAAAAEAAEAA', 'AAAAAEAAAAAAAAAEAAAAAAAEAAEAA']),  # CGG
+}
+
 def assert_vcf_fields(vcf_file, expected_data):
     """
     Asserts that the extracted fields from a VCF file match the expected data.
@@ -52,10 +89,11 @@ def assert_vcf_fields(vcf_file, expected_data):
     f"Unexpected loci: {extracted_data.keys() - expected_data.keys()}"
     )
     for locus_key in extracted_data:
-        extracted_allele, extracted_meth, extracted_meth_tag = extracted_data[locus_key]
-        expected_allele, expected_meth, expected_meth_tag = expected_data[locus_key]
+        extracted_allele, extracted_meth, extracted_ds, extracted_meth_tag = extracted_data[locus_key]
+        expected_allele, expected_meth, expected_ds, expected_meth_tag = expected_data[locus_key]
 
         assert sorted(extracted_allele) == sorted(expected_allele), f"Allele mismatch for {locus_key}: expected {expected_allele}, got {extracted_allele}"
+        assert sorted(extracted_ds) == sorted(expected_ds), f"DS mismatch for {locus_key}: expected {expected_ds}, got {extracted_ds}"
         assert sorted(extracted_meth) == sorted(expected_meth), f"Meth mismatch for {locus_key}: expected {expected_meth}, got {extracted_meth}"
         assert sorted(extracted_meth_tag) == sorted(expected_meth_tag), f"Meth_tag mismatch for {locus_key}: expected {expected_meth_tag}, got {extracted_meth_tag}"
 
@@ -79,7 +117,7 @@ def test_complete_pipeline(tmp_path):
             "genotype",
             "-b", str(input_bam), "-r", str(input_bed),
             "-f", str(input_fasta), "-o", str(output_vcf),
-            "--decompose", "--methviz"
+            "--decompose", "--methviz", "--karyotype", "XY"
         ],
         capture_output=True,
         text=True
