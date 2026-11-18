@@ -24,6 +24,7 @@ def bam_check(path, aln_format, fasta):
 
     :param path: path to alignment file
     :param aln_format: format of the alignment file
+    :param fasta: path to reference fasta file (required to decode CRAM).
     """
     try:
         b = pysam.AlignmentFile(path, aln_format, reference_filename=fasta)
