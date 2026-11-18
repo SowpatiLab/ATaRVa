@@ -32,10 +32,10 @@ def extract_vcf_fields(vcf_file):
 
             # Extract Allele, Meth, DS and Meth_tag from the SAMPLE field
             sample_dict = dict(zip(format_field, sample_fields))
-            allele = [int(i) for i in sample_dict.get('AL').split(',')] if '.' not in sample_dict.get('AL') else []
-            meth = [float(i) for i in sample_dict.get('MA').split(',')] if '0' in sample_dict.get('MA') else []
+            allele = split_values(sample_dict['AL'], int)
+            meth = split_values(sample_dict['MA'], float)
             ds = split_values(sample_dict['DS'])
-            meth_tag = sample_dict.get('MV').split(',') if '.' not in sample_dict.get('MV') else []
+            meth_tag = split_values(sample_dict['MV'])
 
             extracted_data[f'{chrom}:{start}-{end}'] = (allele, meth, ds, meth_tag)
     return extracted_data
@@ -99,6 +99,7 @@ def assert_vcf_fields(vcf_file, expected_data):
 
 def test_complete_pipeline(tmp_path):
 
+ 
     test_dir = Path(__file__).parent.parent / "tests/test_data"
 
     # Input BAM file
@@ -108,12 +109,12 @@ def test_complete_pipeline(tmp_path):
 
     # Temporary output file
     output_vcf = tmp_path / "tmp_test_output.vcf"
-
+    
     # Execute the complete tool
     result = subprocess.run(
         [
             sys.executable,
-            "ATARVA/core.py",
+            "/ATARVA/core.py",
             "genotype",
             "-b", str(input_bam), "-r", str(input_bed),
             "-f", str(input_fasta), "-o", str(output_vcf),
