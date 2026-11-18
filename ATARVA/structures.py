@@ -125,6 +125,8 @@ class LocusVariation:
     gt_arange:         tuple = (None, None)   # allele length range for the genotype call, in the format 'lower1-upper1,lower2-upper2'
     gt_ucluster:       tuple = (None, None, None)   # allele length range for the genotype call, in the format 'lower1-upper1,lower2-upper2'
     gt_decomp_seqs:    tuple = (None, None)   # (decomposed allele1, decomposed allele2) motif decomposition of the allele sequences
+    gt_lpm:            tuple = (None, None)   # (decomposed allele1, decomposed allele2) motif decomposition of the allele sequences
+    gt_lpcn:           tuple = (None, None)   # (decomposed allele1, decomposed allele2) motif decomposition of the allele sequences
     is_phased:         bool  = False          # whether haplotagging was successful
     skip_code:         int   = 10             # whether genotyping failed for the locus
     n_phasing_snps:    int   = 0              # number of SNPs used for phasing, if phased by SNPs
@@ -171,7 +173,7 @@ class ExtendedRead(pysam.AlignedSegment):
             ext.cs_tag            = read.get_tag('cs')
         if read.has_tag('MD'):
             ext.md_tag            = read.get_tag('MD')
-        if read.modified_bases:
+        if read.modified_bases and read.has_tag('SA'):
             ext.mod_bases         = read.modified_bases
         else:
             ext.mod_bases         = None

@@ -10,9 +10,9 @@ from threadpoolctl     import threadpool_limits
 from scipy.signal      import find_peaks
 from hdbscan           import HDBSCAN
 
-from ATARVA.vcf_writer import *
+from ATARVA.vcf_writer import write_homozygous_call, write_heterozygous_call
 from ATARVA.sub_operation_utils import alt_sequence, calculate_methylation
-from ATARVA.consensus import consensus_seq_poa
+from ATARVA.decompose import motif_decomposition, longest_pure_repeat
 
 
 def _assign_genotype(cooper, locus_key, locus_data, c1_idx, c2_idx, c1_lengths,
@@ -98,7 +98,7 @@ def homozygous_call(cooper, locus_key):
     lower, upper = (round(x) for x in np.percentile(np.array(hap_lengths), [2.5, 97.5]))
     ucluster     = [str(a) for a in sorted([x for x in hap_lengths if x < lower or x > upper])]
 
-    ALT, allele_length = alt_sequence(locus_data.read_aseqs, hap_reads, cooper.args.amplicon)
+    ALT, allele_length = alt_sequence(locus_data.read_aseqs, hap_reads, cooper.args.amplicon, cooper.poa_aligner)
 
     locus_data.gt_aseqs        = (ALT, None)
     locus_data.gt_alens        = (allele_length, None)
@@ -107,7 +107,10 @@ def homozygous_call(cooper, locus_key):
     locus_data.gt_ucluster     = ('-'.join(ucluster), None)
     if cooper.args.decompose and ALT != '<DEL>':
         decomp_seq, nonrep_fraction = motif_decomposition(ALT, locus.motif_length)
+        lpm, lpcn  = longest_pure_repeat(decomp_seq, locus.motif)
         locus_data.gt_decomp_seqs  = (decomp_seq, None)
+        locus_data.gt_lpm          = (lpm,  None)
+        locus_data.gt_lpcn         = (lpcn, None)
 
     ucluster = [len(locus_data.read_aseqs[rid][0]) for rid in locus_data.reads if rid not in hap_reads]
     if ucluster:
@@ -135,7 +138,7 @@ def heterozygous_call(cooper, locus_key):
         hap_reads = hap_read_sets[i]
         phased_reads |= set(hap_reads)
         hap_lengths = hap_alen_sets[i]
-        ALT, allele_length = alt_sequence(locus_data.read_aseqs, hap_reads, cooper.args.amplicon)
+        ALT, allele_length = alt_sequence(locus_data.read_aseqs, hap_reads, cooper.args.amplicon, cooper.poa_aligner)
         lower, upper = (round(x) for x in np.percentile(np.array(hap_lengths), [2.5, 97.5]))
         ucluster = [str(a) for a in sorted([x for x in hap_lengths if x < lower or x > upper])]
         if i == 0:
@@ -146,7 +149,10 @@ def heterozygous_call(cooper, locus_key):
             locus_data.gt_ucluster      = ('-'.join(ucluster), locus_data.gt_ucluster[1])
             if cooper.args.decompose and ALT != '<DEL>':
                 decomp_seq, nonrep_fraction = motif_decomposition(ALT, locus.motif_length)
+                lpm, lpcn  = longest_pure_repeat(decomp_seq, locus.motif)
                 locus_data.gt_decomp_seqs   = (decomp_seq, locus_data.gt_decomp_seqs[1])
+                locus_data.gt_lpm           = (lpm,  locus_data.gt_lpm[1])
+                locus_data.gt_lpcn          = (lpcn, locus_data.gt_lpcn[1])
         else:
             locus_data.gt_aseqs         = (locus_data.gt_aseqs[0], ALT)
             locus_data.gt_alens         = (locus_data.gt_alens[0], allele_length)
@@ -155,7 +161,10 @@ def heterozygous_call(cooper, locus_key):
             locus_data.gt_ucluster      = (locus_data.gt_ucluster[0], '-'.join(ucluster))
             if cooper.args.decompose and ALT != 'DEL':
                 decomp_seq, nonrep_fraction = motif_decomposition(ALT, locus.motif_length)
+                lpm, lpcn  = longest_pure_repeat(decomp_seq, locus.motif)
                 locus_data.gt_decomp_seqs   = (locus_data.gt_decomp_seqs[0], decomp_seq)
+                locus_data.gt_lpm           = (locus_data.gt_lpm[0],  lpm)
+                locus_data.gt_lpcn          = (locus_data.gt_lpcn[0], lpcn)
 
     ucluster = [len(locus_data.read_aseqs[rid][0]) for rid in locus_data.reads if rid not in phased_reads]
     if ucluster:

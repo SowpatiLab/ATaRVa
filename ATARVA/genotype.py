@@ -3,13 +3,15 @@ import os
 import timeit as ti
 from pathlib import Path
 from multiprocessing import Pool
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures.process import BrokenProcessPool
 from tqdm import tqdm
 import pysam
 
 from ATARVA.readers       import fasta_check, bam_check, tabix_check
 from ATARVA.version       import __version__
 from ATARVA.baseline      import Cooper
-from ATARVA.readers       import *
+from ATARVA.readers       import check_alnfile
 from ATARVA.vcf_writer    import set_info_mp_cutoff
 from ATARVA.sub_operation_utils import set_methviz_tag
 
@@ -71,12 +73,12 @@ def genotype_parser(subparsers):
     opt.add_argument('--methviz',        action='store_true', help='write methylation-encoded sequence to VCF [default: False]')
 
     # Modes
-    opt.add_argument('--locus-wise',     action='store_true', help='read-wise genotyping for dense BED regions')
     opt.add_argument('--decompose',      action='store_true', help='write motif-decomposed sequence to VCF')
     opt.add_argument('--amplicon',       action='store_true', help="genotype mode for target-amplified high depth sequencing of pathogenic regions. This mode"
                                                                    " first uses KDE modeling for genotyping [default: False]")
     opt.add_argument('--strict',         action='store_true', help="strict mode: stick to the coordinates in the reference catalog. If flank is greater than 0"
                                                                    " and there are indels in the flanking regions, the locus is flagged for format FV as 1. [Default: False]")
+    opt.add_argument('--gvcf',           action='store_true', help="gvcf mode: write gVCF output. Include all loci from the reference catalog in the VCF. [Default: False]")
 
     # Misc
     opt.add_argument('-t',   '--threads',      metavar='<INT>', type=int, default=1, help='number of threads [default: 1]')
@@ -90,9 +92,9 @@ def genotype_parser(subparsers):
     parser.set_defaults(func=genotype_run)
 
 
-def splitfile_threads(tbx, contigs, total_loci, threads):
+def splitregions_density(tbx, contigs, total_loci, threads, read_size):
     """
-    split the input region file into per-thread chunks for parallel processing.
+    Split file based on density of loci. Drop sparse regions.
 
     :param tbx:        pysam Tabixfile object
     :param contigs:    list of contigs to process
@@ -101,6 +103,7 @@ def splitfile_threads(tbx, contigs, total_loci, threads):
     :return:           list of region chunk tuples, one per thread
     """
 
+    GAP = 3 * read_size if 3 * read_size > 100000 else 100000
     split_size  = total_loci // threads
     if split_size == 0:
         split_size = total_loci
@@ -112,15 +115,24 @@ def splitfile_threads(tbx, contigs, total_loci, threads):
 
     for contig in contigs:
         first_in_contig = True
+        prev_start      = None
+        prev_end        = None
 
         for row in tbx.fetch(contig):
             fields = row.split('\t')
+            if first_in_contig and prev_start == int(fields[1]) and prev_end == int(fields[2]):
+                continue  # skip duplicate rows
             line_count += 1
 
             if first_in_contig:
                 chrom       = fields[0]
                 start_coord = (int(fields[1]), int(fields[2]))
                 first_in_contig = False
+
+            if prev_start is not None and int(fields[1]) - prev_end > GAP:
+                end_coord = (prev_start, prev_end)
+                cur_chunk.append([chrom, start_coord, end_coord])
+                start_coord     = (int(fields[1]), int(fields[2]))
 
             if len(fetcher) < threads - 1 and line_count % split_size == 0:
                 end_coord = (int(fields[1]), int(fields[2]))
@@ -129,6 +141,9 @@ def splitfile_threads(tbx, contigs, total_loci, threads):
                 cur_chunk       = []
                 line_count      = 0
                 first_in_contig = True
+
+            prev_start = int(fields[1])
+            prev_end   = int(fields[2])
 
         if not first_in_contig:
             end_coord = (int(fields[1]), int(fields[2]))
@@ -245,7 +260,6 @@ def genotype_run(args) -> None:
     if total_loci < args.threads:
         args.threads = 1
 
-    fetcher = splitfile_threads(tbx, args.contigs, total_loci, args.threads)
     tbx.close()
 
     # --- karyotype setup ---
@@ -270,7 +284,10 @@ def genotype_run(args) -> None:
         sample_name = sample_stem(bam_file)
         print(f'Processing sample: {sample_name}\n', file=sys.stderr)
 
-        check_alnfile(bam_file, args)
+        AVG_READ = check_alnfile(bam_file, args)
+        tbx = pysam.Tabixfile(args.regions)
+        fetcher = splitregions_density(tbx, args.contigs, total_loci, args.threads, AVG_READ)
+        tbx.close()
 
         # resolve per-sample output path
         if not args.vcf:
@@ -297,27 +314,36 @@ def genotype_run(args) -> None:
                     pbar.update()
                     print(f'Thread failed: {e}', file=sys.stderr)
 
-                with Pool(processes=args.threads) as pool:
-                    results = []
-                    for thread_idx in range(args.threads):
-                        r = pool.apply_async(
-                            worker_init,
-                            args     = (bam_file, fetcher[thread_idx],
-                                        args, out_file, sample_idx, thread_idx),
-                            callback = on_success,
-                            error_callback = on_error    # catch thread failures
-                        )
-                        results.append(r)
-                    pool.close()
-                    pool.join()
+                with ProcessPoolExecutor(max_workers=args.threads) as ex:
+                    futures = {
+                        ex.submit(worker_init, bam_file, fetcher[i], args, out_file, sample_idx, i): i
+                        for i in range(args.threads)
+                    }
 
-                # ── verify all threads completed successfully ─────────────────
-                for i, r in enumerate(results):
-                    try:
-                        r.get()                          # raises exception if thread failed
-                    except Exception as e:
-                        all_success = False
-                        errors.append(f'Thread {i}: {e}')
+                    # ── verify threads as they finish; stop everything on the first failure ──
+                    for f in as_completed(futures):
+                        i = futures[f]
+                        try:
+                            on_success(f.result())           # raises if the worker failed
+                        except BrokenProcessPool:
+                            all_success = False
+                            errors.append(f'Thread {i}: worker was killed (likely out of memory)')
+                            break
+                        except BaseException as e:           # includes MemoryError and KeyboardInterrupt
+                            all_success = False
+                            errors.append(f'Thread {i}: {e!r}')
+                            on_error(e)
+                            break
+
+                    if not all_success:                      # kill the surviving workers right away
+                        for p in list((ex._processes or {}).values()):
+                            p.terminate()
+                        ex.shutdown(wait=False, cancel_futures=True)
+
+                if not all_success:
+                    for msg in errors:
+                        print(msg, file=sys.stderr)
+                    sys.exit(1) 
 
             # ── only concat if all threads succeeded ─────────────────────────
             if all_success:

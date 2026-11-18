@@ -1,4 +1,5 @@
-import numpy as np
+import numpy    as np
+import pyabpoa  as pa
 import pysam
 import sys, os, logging
 
@@ -7,14 +8,14 @@ from tqdm import tqdm
 from sortedcontainers import SortedList
 from collections import defaultdict
 
-from ATARVA.decompose import motif_decomposition
+from ATARVA.decompose         import motif_decomposition, longest_pure_repeat
 from ATARVA.structures        import ReadLocusInfo, LocusInfo, ReadInfo, LocusVariation, ExtendedRead
 from ATARVA.vcf_writer        import vcf_writer, write_homozygous_call, write_heterozygous_call, write_fail_call
 from ATARVA.operation_utils   import clean_eqsign_readseq
 from ATARVA.cstag_utils       import parse_cstag
 from ATARVA.cigar_utils       import parse_cigar
 from ATARVA.sub_operation_utils import mm_tag_extract, calculate_methylation, clamp_zero, alt_sequence
-from ATARVA.locus_utils       import process_locus
+from ATARVA.locus_utils       import process_locus, break_locuskey
 from ATARVA.genotype_utils    import analyse_genotype
 from ATARVA.process_softclips import process_flank_stretches, check_flank
 from ATARVA.flank_utils       import check_flank_order, process_flanks
@@ -29,6 +30,11 @@ SKIP_MESSAGES = {
 
 WINDOW_SIZE      = 1000
 WINDOW_THRESHOLD = 500
+DROP_DISTANCE    = 30000     #  if softclip_mode else 0    # distance beyond which reads and loci are dropped from memory
+SA_DROP_DISTANCE = 500000    # distance beyond which supplementary alignments are dropped from memory
+NONREP_FLANK     = 30        # Minimum non-repetitive flank considered for locus processing from softclip region
+SOFT_DISTANCE    = 10000
+
 
 def _hidden_path(out_file):
     """Return a hidden-file-prefixed path for thread output files."""
@@ -91,21 +97,26 @@ class Cooper:
             if args.debug_mode: self.logfile = f'{hidden}_debug_{thread_idx}.log'
 
         with PysamWarningCapture(self.logfile):
-            self.tbx = pysam.Tabixfile(args.regions)
-            self.bam = pysam.AlignmentFile(bam_file, args.aln_format, reference_filename=args.fasta)
-            self.ref = pysam.FastaFile(args.fasta)
+            self.tbx  = pysam.Tabixfile(args.regions)
+            self._tbx = pysam.Tabixfile(args.regions)
+            self.bam  = pysam.AlignmentFile(bam_file, args.aln_format, reference_filename=args.fasta)
+            self.ref  = pysam.FastaFile(args.fasta)
 
-        self.args         = args
-        self.sample_idx   = sample_idx
-        self.thread_idx   = thread_idx
-        self.karyotype    = args.karyotype[sample_idx]
-        self.chrom        = None
-        self.haploid      = False
-        self.logger       = None
-        self.supp_reads   = {}
-        self.win_start    = 0
-        self.win_cov      = 0
-        self.sa_win_start = 0
+        self.args           = args
+        self.sample_idx     = sample_idx
+        self.thread_idx     = thread_idx
+        self.karyotype      = args.karyotype[sample_idx]
+        self.chrom          = None
+        self.haploid        = False
+        self.logger         = None
+        self.supp_reads     = {}
+        self.win_start      = 0
+        self.win_cov        = 0
+        self.sa_win_start   = 0
+        self.region_itr     = None
+        self.next_locus_key = None
+        self.genotyped_loci = {}
+        self.poa_aligner  = {'MF': pa.msa_aligner(cons_algrm='MF'), 'HB': pa.msa_aligner(cons_algrm='HB')}  # lazy initialisation of POA aligners
 
         self.outhandle = open(self.outfile, 'w')
 
@@ -163,13 +174,12 @@ class Cooper:
             chrom = region_range[0]
             bam_stem = Path(bam_file).stem
             self._reinitialise()
-            if self.args.locus_wise: 
-                self.cooper_locusmode(region_range, cidx)
-            else: self.cooper_readmode(region_range, cidx)
+            self.cooper_readmode(region_range, cidx)
 
         self.bam.close()
         self.ref.close()
         self.tbx.close()
+        self._tbx.close()
         self.outhandle.close()
 
     # --- state management ---
@@ -191,6 +201,40 @@ class Cooper:
         self.win_start               = 0
         self.win_cov                 = 0
         self.sa_win_start            = 0
+        self.region_itr              = None
+        self.next_locus_key          = None
+        self.genotyped_loci          = {}
+
+    def read_catalog(self, chrom, start, end, start_locus, end_locus):
+        """
+        Yield locus keys in catalog order, from start_locus to end_locus (inclusive).
+
+        :param chrom:       chromosome name
+        :param start:       start coordinate of the region (0-based)
+        :param end:         end coordinate of the region (exclusive)
+        :param start_locus: (start, end) tuple of the first locus
+        :param end_locus:   (start, end) tuple of the last locus
+        """
+        start_locus = tuple(start_locus)
+        end_locus   = tuple(end_locus)
+        started = False
+
+        for row in self._tbx.fetch(chrom, start, end):
+            fields       = row.split('\t')
+            locus_start  = int(fields[1])
+            locus_end    = int(fields[2])
+            motif        = fields[3] if len(fields) > 3 else None
+            locus_key    = f'{chrom}:{locus_start}-{locus_end}-{motif}'
+            coords       = (locus_start, locus_end)
+
+            if not started and coords == start_locus:
+                started = True
+
+            if started:
+                yield locus_key
+                if coords == end_locus:
+                    break
+
 
     # --- read processing ---
     def cooper_readmode(self, region_range: tuple, cidx: int):
@@ -201,6 +245,8 @@ class Cooper:
         :param cidx:         index of this region in region_ranges
         """
         chrom, first_coords, last_coords = region_range
+        self.region_itr     = self.read_catalog(chrom, first_coords[0], last_coords[1], first_coords, last_coords)
+        self.next_locus_key = next(self.region_itr, None)
         self.chrom   = chrom
         self.haploid = chrom in {'chrX', 'chrY', 'X', 'Y'} and self.karyotype
 
@@ -209,12 +255,9 @@ class Cooper:
 
         genotyped_count = 0
         read_index      = 0
-        NONREP_FLANK    = 30        # Minimum non-repetitive flank considered for locus processing from softclip region
 
         softclip_mode   = False
         if self.args.use_softclip or self.args.amplicon: softclip_mode = True
-        DROP_DISTANCE    = 30000 #  if softclip_mode else 0    # distance beyond which reads and loci are dropped from memory
-        SA_DROP_DISTANCE = 500000 # distance beyond which supplementary alignments are dropped from memory
 
         with PysamWarningCapture(self.logfile):
             for raw_read in self.bam.fetch(chrom, region_start, region_end):
@@ -486,7 +529,10 @@ class Cooper:
 
                 # --- methylation extraction ---
                 mod_bases = ()
-                mod_bases = (list(read.mod_bases.items()) if read.mod_bases is not None else [])
+                if read.has_tag('SA'):
+                    mod_bases = (list(read.mod_bases.items()) if read.mod_bases is not None else [])
+                else:
+                    mod_bases = (list(read.modified_bases.items()) if read.modified_bases is not None else [])
 
                 if read.has_tag('cs'):
                     parse_cstag(self, read)
@@ -558,199 +604,16 @@ class Cooper:
             genotyped_count  += self.locus_processor()
             self.progress_bar.update(1)
 
-
-    def cooper_locusmode(self, region_range: tuple, cidx: int):
-        """
-        Genotype a range of loci by streaming through the loci.
-
-        :param region_range: (chrom, (start1,end1), (start2,end2))
-        :param cidx:         index of this region in region_ranges
-        """
-        chrom, first_coords, last_coords = region_range
-        self.chrom   = chrom
-        self.haploid = chrom in {'chrX', 'chrY', 'X', 'Y'} and self.karyotype
-
-        region_start = first_coords[0]
-        region_end   = last_coords[1]
-
-        genotyped_count = 0
-        read_index      = 0
-        NONREP_FLANK    = 30        # Minimum non-repetitive flank considered for locus processing from softclip region
-
-        softclip_mode   = False
-        if self.args.use_softclip or self.args.amplicon: softclip_mode = True
-        SOFT_DISTANCE    = 10000 if softclip_mode else 0    # Should be close to average read length, to capture softclipped reads
-        SA_DROP_DISTANCE = 500000 # distance beyond which supplementary alignments are dropped from memory
-
-        with PysamWarningCapture(self.logfile):
-
-            for row in self.tbx.fetch(chrom, region_start, region_end):
-                fields      = row.split('\t')
-                locus_start = int(fields[1])
-                locus_end   = int(fields[2])
-                locus_len   = locus_end - locus_start
-
-                locus_name  = fields[5] if len(fields) > 5 else None
-
-                # region boundary checks
-                if locus_start < first_coords[0]:
-                    continue
-                if locus_start >= last_coords[1]:
-                    break
-
-                if not (first_coords[0] <= locus_start and locus_end <= last_coords[1]):
-                    continue
-
-                for raw_read in self.bam.fetch(chrom, locus_start - SOFT_DISTANCE, locus_end + SOFT_DISTANCE):
-
-                    if raw_read.mapping_quality < self.args.map_qual or raw_read.is_secondary:
-                        continue
-
-                    read = ExtendedRead.from_read(raw_read)
-
-                    start_softclip = end_softclip = 0
-                    if read.cigartuples[0][0]  == 4 and softclip_mode: start_softclip = read.cigartuples[0][1]
-                    if read.cigartuples[-1][0] == 4 and softclip_mode: end_softclip   = read.cigartuples[-1][1]
-
-                    # process the SA tag to store relevant supplementary alignments
-                    if read.has_tag('SA'): read.process_satag()
-
-                    if softclip_mode and (read.reference_start - start_softclip < locus_start - self.args.flank and locus_end + self.args.flank < read.reference_end + end_softclip):
-                        # --- assign loci to read ---
-                        softclip_loci  = {'keys': [], 'loci': [], 'coords': [], 'flags': []}
-                        if softclip_loci['coords']:
-                            merged_coords = []
-                            if sum([flag is None for flag in softclip_loci['flags']]) >= 1:
-                                merged_coords = process_flanks(softclip_loci, read.ref_start, read.ref_end)
-                            if len(merged_coords) > 0:
-                                process_flank_stretches(self, read, merged_coords)
-
-                    if not (read.ref_start < locus_start and locus_end < read.ref_end):
-                        continue
-
-                    read.loci.append((locus_start, locus_end))
-
-                    left_flank  = min(self.args.flank, clamp_zero(locus_start - read.ref_start))
-                    right_flank = min(self.args.flank, clamp_zero(read.ref_end  - locus_end))
-
-                    read.left_flanks.append(left_flank)
-                    read.right_flanks.append(right_flank)
-                    read.loci_coords.append((locus_start - left_flank, locus_end + right_flank))
-
-                    locus_key = f'{chrom}:{locus_start}-{locus_end}'
-                    read.loci_keys.append(locus_key)
-                    read.loci_data[locus_key] = ReadLocusInfo(halen=0, alen=0, rlen=locus_len, seq=[])
-
-                    if not read.loci_coords:
-                        continue
-
-                    if locus_key not in self.cooper_loci_data:
-                        self.cooper_loci_data[locus_key] = LocusVariation()
-                        self.cooper_loci_info[locus_key] = LocusInfo(chrom=chrom, start=locus_start, end=locus_end,
-                                                                        motif=fields[3], name=locus_name)
-                        self.cooper_loci_ends.append(locus_end)
-                        self.cooper_loci_keys.append(locus_key)
-
-                    read_required = True
-                    for key in read.loci_keys:
-                        if self.cooper_loci_data[key].depth >= self.args.max_reads and self.cooper_loci_data[key].min_read_qual >= read.mean_qual:
-                            read_required = False
-                        else:
-                            read_required = True
-                            break
-                    # if all loci have enough supporting reads with highest quality; this read is not processed
-                    if not read_required: continue
-
-                    if '=' in read.sequence:
-                        read.sequence = clean_eqsign_readseq(read.chrom, read.ref_start, read.cigartuples,
-                                                                read.sequence, self.ref)
-
-                    # --- register read ---
-                    read_index   += 1
-                    read.index    = read_index
-
-                    self.cooper_read_ends.append(read.ref_end)
-                    self.cooper_read_indices.append(read.index)
-                    self.cooper_read_data[read.index] = ReadInfo(
-                        start       = read.ref_start,
-                        end         = read.ref_end,
-                        snps        = set(),
-                        dels        = [],
-                        methylation = [],
-                        mean_qual   = read.mean_qual,
-                        left_flank  = read.left_flanks,
-                        right_flank = read.right_flanks
-                    )
-
-                    # --- haplotag extraction ---
-                    read.haplotag = [False, None]
-                    if self.args.haplotag and read.has_tag(self.args.haplotag):
-                        read.haplotag = [True, read.get_tag(self.args.haplotag), read.get_tag('PS') if read.has_tag('PS') else None]
-
-                    # --- methylation extraction ---
-                    mod_bases = ()
-
-                    if read.has_tag('cs'):
-                        parse_cstag(self, read)
-                    else:
-                        parse_cigar(self, read)
-
-                    for mods in mod_bases:
-                        if mods[0][0] == 'C' and mods[0][2] == 'm':
-                            mm_tag_extract(read, mods[1])
-                            self.cooper_read_data[read.index].methylation = read.methylation_calls
-                            break
-
-                    # --- populate loci data ---
-                    for locus_key, locus_read_info in read.loci_data.items():
-                        if not locus_read_info.seq: continue
-                        ldata = self.cooper_loci_data[locus_key]
-                        if ldata.depth >= self.args.max_reads:
-                            if read.mean_qual > ldata.min_read_qual:
-                                ldata.reads.append(read.index)
-                                ldata.depth += 1
-                                ldata.read_alens[read.index]     = [locus_read_info.halen, locus_read_info.alen]
-                                ldata.read_aseqs[read.index]     = locus_read_info.seq
-                                ldata.read_haplotags[read.index] = read.haplotag[1]
-                                if self.args.haplotag and read.has_tag(self.args.haplotag):
-                                    if read.haplotag[2] is not None: ldata.read_haplotag_ps[read.index] = read.haplotag[2]
-                                # remove lowest quality read
-                                if ldata.min_qual_read in ldata.reads:
-                                    ldata.reads.remove(ldata.min_qual_read)
-                                    del ldata.read_alens[ldata.min_qual_read]
-                                    del ldata.read_aseqs[ldata.min_qual_read]
-                                    del ldata.read_haplotags[ldata.min_qual_read]
-                                    ldata.depth -= 1
-                                # update minimum quality read
-                                ldata.min_read_qual = float('inf')
-                                for r in ldata.reads:
-                                    if ldata.min_read_qual > self.cooper_read_data[r].mean_qual:
-                                        ldata.min_read_qual = self.cooper_read_data[r].mean_qual
-                                        ldata.min_qual_read = r
-
-                        else:
-                            ldata.reads.append(read.index)
-                            ldata.depth += 1
-                            ldata.read_alens[read.index]     = [locus_read_info.halen, locus_read_info.alen]
-                            ldata.read_aseqs[read.index]     = locus_read_info.seq
-                            ldata.read_haplotags[read.index] = read.haplotag[1]
-                            if self.args.haplotag and read.has_tag(self.args.haplotag):
-                                if read.haplotag[2] is not None: ldata.read_haplotag_ps[read.index] = read.haplotag[2]
-                            if ldata.min_read_qual > read.mean_qual:
-                                ldata.min_read_qual = read.mean_qual
-                                ldata.min_qual_read = read.index
-
-                if self.cooper_loci_ends:
-                    genotyped_count  += self.locus_processor()
-                    self.cooper_read_ends.clear()
-                    self.cooper_read_indices.clear()
-                    self.cooper_read_data = {}
-                    self.progress_bar.update(1)
-
-        # --- flush remaining loci ---
-        while self.cooper_loci_ends:
-            genotyped_count  += self.locus_processor()
-            self.progress_bar.update(1)
+        while self.next_locus_key is not None:
+            _chrom, _start, _end, _motif = break_locuskey(self.next_locus_key)
+            if self.next_locus_key in self.genotyped_loci:
+                print(*self.genotyped_loci[self.next_locus_key], file=self.outhandle, sep='\t')
+                del self.genotyped_loci[self.next_locus_key]
+            else:
+                print(self.chrom, _start + 1, '.', self.ref.fetch(_chrom, _start, _end), '.', 0,
+                    'FAIL', f'AC=0;AN=0;MOTIF={_motif};START={_start};END={_end};ID=.;REFCN={(_end-_start)//len(_motif)}',
+                    'GT:AL:CN:AR:SD:DP:SN:SQ:MA:MR:DS:MV:OL:FV:PS', f'.:.:.:.:.:0:.:.:.:.:.:.:.:.:.', file=self.outhandle, sep='\t')
+            self.next_locus_key = next(self.region_itr, None)
 
 
     def locus_processor(self):
@@ -818,10 +681,13 @@ class Cooper:
                 locus_data.hap_meth_data  = (meth_data, meth_data)
                 if self.args.decompose:
                     decomp_seq, nonrep_fraction = motif_decomposition(max_allele, locus.motif_length)
+                    lpm, lpcn  = longest_pure_repeat(decomp_seq, locus.motif)
                     locus_data.gt_decomp_seqs = (decomp_seq, decomp_seq)
+                    locus_data.gt_lpm         = (lpm, lpm)
+                    locus_data.gt_lpcn        = (lpcn, lpcn)
 
             else:
-                ALT, allele_length = alt_sequence(locus_data.read_aseqs, locus_data.reads, self.args.amplicon)
+                ALT, allele_length = alt_sequence(locus_data.read_aseqs, locus_data.reads, self.args.amplicon, self.poa_aligner)
                 meth_data = calculate_methylation(locus_data.reads, locus_data.read_methylation, ALT)
                 locus_data.gt_alens       = (len(ALT), len(ALT))
                 if ucluster: locus_data.gt_ucluster    = ('-'.join(ucluster), '-'.join(ucluster), None)
@@ -829,8 +695,11 @@ class Cooper:
                 locus_data.gt_aseqs       = (ALT, ALT)
                 locus_data.hap_meth_data  = (meth_data, meth_data)
                 if self.args.decompose:
-                    decomp_seq, nonrep_fraction = motif_decomposition(max_allele, locus.motif_length)
+                    decomp_seq, nonrep_fraction = motif_decomposition(ALT, locus.motif_length)
+                    lpm, lpcn  = longest_pure_repeat(decomp_seq, locus.motif)
                     locus_data.gt_decomp_seqs = (decomp_seq, decomp_seq)
+                    locus_data.gt_lpm         = (lpm, lpm)
+                    locus_data.gt_lpcn        = (lpcn, lpcn)
 
             write_homozygous_call(self, locus_key)
             locus_data.is_genotyped = 1
@@ -859,7 +728,7 @@ class Cooper:
                 ucluster     = [str(a) for a in sorted([x for x in alen_list if x < lower or x > upper])]
 
                 if seqs:
-                    ALT, allele_length = alt_sequence(locus_data.read_aseqs, hap_reads, self.args.amplicon)
+                    ALT, allele_length = alt_sequence(locus_data.read_aseqs, hap_reads, self.args.amplicon, self.poa_aligner)
                     allele_length = len(ALT)
                 else:
                     ALT           = '<DEL>'
@@ -878,7 +747,10 @@ class Cooper:
                     locus_data.hap_meth_data   = (meth_data, locus_data.hap_meth_data[1])
                     if self.args.decompose and ALT != '<DEL>':
                         decomp_seq, nonrep_fraction = motif_decomposition(ALT, locus.motif_length)
+                        lpm, lpcn  = longest_pure_repeat(decomp_seq, locus.motif)
                         locus_data.gt_decomp_seqs  = (decomp_seq, locus_data.gt_decomp_seqs[1])
+                        locus_data.gt_lpm          = (lpm, locus_data.gt_lpm[1])
+                        locus_data.gt_lpcn         = (lpcn, locus_data.gt_lpcn[1])
                 else:
                     locus_data.gt_aseqs        = (locus_data.gt_aseqs[0], ALT)
                     locus_data.gt_alens        = (locus_data.gt_alens[0], allele_length)
@@ -887,7 +759,10 @@ class Cooper:
                     locus_data.hap_meth_data   = (locus_data.hap_meth_data[0], meth_data)
                     if self.args.decompose and ALT != '<DEL>':
                         decomp_seq, nonrep_fraction = motif_decomposition(ALT, locus.motif_length)
+                        lpm, lpcn  = longest_pure_repeat(decomp_seq, locus.motif)
                         locus_data.gt_decomp_seqs  = (locus_data.gt_decomp_seqs[0], decomp_seq)
+                        locus_data.gt_lpm          = (locus_data.gt_lpm[0], lpm)
+                        locus_data.gt_lpcn         = (locus_data.gt_lpcn[0], lpcn)
 
             (l1, u1) = np.percentile(alen_lists[0], [2.5, 97.5])
             (l2, u2) = np.percentile(alen_lists[1], [2.5, 97.5])

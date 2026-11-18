@@ -2,7 +2,7 @@ import string, sys
 import numpy as np
 from scipy import stats
 
-from ATARVA.consensus import *
+from ATARVA.consensus import consensus_seq_poa
 from ATARVA.decompose import motif_decomposition
 
 methviz_tag = False
@@ -45,12 +45,11 @@ def mm_tag_extract(read, mod_probs):
     methyl_start = read.methyl_start
     methyl_end   = read.methyl_end
     methylation_calls = read.methylation_calls
-    qseq = read.query_sequence
     if (methyl_start != None) and (methyl_end != None):
         for pos, prob in mod_probs:
             meth_chunk_start = pos if frwd_strand else pos - 1 # to check the meth context, start index
             if methyl_start <= pos <= methyl_end:
-                if (pos + 1 <= last_index) and (qseq[meth_chunk_start : meth_chunk_start + 2]=='CG'):
+                if (pos + 1 <= last_index) and (read.query_sequence[meth_chunk_start : meth_chunk_start + 2]=='CG'):
                     methylation_calls.append((pos, prob))
 
 
@@ -181,7 +180,7 @@ def encode_methylation(call_matrix, pos_matrix, consensus_cgs):
 
         # filter sentinels and compute mean
         avg_base_meth = np.mean(col_array[(col_array != AMBIGUOUS) & (col_array != NO_MATCH)])
-        base64_scaled = round(avg_base_meth * 63)    # scale to 0-64
+        base64_scaled = round([round(avg_base_meth, 2) * 100] / 1.5625 )
         encoded_meth.append(BASE64_CHARS[base64_scaled])
 
     return ''.join(encoded_meth)
@@ -228,7 +227,7 @@ def calculate_methylation(read_indices, read_methylation, consensus_seq):
         return [None, None, None]
 
 
-def alt_sequence(read_alleles, hap_reads, amplicon):
+def alt_sequence(read_alleles, hap_reads, amplicon, poa_aligner):
     """
     generates alt sequence and reports characteristics
 
@@ -247,7 +246,7 @@ def alt_sequence(read_alleles, hap_reads, amplicon):
             try: length_counter[len(seq)] += 1
             except KeyError: length_counter[len(seq)] = 1
         seqs = sorted(seqs, key=lambda x: (-length_counter[len(x)], len(x), x))  # sort by frequency of length then length
-        ALT = consensus_seq_poa(seqs, amplicon)
+        ALT = consensus_seq_poa(seqs, amplicon, poa_aligner)
         allele_length = len(ALT)
     else:
         ALT = '<DEL>'

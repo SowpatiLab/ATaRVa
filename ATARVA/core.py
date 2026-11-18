@@ -10,8 +10,8 @@ import sys
 import argparse as ap
 
 from ATARVA.genotype import genotype_parser
-from ATARVA.merge import merge_parser
-from ATARVA.version import __version__
+from ATARVA.merge    import merge_parser
+from ATARVA.version  import __version__
 
 contact = """\nFor queries or suggestions, please contact:
 Akshay Kumar Avvaru - avvaruakshay at gmail dot com

@@ -128,11 +128,11 @@ class CSsw(object):
 # init ssw_init
         """
 	@function	Create the query profile using the query sequence.
-	@param	read	pointer to the query sequence; the query sequence needs to be numbers
-	@param	readLen	length of the query sequence
-	@param	mat	pointer to the substitution matrix; mat needs to be corresponding to the read sequence
-	@param	n	the square root of the number of elements in mat (mat has n*n elements)
-	@param	score_size	estimated Smith-Waterman score; if your estimated best alignment score is surely < 255 please set 0; if
+	:param	read	pointer to the query sequence; the query sequence needs to be numbers
+	:param	readLen	length of the query sequence
+	:param	mat	pointer to the substitution matrix; mat needs to be corresponding to the read sequence
+	:param	n	the square root of the number of elements in mat (mat has n*n elements)
+	:param	score_size	estimated Smith-Waterman score; if your estimated best alignment score is surely < 255 please set 0; if
 						your estimated best alignment score >= 255, please set 1; if you don't know, please set 2
 	@return	pointer to the query profile structure
 	@note	example for parameter read and mat:
@@ -151,7 +151,7 @@ class CSsw(object):
 # init init_destroy
         """
 	@function	Release the memory allocated by function ssw_init.
-	@param	p	pointer to the query profile structure
+	:param	p	pointer to the query profile structure
         """
         self.init_destroy = self.ssw.init_destroy
         self.init_destroy.argtypes = [ct.POINTER(CProfile)]
@@ -159,24 +159,24 @@ class CSsw(object):
 # init ssw_align
         """
 !	@function	Do Striped Smith-Waterman alignment.
-	@param	prof	pointer to the query profile structure
-	@param	ref	pointer to the target sequence; the target sequence needs to be numbers and corresponding to the mat parameter of
+	:param	prof	pointer to the query profile structure
+	:param	ref	pointer to the target sequence; the target sequence needs to be numbers and corresponding to the mat parameter of
 				function ssw_init
-	@param	refLen	length of the target sequence
-	@param	weight_gapO	the absolute value of gap open penalty
-	@param	weight_gapE	the absolute value of gap extension penalty
-	@param	flag	bitwise FLAG; (from high to low) bit 5: when setted as 1, function ssw_align will return the best alignment
+	:param	refLen	length of the target sequence
+	:param	weight_gapO	the absolute value of gap open penalty
+	:param	weight_gapE	the absolute value of gap extension penalty
+	:param	flag	bitwise FLAG; (from high to low) bit 5: when setted as 1, function ssw_align will return the best alignment
 					beginning position; bit 6: when setted as 1, if (ref_end1 - ref_begin1 < filterd && read_end1 - read_begin1
 					< filterd), (whatever bit 5 is setted) the function will return the best alignment beginning position and
 					cigar; bit 7: when setted as 1, if the best alignment score >= filters, (whatever bit 5 is setted) the function
   					will return the best alignment beginning position and cigar; bit 8: when setted as 1, (whatever bit 5, 6 or 7 is
  					setted) the function will always return the best alignment beginning position and cigar. When flag == 0, only
 					the optimal and sub-optimal scores and the optimal alignment ending position will be returned.
-	@param	filters	score filter: when bit 7 of flag is setted as 1 and bit 8 is setted as 0, filters will be used (Please check the
+	:param	filters	score filter: when bit 7 of flag is setted as 1 and bit 8 is setted as 0, filters will be used (Please check the
  					decription of the flag parameter for detailed usage.)
-	@param	filterd	distance filter: when bit 6 of flag is setted as 1 and bit 8 is setted as 0, filterd will be used (Please check
+	:param	filterd	distance filter: when bit 6 of flag is setted as 1 and bit 8 is setted as 0, filterd will be used (Please check
 					the decription of the flag parameter for detailed usage.)
-	@param	maskLen	The distance between the optimal and suboptimal alignment ending position >= maskLen. We suggest to use
+	:param	maskLen	The distance between the optimal and suboptimal alignment ending position >= maskLen. We suggest to use
 					readLen/2, if you don't have special concerns. Note: maskLen has to be >= 15, otherwise this function will NOT
 					return the suboptimal alignment information. Detailed description of maskLen: After locating the optimal
 					alignment ending position, the suboptimal alignment score can be heuristically found by checking the second
@@ -196,7 +196,7 @@ class CSsw(object):
 # init align_destroy
         """
 	@function	Release the memory allocated by function ssw_align.
-	@param	a	pointer to the alignment result structure
+	:param	a	pointer to the alignment result structure
         """
         self.align_destroy = self.ssw.align_destroy
         self.align_destroy.argtypes = [ct.POINTER(CAlignRes)]

@@ -664,3 +664,51 @@ def refine_decomposition(fseq, motif_size, seq_len):
     non_rep_percent = round((non_repeat_len / seq_len), 2) if seq_len > 0 else 0
 
     return final_merged, non_rep_percent
+
+
+def longest_pure_repeat(dseq, ref_motif):
+    """
+    Extract the longest pure repeat motif and its copy number from a decomposed sequence.
+
+    :param dseq: Decomposed sequence string (e.g., "(AC)3-(GT)2-AC").
+    :param ref_motif: The reference motif to check for cyclic variations.
+    :return: A string in the format "motif-copy_number" representing the longest pure
+    """
+    dseq = dseq.split('-')
+    motifs  = []
+    copies  = []
+    lengths = []
+    for i in dseq:
+        if '(' in i:
+            end_idx   = i.index(')')
+            _motif = i[1:end_idx]
+            copy      = int(i[end_idx+1:])
+            motifs.append(_motif)
+            copies.append(copy)
+            lengths.append(copy * len(_motif))
+
+    if lengths == []: # the sequence doesnt have enough repetitions to get decomposed
+        cont_repeat_len = [len(i)//len(ref_motif) for i in re.findall(f"(?:{ref_motif})+", dseq[0])]
+        lps_count       = max(cont_repeat_len) if cont_repeat_len!=[] else 0
+        return ref_motif, lps_count
+
+    lps_length = max(lengths)
+    # for multiple longer repeat motifs
+    if lengths.count(lps_length) > 1:
+        max_idxs = [i for i,k in enumerate(lengths) if k == lps_length] # index of all max length motifs
+        for idx in max_idxs:
+            current_motif = motifs[idx]
+            n = len(current_motif)
+            if ref_motif in [current_motif[i:] + current_motif[:i] for i in range(n)]: # checking the presence of bed motif in cyclic variations
+                lps_motif = ref_motif
+                lps_count = copies[idx]
+                return lps_motif, lps_count
+
+    lps_idx    = lengths.index(lps_length)
+    lps_motif  = motifs[lps_idx]
+    lps_count  = copies[lps_idx]
+    n = len(lps_motif)
+    if lps_motif == ref_motif or ref_motif in [lps_motif[i:] + lps_motif[:i] for i in range(n)]:
+        lps_motif = ref_motif
+
+    return lps_motif, lps_count

@@ -1,5 +1,12 @@
 ## Changelog
 
+### v0.9.5
+* Fixed missing entries bug in merged VCF file. Added length-based merging option in VCF merging.
+* Added the LPM and LPS tags in format field of the output VCF file to match with v0.7.1. LPM - Longest Pure Motif, LPS - Longest Pure Copy Number.
+* Removed locus mode. Splitting the catalog to exclude large regions without repeats consequently skipping reads in those regions.
+* Added a `--gvcf` option to output a gVCF file with all repeat loci as in the input catalog.
+* Filtering out outliers using HDBSCAN in non-amplicon mode before generating the consensus sequence.
+
 ### v0.9.4
 * Fixed read contribution thresholds for each haplogroup to match with ATaRVA v0.7.1.
 * Introduce `ref_snps` in read_data structure and optimized `record_ref_snps` function to reduce the time taken.
@@ -9,6 +16,7 @@
 
 ### v0.9.3
 * New VCF merging strategy implemented
+* Removed the `--rna` and `--instability` options.
 
 ### v0.9.2
 * Changed `--phasing-read` to `--phased-frac` to specify the minimum fraction of phased reads required for haplotyping. The default value is set to 0.6.
@@ -31,8 +39,8 @@
 * First release. Extended version of ATaRVa with additional features as below.
 * Default processing of the softclipped portions of the read to search for the presence of repeat loci from the catalogs by searching for the flanking sequences.
 * Implements a slightly different version of read-haplogrouping based on the informative SNPs. The reads are heirarchically grouped based on the minimising the Qvalue penalty of the informative SNPs.
-* Added a new option --rna to enable genotyping of tandem repeats from RNA-seq data. This option is designed parse the CIGAR string of the typicaly RNA-seq alignment which include introns and other splicing events encoded as N.
-* Added a new option --instability which outputs an additional file with allele information from each read at a locus
+* Added a new option `--rna` to enable genotyping of tandem repeats from RNA-seq data. This option is designed parse the CIGAR string of the typicaly RNA-seq alignment which include introns and other splicing events encoded as N.
+* Added a new option `--instability` which outputs an additional file with allele information from each read at a locus
 * Changed `--format` to `--aln-format` to specify the input format for alignment file.
 
 ### v0.7.1
