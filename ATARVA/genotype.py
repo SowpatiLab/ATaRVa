@@ -128,6 +128,7 @@ def splitregions_density(tbx, contigs, total_loci, threads, read_size):
                 chrom       = fields[0]
                 start_coord = (int(fields[1]), int(fields[2]))
                 first_in_contig = False
+                prev_start  = prev_end = None   # new chunk: don't let the gap check reach back across the boundary
 
             if prev_start is not None and int(fields[1]) - prev_end > GAP:
                 end_coord = (prev_start, prev_end)
