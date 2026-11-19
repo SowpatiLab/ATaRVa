@@ -1,9 +1,11 @@
+import itertools
 
 import pytest
 from ATARVA import decompose as mt
 from ATARVA.decompose import (
-    get_canonical_motif, get_most_frequent_motif, get_repeat_components,
-    motif_decomposition, refine_decomposition, register_and_get_motif,
+    get_atomic_motif, get_canonical_motif, get_most_frequent_motif,
+    get_repeat_components, is_valid_repeat_block, motif_decomposition,
+    reduce_block, refine_decomposition, register_and_get_motif,
 )
 
 
@@ -131,14 +133,11 @@ def test_atomic_block_is_left_alone(block, size):
     assert out == [block, "T"]
 
 
-def test_block_longer_than_motif_size_is_not_reduced_when_size_too_large():
-    """Documents CURRENT behaviour: a motif no longer than motif_size is kept as is."""
+def test_reduction_does_not_depend_on_a_large_motif_size():
     out, _ = refine_decomposition(["(CAGCAGCAG)2", "T"], 10, 40)
-    assert out == ["(CAGCAGCAG)2", "T"]
+    assert out == ["(CAG)6", "T"]
 
 
-@pytest.mark.xfail(strict=True, reason="even-length motif whose halves differ "
-                   "((ACACAC), (ATATAT)) is never reduced to its atomic unit")
 @pytest.mark.parametrize("block,expected", [
     ("(ACACAC)2", "(AC)6"),
     ("(ATATAT)2", "(AT)6"),
@@ -148,8 +147,6 @@ def test_even_length_block_with_unequal_halves_is_reduced(block, expected):
     assert out == [expected, "T"]
 
 
-@pytest.mark.xfail(strict=True, reason="atomic reduction of an odd-length block "
-                   "only happens when its length is divisible by motif_size")
 def test_reduction_does_not_depend_on_motif_size():
     out, _ = refine_decomposition(["(CAGCAGCAG)2", "T"], 2, 40)
     assert out == ["(CAG)6", "T"]
@@ -181,10 +178,224 @@ def test_every_repeat_block_motif_is_atomic(seq, size):
     assert all(is_atomic(m) for m in block_motifs(decomp)), decomp
 
 
-@pytest.mark.xfail(strict=True, reason="a sequence that is ONE repeat block skips "
-                   "refine_decomposition (len(fseq)==1), so (AAAAAA)2 is not "
-                   "reduced to (A)12")
 @pytest.mark.parametrize("size", [2, 3, 4, 6])
 def test_single_block_homopolymer_is_atomic(size):
     decomp, _ = motif_decomposition("A" * 12, size)
     assert decomp == "(A)12"
+
+
+def reference_atomic(motif):
+    """Independent, brute-force definition: shortest prefix that tiles the motif."""
+    for d in range(1, len(motif) + 1):
+        if len(motif) % d == 0 and motif[:d] * (len(motif) // d) == motif:
+            return motif[:d]
+    return motif
+
+
+def all_motifs(max_len, alphabet="ACGT"):
+    for n in range(1, max_len + 1):
+        for tup in itertools.product(alphabet, repeat=n):
+            yield "".join(tup)
+
+
+@pytest.mark.parametrize("motif,expected", [
+    # homopolymers
+    ("A", "A"), ("AA", "A"), ("AAAAAA", "A"), ("TTTTTTTTTT", "T"),
+    # dinucleotides repeated
+    ("ATAT", "AT"), ("ACACAC", "AC"), ("GTGTGTGT", "GT"),
+    # trinucleotides repeated
+    ("CAGCAG", "CAG"), ("CAGCAGCAG", "CAG"), ("CGGCGGCGGCGG", "CGG"),
+    # longer units repeated
+    ("GCGAGCAGCGAGCA", "GCGAGCA"), ("TATCTGATATCTGA", "TATCTGA"),
+    # already atomic: must come back unchanged
+    ("AC", "AC"), ("CAG", "CAG"), ("CAGT", "CAGT"), ("ACG", "ACG"),
+    ("ACGTACGA", "ACGTACGA"), ("AAC", "AAC"), ("ACA", "ACA"),
+    # N bases are ordinary characters
+    ("NN", "N"), ("ACNACN", "ACN"),
+    # empty
+    ("", ""),
+])
+def test_get_atomic_motif_known_cases(motif, expected):
+    assert get_atomic_motif(motif) == expected
+
+
+def test_atomic_motif_of_a_rotation_has_the_same_length():
+    # rotating a motif does not change how many bases the atomic unit has
+    for motif in ("CAGCAG", "ACACAC", "AAAA", "CAGT", "GAGAGA"):
+        n = len(get_atomic_motif(motif))
+        for i in range(len(motif)):
+            assert len(get_atomic_motif(motif[i:] + motif[:i])) == n, (motif, i)
+
+
+def test_matches_brute_force_for_every_motif_up_to_length_7():
+    bad = [m for m in all_motifs(7) if get_atomic_motif(m) != reference_atomic(m)]
+    assert not bad, bad[:5]
+
+
+def test_atomic_motif_properties_for_every_motif_up_to_length_6():
+    for m in all_motifs(6):
+        a = get_atomic_motif(m)
+        assert m.startswith(a), m                       # is a prefix
+        assert len(m) % len(a) == 0, m                  # divides the length
+        assert a * (len(m) // len(a)) == m, m           # rebuilds the motif
+        assert get_atomic_motif(a) == a, m              # idempotent: a is atomic
+
+
+def test_atomic_motif_is_never_longer_than_the_motif():
+    assert all(len(get_atomic_motif(m)) <= len(m) for m in all_motifs(6))
+
+
+def test_binary_alphabet_exhaustive_to_length_12():
+    # many periodic strings with a tiny alphabet; checks longer lengths cheaply
+    for m in all_motifs(12, "AC"):
+        assert get_atomic_motif(m) == reference_atomic(m), m
+
+
+@pytest.mark.parametrize("block,expected", [
+    ("(ACAC)3", "(AC)6"),
+    ("(AAAAAA)2", "(A)12"),
+    ("(AA)5", "(A)10"),
+    ("(CAGCAG)4", "(CAG)8"),
+    ("(CAGCAGCAG)2", "(CAG)6"),
+    ("(GCGAGCAGCGAGCA)2", "(GCGAGCA)4"),
+    ("(ACACAC)2", "(AC)6"),
+    ("(ATATAT)2", "(AT)6"),
+    ("(NN)3", "(N)6"),
+])
+def test_reduce_block_reduces_and_multiplies_the_count(block, expected):
+    assert reduce_block(block) == expected
+
+
+@pytest.mark.parametrize("block", ["(A)7", "(AC)8", "(CAG)5", "(CAGT)3", "(GCGAGCA)9"])
+def test_reduce_block_leaves_atomic_blocks_alone(block):
+    assert reduce_block(block) == block
+
+
+@pytest.mark.parametrize("block,expected", [
+    ("(ACAC)1", "(AC)2"),               # count of 1 still becomes 2 copies of AC
+    ("(AA)100", "(A)200"),              # large counts
+    ("(CAGCAG)1000", "(CAG)2000"),
+])
+def test_reduce_block_count_edge_cases(block, expected):
+    assert reduce_block(block) == expected
+
+
+def test_reduce_block_empty_motif_is_returned_unchanged():
+    assert reduce_block("()5") == "()5"
+
+
+@pytest.mark.parametrize("block", ["(AC)", "AC3", "(AC)x", "(AC", "", ")", "(AC)3.5"])
+def test_reduce_block_rejects_malformed_blocks(block):
+    with pytest.raises((ValueError, IndexError)):
+        reduce_block(block)
+
+
+def test_reduce_block_returns_a_valid_block_string():
+    out = reduce_block("(ACAC)3")
+    assert isinstance(out, str)
+    assert is_valid_repeat_block(out)
+
+
+def test_reduce_block_keeps_the_sequence_for_every_small_block():
+    for motif in all_motifs(6):
+        for count in (1, 2, 3, 7):
+            block = f"({motif}){count}"
+            out = reduce_block(block)
+            m, n = get_repeat_components(out)
+            assert m * n == motif * count, block                    # same sequence
+            assert get_atomic_motif(m) == m, block                  # motif is atomic
+            assert reduce_block(out) == out, block                  # idempotent
+            assert len(m) * n == len(motif) * count, block          # same length
+
+
+@pytest.fixture
+def spy(monkeypatch):
+    calls = []
+    real = mt.reduce_block
+
+    def wrapper(block):
+        calls.append(block)
+        return real(block)
+
+    monkeypatch.setattr(mt, "reduce_block", wrapper)
+    return calls
+
+
+def test_refine_decomposition_reduces_every_block(spy):
+    out, _ = refine_decomposition(["(ACAC)3", "T", "(CAGCAG)2"], 2, 30)
+    assert "(ACAC)3" in spy and "(CAGCAG)2" in spy
+    assert out == ["(AC)6", "T", "(CAG)4"]
+
+
+def test_refine_decomposition_reduces_blocks_it_builds_from_plain_segments(spy):
+    out, _ = refine_decomposition(["AAAAAA", "T"], 2, 7)
+    assert "(AA)3" in spy                        # built inside refine, then reduced
+    assert out == ["(A)6", "T"]
+
+
+def test_motif_decomposition_reduces_a_single_block_result(spy):
+    decomp, non_rep = motif_decomposition("A" * 12, 4)
+    assert spy, "reduce_block was never called"
+    assert decomp == "(A)12"
+    assert non_rep == 0
+
+
+def test_motif_decomposition_does_not_reduce_when_there_is_no_block(spy):
+    decomp, non_rep = motif_decomposition("ACGT", 2)
+    assert spy == []
+    assert non_rep == 1
+
+
+def test_malformed_block_inside_refine_is_kept_not_raised():
+    out, _ = refine_decomposition(["(AC)", "GG"], 2, 10)    # no count after ')'
+    assert out[0] == "(AC)"
+
+
+@pytest.mark.parametrize("seq,size", [
+    ("CTCCATCTCCATCTCCATCTCCATCTCCATCTCCATTTGGGGGCTA", 6),
+    ("CAGGGCAGGGCAGGGCAGGGCAGGGCAGGGCTCCCCCCCCCGA", 7),
+    ("ACCACCACCACCACCGTTTTTTTTTTGC", 7),
+    ("ATCTGAATCTGAATCTGAATCTGAATCTGAATCTGAATCTGACGAGAGAGAGAGAGACCTTACTTA", 5),
+])
+def test_roundtrip_when_a_block_is_followed_by_a_segment_starting_with_its_motif(seq, size):
+    decomp, _ = motif_decomposition(seq, size)
+    print(f"\n{seq} (size {size}) -> {decomp}")
+    assert expand(decomp) == seq
+
+
+def test_refine_keeps_the_remainder_of_a_partly_absorbed_segment():
+    out, _ = refine_decomposition(["(G)4", "GCTA"], 1, 8)
+    assert expand("-".join(out)) == "GGGG" + "GCTA"
+
+
+def _random_cases(seed=7, n=400):
+    import random
+    rnd = random.Random(seed)
+
+    def bases(k):
+        return "".join(rnd.choice("ACGT") for _ in range(k))
+
+    cases = []
+    for _ in range(n):
+        parts = []
+        for _ in range(rnd.randint(1, 3)):
+            parts.append(bases(rnd.randint(1, 6)) * rnd.randint(2, 9))
+            if rnd.random() < .7:
+                parts.append(bases(rnd.randint(1, 4)))
+        cases.append(("".join(parts), rnd.randint(1, 8)))
+    return cases
+
+
+RANDOM_CASES = _random_cases()
+
+
+def test_random_sequences_roundtrip_and_are_atomic():
+    failures = []
+    for seq, size in RANDOM_CASES:
+        mt.cyclic_motif_registry.clear()
+        decomp, non_rep = motif_decomposition(seq, size)
+        ok = (expand(decomp) == seq and 0 <= non_rep <= 1
+              and all(is_atomic(m) for m in block_motifs(decomp)))
+        if not ok:
+            failures.append((seq, size, decomp))
+    assert not failures, f"{len(failures)} of {len(RANDOM_CASES)} failed, e.g. {failures[:3]}"
