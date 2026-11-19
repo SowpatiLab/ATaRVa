@@ -288,10 +288,10 @@ def write_heterozygous_call(cooper, locus_key):
     meth_prob   = []
     meth_reads  = []
     meth_viztag = []
-    for hap_methyl in locus_data.hap_meth_data:
-        meth_prob.append(str(hap_methyl[0])  if hap_methyl[0] is not None else '.') #methylation probability
-        meth_reads.append(str(hap_methyl[1]) if hap_methyl[1] is not None else '.') #number of methylated reads
-        meth_viztag.append(hap_methyl[2]     if hap_methyl[2] is not None else '.') #methylation visual encoding
+    for hap_meth in locus_data.hap_meth_data:
+        meth_prob.append(str(hap_meth[0])  if hap_meth[0] is not None else '.') #methylation probability
+        meth_reads.append(str(hap_meth[1]) if hap_meth[1] is not None else '.') #number of methylated reads
+        meth_viztag.append(hap_meth[2]     if hap_meth[2] is not None else '.') #methylation visual encoding
 
     if locus_data.gt_aseqs[0] == locus_data.gt_aseqs[1]: # if the two alleles are the same, make it a homozygous call
         allele = locus_data.gt_aseqs[0]
@@ -325,10 +325,6 @@ def write_heterozygous_call(cooper, locus_key):
             AC = 1
 
             ALT = allele
-            if ref_index == 1:
-                meth_prob   = meth_prob[::-1] # reverse the meth_prob to keep the order consistent with GT
-                meth_reads  = meth_reads[::-1]
-                meth_viztag = meth_viztag[::-1]
             SD = f'{len(locus_data.hap_read_sets[0])},{len(locus_data.hap_read_sets[1])}'
             allele_range = f'{locus_data.gt_arange[0]},{locus_data.gt_arange[1]}'
         else:
