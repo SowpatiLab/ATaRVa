@@ -1,0 +1,45 @@
+##fileformat=VCFv4.2
+##FILTER=<ID=PASS,Description="All filters passed">
+##command=ATaRVa_0.7.1 /data/ccmb/ram/atarvaog7/atarvaog7/bin/atarva genotype -f test_ref.fa -b test_data.bam -r test_bed_sorted.bed.gz --decompose --methviz --karyotype XY -o test_run --debug
+##contig=<ID=chr1,length=2046>
+##contig=<ID=chr10,length=2007>
+##contig=<ID=chr16,length=2025>
+##contig=<ID=chr2,length=2053>
+##contig=<ID=chr3,length=2036>
+##contig=<ID=chr4,length=2057>
+##contig=<ID=chr9,length=2026>
+##contig=<ID=chrX,length=2060>
+##FILTER=<ID=LESS_READS,Description="Read depth below threshold">
+##INFO=<ID=AC,Number=A,Type=Integer,Description="Number of alternate alleles in called genotypes">
+##INFO=<ID=AN,Number=1,Type=Integer,Description="Number of alleles in called genotypes">
+##INFO=<ID=MOTIF,Number=1,Type=String,Description="Repeat motif">
+##INFO=<ID=START,Number=1,Type=Integer,Description="Start position of the repeat region in 0-based coordinate system">
+##INFO=<ID=END,Number=1,Type=Integer,Description="End position of the repeat region">
+##INFO=<ID=ID,Number=1,Type=String,Description="Locus identifier tag">
+##INFO=<ID=REFCN,Number=1,Type=Integer,Description="Reference allele copy number">
+##INFO=<ID=CT,Number=1,Type=String,Description="Cluster type">
+##INFO=<ID=EAC,Number=1,Type=String,Description="Each Allele Count">
+##INFO=<ID=MPC,Number=1,Type=String,Description="0.5">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=AL,Number=2,Type=Integer,Description="Allele length in base pairs">
+##FORMAT=<ID=CN,Number=2,Type=Integer,Description="Motif copy number for each allele">
+##FORMAT=<ID=LPM,Number=2,Type=String,Description="Longest pure motif repeat and its copy number for each allele">
+##FORMAT=<ID=AR,Number=.,Type=String,Description="Allele length range">
+##FORMAT=<ID=SD,Number=.,Type=Integer,Description="Number of reads supporting for the alleles">
+##FORMAT=<ID=PC,Number=2,Type=Integer,Description="Number of reads in the phased cluster for each allele">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Number of the supporting reads for the repeat locus">
+##FORMAT=<ID=SN,Number=.,Type=Integer,Description="Number of SNPs used for phasing">
+##FORMAT=<ID=SQ,Number=.,Type=Float,Description="Phred-scale qualities of the SNPs used for phasing">
+##FORMAT=<ID=MA,Number=.,Type=Float,Description="Mean methylation level for each allele">
+##FORMAT=<ID=MR,Number=.,Type=Integer,Description="Number of reads providing methylation info for each allele">
+##FORMAT=<ID=DS,Number=A,Type=String,Description="Motif decomposed sequence">
+##FORMAT=<ID=MV,Number=.,Type=String,Description="Visual methylation encodings for the alleles">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	test_data
+chr1	1001	.	TTATTTATTTATTTATTTATTTATTTATTTATTTATTTATTTATTT	TTTATTTCTTTCTTTCTTTCTTTCTTTCTTTCTTTCTTTATTTATTTATTTATTTATTTATTTATTTATTT,TTTATTTCTTTCTTTCTTTCTTTCTTTCTTTCTTTCTTTCTTTATTTATTTATTTATTTATTTATTTATTT	0	PASS	AC=1,1;AN=2;MOTIF=TTAT;START=1000;END=1046;ID=.;REFCN=11;CT=SNP;EAC=[(71, 14), (47, 2), (70, 1), (75, 1), (74, 1), (78, 1), (73, 1)]	GT:AL:CN:LPM:AR:SD:DP:SN:SQ:MA:MR:DS:MV	1|2:71,71:17,17:TTAT-8,TTTC-9:47-73,70-77:8,13:21:1:38:.,.:.,.:TTTA-(TTTC)8-(TTTA)8-TTT,TTTA-(TTTC)9-(TTTA)7-TTT:.,.
+chr10	1001	.	GGAGGAG	GGAGGAA	0	PASS	AC=2;AN=2;MOTIF=GGA;START=1000;END=1007;ID=.;REFCN=2;CT=Ed_Hdbscan;EAC=[(7, 21), (8, 1)]	GT:AL:CN:LPM:AR:SD:DP:SN:SQ:MA:MR:DS:MV	1/1:7,7:2,2:GGA-2,GGA-2:7-7,7-7:22:22:.:.:.,.:.:(GGA)2-A:.,.
+chr16	1001	.	TGGATGGATGGATGGATGGATGGAT	TAGATGGATGGATGGATGGATGGAT	0	PASS	AC=1;AN=2;MOTIF=TGGA;START=1000;END=1025;ID=.;REFCN=6;CT=SNP;EAC=[(25, 28), (21, 1), (24, 1)]	GT:AL:CN:LPM:AR:SD:DP:SN:SQ:MA:MR:DS:MV	0|1:25,25:6,6:TGGA-6,TGGA-5:25-25,22-25:13,17:30:3:36,44,41:.,.:.,.:.,TA-(GATG)5-GAT:.,.
+chr2	1001	.	TCTCTCTATCTATCTATCTATCTATCTATATATATATCTATATATATATCTAT	TCTATCTATCTATCTATCTATCTATCTATCTATCTATCTATATATATATCTATATATATATATCTAT,TCTCTCTATCTATCTATCTATCTATCTATCTATATATATATCTAT	0	PASS	AC=1,1;AN=2;MOTIF=TCTA;START=1000;END=1053;ID=.;REFCN=13;CT=SNP;EAC=[(45, 14), (67, 10), (47, 6), (69, 2), (32, 1), (50, 1), (65, 1)]	GT:AL:CN:LPM:AR:SD:DP:SN:SQ:MA:MR:DS:MV	1|2:67,45:16,11:TCTA-10,TCTA-7:66-69,39-48:13,22:35:1:43:.,.:.,.:(TCTA)10-(TA)4-TC-(TA)6-TCTAT,(TC)2-(TCTA)7-(TA)4-TCTAT:.,.
+chr3	1001	.	AAGGAAGGAAGGAAGGAAGGAAGGAAGGAAGGAAGG	AAGGAAGGAAGGAAGGAAGGAAGGAAGGAAGGGGCGAGCAAGGAATGAAGG,AAGGAAGGAAGGAAGGAAGGAAGGAAGGAAGGAAGGAAGGAAGGAAGG	0	PASS	AC=1,1;AN=2;MOTIF=CT;START=1000;END=1036;ID=.;REFCN=18;CT=SNP;EAC=[(48, 16), (51, 15), (47, 4), (52, 2), (49, 1)]	GT:AL:CN:LPM:AR:SD:DP:SN:SQ:MA:MR:DS:MV	1|2:51,48:25,24:AAGG-8,AAGG-12:47-51,47-52:18,20:38:1:41:0.0,.:18,.:(AAGG)8-GGCGAGCAAGGAATGAAGG,(AAGG)12:A,.
+chr4	1001	.	CAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAG	CAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAG,CAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAG	0	PASS	AC=1,1;AN=2;MOTIF=CAG;START=1000;END=1057;ID=.;REFCN=19;CT=Ed_Hdbscan;EAC=[(72, 12), (51, 9), (75, 2), (71, 1), (66, 1), (69, 1), (73, 1)]	GT:AL:CN:LPM:AR:SD:DP:SN:SQ:MA:MR:DS:MV	1|2:72,51:24,17:CAG-24,CAG-17:67-75,51-51:18,9:27:.:.:.,.:.,.:(CAG)24,(CAG)17:.,.
+chr9	1001	.	TAAAAAAAATAAGATAAAATAAAATA	.	0	PASS	AC=0;AN=2;MOTIF=AAAAT;START=1000;END=1026;ID=.;REFCN=5;CT=SNP;EAC=[(26, 32), (27, 2), (28, 1)]	GT:AL:CN:LPM:AR:SD:DP:SN:SQ:MA:MR:DS:MV	0|0:26,26:5,5:AAAAT-5,AAAAT-5:26-28,26-27:19,16:35:3:46,46,47:.,.:.,.:.:.,.
+chrX	1001	.	CGGCGGCGGCGGCGGCGGCGGCGGCGGCGGAGGCGGCGGCGGCGGCGGCGGCGGCGGCGG	CGGCGGCGGCGGCGGCGGCGGCGGCGGCGGAGGCGGCGGCGGCGGCGGCGGCGGCGGCGGAGGCGGCGGCGGCGGCGGCGGCGGCGGCGGCGG	0	PASS	AC=2;AN=2;MOTIF=CGG;START=1000;END=1060;ID=.;REFCN=20;CT=Ed_Hdbscan;EAC=[(93, 14), (96, 1)]	GT:AL:CN:LPM:AR:SD:DP:SN:SQ:MA:MR:DS:MV	1:93:31:CGG-10:93-95:15:15:.:.:0.01:14:(CGG)10-AGG-(CGG)9-AGG-(CGG)10:AAAAAEAAAAAAAAAEAAAAAAAEAAEAA,AAAAAEAAAAAAAAAEAAAAAAAEAAEAA
