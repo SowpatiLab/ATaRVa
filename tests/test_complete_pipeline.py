@@ -108,13 +108,13 @@ def test_complete_pipeline(tmp_path):
     input_fasta = test_dir / "test_ref.fasta"
 
     # Temporary output file
-    output_vcf = tmp_path / "tmp_test_output.vcf"
+    output_vcf = test_dir / "tmp_test_output.vcf"
     
     # Execute the complete tool
     result = subprocess.run(
         [
             sys.executable,
-            "/ATARVA/core.py",
+            str(Path(__file__).resolve().parent.parent / "ATARVA" / "core.py"),
             "genotype",
             "-b", str(input_bam), "-r", str(input_bed),
             "-f", str(input_fasta), "-o", str(output_vcf),
