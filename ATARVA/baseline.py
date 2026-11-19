@@ -673,7 +673,7 @@ class Cooper:
                 # homozygous reference genotype
                 ALT = '.'
                 ref_allele = self.ref.fetch(locus.chrom, locus.start, locus.end)
-                meth_data  = calculate_methylation(locus_data.reads, locus_data.read_methylation, ref_allele)
+                meth_data  = calculate_methylation(self, locus_data.reads, locus_data.read_methylation, ref_allele)
                 locus_data.gt_alens  = (locus.length, locus.length)
                 if ucluster: locus_data.gt_ucluster = ('-'.join(ucluster), '-'.join(ucluster), None)
                 locus_data.gt_arange = f'{lower}-{upper},{lower}-{upper}'
@@ -688,7 +688,7 @@ class Cooper:
 
             else:
                 ALT, allele_length = alt_sequence(locus_data.read_aseqs, locus_data.reads, self.args.amplicon, self.poa_aligner)
-                meth_data = calculate_methylation(locus_data.reads, locus_data.read_methylation, ALT)
+                meth_data = calculate_methylation(self, locus_data.reads, locus_data.read_methylation, ALT)
                 locus_data.gt_alens       = (len(ALT), len(ALT))
                 if ucluster: locus_data.gt_ucluster    = ('-'.join(ucluster), '-'.join(ucluster), None)
                 locus_data.gt_arange      = f'{lower}-{upper},{lower}-{upper}'
@@ -738,7 +738,7 @@ class Cooper:
                       else str(allele_length)
                 allele_count[key] = len(hap_reads)
 
-                meth_data = calculate_methylation(hap_reads, locus_data.read_methylation, ALT)
+                meth_data = calculate_methylation(self, self,hap_reads, locus_data.read_methylation, ALT)
                 if h == 0:
                     locus_data.gt_aseqs        = (ALT, locus_data.gt_aseqs[1])
                     locus_data.gt_alens        = (allele_length, locus_data.gt_alens[1])

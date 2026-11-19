@@ -5,12 +5,6 @@ from scipy import stats
 from ATARVA.consensus import consensus_seq_poa
 from ATARVA.decompose import motif_decomposition
 
-methviz_tag = False
-def set_methviz_tag(value):
-    global methviz_tag
-    methviz_tag = value
-
-
 # base64 encodings
 BASE64_CHARS = string.ascii_uppercase + string.ascii_lowercase + string.digits + '+//'
 NO_MATCH  = -2   # code for unmatched position
@@ -180,13 +174,13 @@ def encode_methylation(call_matrix, pos_matrix, consensus_cgs):
 
         # filter sentinels and compute mean
         avg_base_meth = np.mean(col_array[(col_array != AMBIGUOUS) & (col_array != NO_MATCH)])
-        base64_scaled = round([round(avg_base_meth, 2) * 100] / 1.5625 )
+        base64_scaled = round((round(avg_base_meth, 2) * 100) / 1.5625)
         encoded_meth.append(BASE64_CHARS[base64_scaled])
 
     return ''.join(encoded_meth)
 
 
-def calculate_methylation(read_indices, read_methylation, consensus_seq):
+def calculate_methylation(cooper, read_indices, read_methylation, consensus_seq):
     """
     calculate the methylation level at CG positions for a haplogroup based on the consensus sequence of the haplogroup
 
@@ -215,12 +209,12 @@ def calculate_methylation(read_indices, read_methylation, consensus_seq):
         methyl_nreads += 1
         haplotype_avgmeth += avg_read_meth
         # for meth visualization
-        if methviz_tag:
+        if cooper.args.methviz:
             pos_matrix.append(positions)
             call_matrix.append(meth_calls)
 
     if methyl_nreads > 0:
-        if methviz_tag:
+        if cooper.args.methviz:
             encoded_methylation = encode_methylation(call_matrix, pos_matrix, cg_positions)
         return [round(haplotype_avgmeth/methyl_nreads, 2), methyl_nreads, encoded_methylation]
     else:

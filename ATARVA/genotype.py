@@ -13,7 +13,6 @@ from ATARVA.version       import __version__
 from ATARVA.baseline      import Cooper
 from ATARVA.readers       import check_alnfile
 from ATARVA.vcf_writer    import set_info_mp_cutoff
-from ATARVA.sub_operation_utils import set_methviz_tag
 
 # --- Constants ---
 FORMAT_MAP = {
@@ -92,7 +91,7 @@ def genotype_parser(subparsers):
     parser.set_defaults(func=genotype_run)
 
 
-def splitregions_density(tbx, contigs, total_loci, threads, read_size):
+def splitregions_density(tbx, contigs, total_loci, threads, read_size, flank):
     """
     Split file based on density of loci. Drop sparse regions.
 
@@ -117,6 +116,7 @@ def splitregions_density(tbx, contigs, total_loci, threads, read_size):
         first_in_contig = True
         prev_start      = None
         prev_end        = None
+        max_end         = None # tracking the maximum end of previous locus to avoid overlapping loci split in chunks
 
         for row in tbx.fetch(contig):
             fields = row.split('\t')
@@ -127,16 +127,17 @@ def splitregions_density(tbx, contigs, total_loci, threads, read_size):
             if first_in_contig:
                 chrom       = fields[0]
                 start_coord = (int(fields[1]), int(fields[2]))
-                prev_start  = None
-                prev_end    = None
                 first_in_contig = False
+                prev_start  = prev_end = None
+                max_end = None
 
-            if prev_start is not None and int(fields[1]) - prev_end > GAP:
+            if prev_start is not None and int(fields[1]) - max_end > GAP:
                 end_coord = (prev_start, prev_end)
                 cur_chunk.append([chrom, start_coord, end_coord])
                 start_coord     = (int(fields[1]), int(fields[2]))
 
-            if len(fetcher) < threads - 1 and line_count % split_size == 0:
+            if len(fetcher) < threads - 1 and line_count >= split_size and \
+               max_end is not None and int(fields[1]) > max_end + flank: # only split at non-overlapping loci
                 end_coord = (int(fields[1]), int(fields[2]))
                 cur_chunk.append([chrom, start_coord, end_coord])
                 fetcher.append(tuple(cur_chunk))
@@ -146,6 +147,8 @@ def splitregions_density(tbx, contigs, total_loci, threads, read_size):
 
             prev_start = int(fields[1])
             prev_end   = int(fields[2])
+            if max_end is None: max_end = prev_end
+            else: max_end = max(max_end, prev_end)
 
         if not first_in_contig:
             end_coord = (int(fields[1]), int(fields[2]))
@@ -246,7 +249,6 @@ def genotype_run(args) -> None:
 
     # --- VCF output setup ---
     set_info_mp_cutoff(args.meth_prob)
-    set_methviz_tag(args.methviz)
 
     base_output = resolve_output_path(args.vcf)
 
@@ -288,7 +290,7 @@ def genotype_run(args) -> None:
 
         AVG_READ = check_alnfile(bam_file, args)
         tbx = pysam.Tabixfile(args.regions)
-        fetcher = splitregions_density(tbx, args.contigs, total_loci, args.threads, AVG_READ)
+        fetcher = splitregions_density(tbx, args.contigs, total_loci, args.threads, AVG_READ, args.flank)
         tbx.close()
 
         # resolve per-sample output path
