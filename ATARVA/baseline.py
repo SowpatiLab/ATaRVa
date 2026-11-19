@@ -741,7 +741,7 @@ class Cooper:
                       else str(allele_length)
                 allele_count[key] = len(hap_reads)
 
-                meth_data = calculate_methylation(self, self,hap_reads, locus_data.read_methylation, ALT)
+                meth_data = calculate_methylation(self, hap_reads, locus_data.read_methylation, ALT)
                 if h == 0:
                     locus_data.gt_aseqs        = (ALT, locus_data.gt_aseqs[1])
                     locus_data.gt_alens        = (allele_length, locus_data.gt_alens[1])
