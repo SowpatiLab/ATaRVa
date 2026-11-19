@@ -369,11 +369,10 @@ def motif_decomposition(sequence, motif_size):
     global cyclic_motif_registry
     cyclic_motif_registry = {}
 
-
     shift_list = shift_and_match(sequence)
-    overall_boundary = []
+    overall_boundary  = []
     sequential_decomp = {}
-    sequential_part = bitarray([1]*len(sequence))
+    sequential_part   = bitarray([1]*len(sequence))
     seq_len = len(sequence)
     gap_regions = [[0, seq_len]]
     rounds = 0
@@ -390,7 +389,7 @@ def motif_decomposition(sequence, motif_size):
 
             current_gap = gap_regions[index]
 
-            if best_shift!=-1:
+            if best_shift != -1:
                 previous_ovbound = overall_boundary.copy()
                 window_scan(shift_list, best_shift, sequence, sequential_decomp, sequential_part, overall_boundary, current_gap)
                 if previous_ovbound == overall_boundary:
@@ -432,7 +431,7 @@ def motif_decomposition(sequence, motif_size):
 
     fseq = [i for k,v in sorted(sequential_decomp.items(), key = lambda x : x[0]) for i in v]
 
-    if len(fseq)==1:
+    if len(fseq) == 1:
         if '(' in fseq[0]:
             fseq = [reduce_block(fseq[0])]
             non_rep_percent = 0

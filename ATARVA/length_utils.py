@@ -102,7 +102,7 @@ def homozygous_call(cooper, locus_key):
 
     locus_data.gt_aseqs        = (ALT, None)
     locus_data.gt_alens        = (allele_length, None)
-    locus_data.hap_meth_data   = (calculate_methylation(hap_reads, locus_data.read_methylation, ALT), None)
+    locus_data.hap_meth_data   = (calculate_methylation(cooper, hap_reads, locus_data.read_methylation, ALT), None)
     locus_data.gt_arange       = (f'{lower}-{upper}', None)
     locus_data.gt_ucluster     = ('-'.join(ucluster), None)
     if cooper.args.decompose and ALT != '<DEL>':
@@ -144,7 +144,7 @@ def heterozygous_call(cooper, locus_key):
         if i == 0:
             locus_data.gt_aseqs         = (ALT, locus_data.gt_aseqs[1])
             locus_data.gt_alens         = (allele_length, locus_data.gt_alens[1])
-            locus_data.hap_meth_data    = (calculate_methylation(hap_reads, locus_data.read_methylation, ALT), locus_data.hap_meth_data[1])
+            locus_data.hap_meth_data    = (calculate_methylation(cooper, hap_reads, locus_data.read_methylation, ALT), locus_data.hap_meth_data[1])
             locus_data.gt_arange        = (f'{lower}-{upper}', locus_data.gt_arange[1])
             locus_data.gt_ucluster      = ('-'.join(ucluster), locus_data.gt_ucluster[1])
             if cooper.args.decompose and ALT != '<DEL>':
@@ -156,7 +156,7 @@ def heterozygous_call(cooper, locus_key):
         else:
             locus_data.gt_aseqs         = (locus_data.gt_aseqs[0], ALT)
             locus_data.gt_alens         = (locus_data.gt_alens[0], allele_length)
-            locus_data.hap_meth_data    = (locus_data.hap_meth_data[0], calculate_methylation(hap_reads, locus_data.read_methylation, ALT))
+            locus_data.hap_meth_data    = (locus_data.hap_meth_data[0], calculate_methylation(cooper, hap_reads, locus_data.read_methylation, ALT))
             locus_data.gt_arange        = (locus_data.gt_arange[0], f'{lower}-{upper}')
             locus_data.gt_ucluster      = (locus_data.gt_ucluster[0], '-'.join(ucluster))
             if cooper.args.decompose and ALT != 'DEL':
