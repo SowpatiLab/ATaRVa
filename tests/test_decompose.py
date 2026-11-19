@@ -1,7 +1,7 @@
 
 import pytest
-from ATARVA import decomp_utils as mt
-from ATARVA.decomp_utils import (
+from ATARVA import decompose as mt
+from ATARVA.decompose import (
     get_canonical_motif, kmp_search_non_overlapping,
     is_valid_repeat_block, get_repeat_components,
     convert_to_bitset, motif_decomposition,
