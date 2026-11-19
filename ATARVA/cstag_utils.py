@@ -49,6 +49,11 @@ def parse_cstag(cooper, read):
 
     no_snp_range = 3
 
+    # The *_jump helpers return 0 without side effects when the operation ends before the
+    # flank start of loci_coords[repeat_index], or when every locus has been passed: skip those calls.
+    loci_coords = read.loci_coords
+    n_loci      = len(loci_coords)
+
     if read.cigartuples[0][0] == 4:     # adjust of softclip
         qpos += read.cigartuples[0][1]
 
@@ -61,8 +66,9 @@ def parse_cstag(cooper, read):
 
             match_len = int(match_len)
             qpos += match_len; rpos += match_len
-            repeat_index += match_jump(read, rpos, qpos, match_len, repeat_index, locus_query_range, flank_query_range,
-                                       locus_reached, locus_boundary_crossed)
+            if repeat_index < n_loci and rpos >= loci_coords[repeat_index][0]:
+                repeat_index += match_jump(read, rpos, qpos, match_len, repeat_index, locus_query_range, flank_query_range,
+                                           locus_reached, locus_boundary_crossed)
 
         elif read.cs_tag[i] == '=':      # sequence match in long CS is followed by nucs which are matching       
             match_len = 0; i += 1
@@ -70,8 +76,9 @@ def parse_cstag(cooper, read):
                 match_len += 1; i += 1
 
             qpos += match_len; rpos += match_len
-            repeat_index += match_jump(read, rpos, qpos, match_len, repeat_index, locus_query_range, flank_query_range,
-                                       locus_reached, locus_boundary_crossed)
+            if repeat_index < n_loci and rpos >= loci_coords[repeat_index][0]:
+                repeat_index += match_jump(read, rpos, qpos, match_len, repeat_index, locus_query_range, flank_query_range,
+                                           locus_reached, locus_boundary_crossed)
 
 
         elif read.cs_tag[i] == '*':      # substitution of a base; is followed by reference and substituted base
@@ -84,8 +91,9 @@ def parse_cstag(cooper, read):
             # update_snps(cooper, read, rpos, qpos, insert_positions, False)
 
             qpos += match_len; rpos += match_len
-            repeat_index += match_jump(read, rpos, qpos, match_len, repeat_index, locus_query_range, flank_query_range,
-                                       locus_reached, locus_boundary_crossed)
+            if repeat_index < n_loci and rpos >= loci_coords[repeat_index][0]:
+                repeat_index += match_jump(read, rpos, qpos, match_len, repeat_index, locus_query_range, flank_query_range,
+                                           locus_reached, locus_boundary_crossed)
 
         elif read.cs_tag[i] == '+':      # insertion; is followed by the inserted bases
             insert = ''; insert_len = 0; i += 1
@@ -99,8 +107,9 @@ def parse_cstag(cooper, read):
             if len(set(read.query_sequence[qpos:qpos+insert_len])) == 1: homopolymer_insert = True
 
             qpos += insert_len
-            repeat_index += insertion_jump(read, rpos, qpos, insert_len, homopolymer_insert, repeat_index, locus_query_range, flank_query_range,
-                                           locus_reached, locus_boundary_crossed, left_flank_insertions, right_flank_insertions)
+            if repeat_index < n_loci and rpos >= loci_coords[repeat_index][0]:
+                repeat_index += insertion_jump(read, rpos, qpos, insert_len, homopolymer_insert, repeat_index, locus_query_range, flank_query_range,
+                                               locus_reached, locus_boundary_crossed, left_flank_insertions, right_flank_insertions)
 
         elif read.cs_tag[i] == 'B':      # insertion; is followed by the inserted bases
             insert_len = ''; i += 1
@@ -125,8 +134,9 @@ def parse_cstag(cooper, read):
                 cooper_read_data[read_index].dels.extend([rpos, rpos + deletion_len])
                 cooper_read_data[read_index].no_snps.update(range(rpos-no_snp_range, rpos + deletion_len + 1 + no_snp_range))
             rpos += deletion_len
-            repeat_index += deletion_jump(read, rpos, qpos, deletion_len, repeat_index, locus_query_range, flank_query_range,
-                                          locus_reached, locus_boundary_crossed, left_flank_deletions, right_flank_deletions)
+            if repeat_index < n_loci and rpos >= loci_coords[repeat_index][0]:
+                repeat_index += deletion_jump(read, rpos, qpos, deletion_len, repeat_index, locus_query_range, flank_query_range,
+                                              locus_reached, locus_boundary_crossed, left_flank_deletions, right_flank_deletions)
 
         elif read.cs_tag[i] == '~':      # deletion; is followed by the deleted bases
             deletion_len = ''; i += 1

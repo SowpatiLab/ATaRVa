@@ -531,8 +531,11 @@ class Cooper:
                 mod_bases = ()
                 if read.has_tag('SA'):
                     mod_bases = (list(read.mod_bases.items()) if read.mod_bases is not None else [])
+                elif read.has_tag('MM') or read.has_tag('Mm'):   # no MM/Mm tag -> no modified bases; parse at most once
+                    parsed_mods = read.modified_bases
+                    mod_bases = (list(parsed_mods.items()) if parsed_mods is not None else [])
                 else:
-                    mod_bases = (list(read.modified_bases.items()) if read.modified_bases is not None else [])
+                    mod_bases = []
 
                 if read.has_tag('cs'):
                     parse_cstag(self, read)

@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+import numpy as np
 import pysam
 
 
@@ -150,43 +151,54 @@ class ExtendedRead(pysam.AlignedSegment):
         ext        = cls()
         ext._read  = read
 
+        # fetch each pysam value once (several getters rebuild objects on every access)
+        seq        = read.query_sequence
+        quals      = read.query_qualities
+        ref_start  = read.reference_start
+        ref_end    = read.reference_end
+        q_start    = read.query_alignment_start
+        q_end      = read.query_alignment_end
+
         # copy core pysam attributes
         ext.query_name                = read.query_name
-        ext.query_sequence            = read.query_sequence
+        ext.query_sequence            = seq
         ext.flag                      = read.flag
         ext.reference_id              = read.reference_id
-        ext.reference_start           = read.reference_start
-        ext.ref_start                 = read.reference_start
-        ext.ref_end                   = read.reference_end
+        ext.reference_start           = ref_start
+        ext.ref_start                 = ref_start
+        ext.ref_end                   = ref_end
         ext.strand                    = '-' if read.is_reverse else '+'
-        ext.query_start               = read.query_alignment_start
-        ext.query_end                 = read.query_alignment_end
+        ext.query_start               = q_start
+        ext.query_end                 = q_end
         ext.mapping_quality           = read.mapping_quality
         ext.cigar                     = read.cigar
         ext.next_reference_id         = read.next_reference_id
         ext.next_reference_start      = read.next_reference_start
         ext.template_length           = read.template_length
-        ext.query_qualities           = read.query_qualities
+        ext.query_qualities           = quals
         ext.tags                      = read.tags
         ext.has_tag                   = read.has_tag
         if read.has_tag('cs'):
             ext.cs_tag            = read.get_tag('cs')
         if read.has_tag('MD'):
             ext.md_tag            = read.get_tag('MD')
-        if read.modified_bases and read.has_tag('SA'):
-            ext.mod_bases         = read.modified_bases
-        else:
-            ext.mod_bases         = None
+        # modified_bases parses MM/ML on every access: only needed for SA reads, and empty without MM/Mm tags
+        ext.mod_bases             = None
+        if read.has_tag('SA') and (read.has_tag('MM') or read.has_tag('Mm')):
+            mod_bases = read.modified_bases
+            if mod_bases:
+                ext.mod_bases     = mod_bases
 
         # custom attributes
         ext.index                  = None
         ext.chrom                  = read.reference_name
-        ext.ref_start              = read.reference_start
-        ext.ref_end                = read.reference_end
-        ext.query_start            = read.query_alignment_start
-        ext.query_end              = read.query_alignment_end
-        ext.sequence               = read.query_sequence
-        ext.mean_qual              = int(sum(read.query_qualities)/len(read.query_qualities)) if read.query_qualities else 0
+        ext.ref_start              = ref_start
+        ext.ref_end                = ref_end
+        ext.query_start            = q_start
+        ext.query_end              = q_end
+        ext.sequence               = seq
+        # integer sum is exact, so this equals int(sum(quals)/len(quals))
+        ext.mean_qual              = int(int(np.frombuffer(quals, dtype=np.uint8).sum(dtype=np.int64)) / len(quals)) if quals else 0
         ext.loci                   = []
         ext.loci_coords            = []
         ext.loci_keys              = []
