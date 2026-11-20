@@ -285,13 +285,14 @@ class Cooper:
                             del self.supp_reads[rname]
                     self.sa_win_start = 0 if raw_read.reference_start - SA_DROP_DISTANCE < 0 else raw_read.reference_start - SA_DROP_DISTANCE
 
-                read = ExtendedRead.from_read(raw_read)
-
+                # computed from the raw read (same values the ExtendedRead would carry), so that reads
+                # which cannot be assigned any locus are never copied into an ExtendedRead
+                raw_cigar      = raw_read.cigartuples
                 start_softclip = end_softclip = 0
-                if read.cigartuples[0][0]  == 4 and softclip_mode: start_softclip = read.cigartuples[0][1]
-                if read.cigartuples[-1][0] == 4 and softclip_mode: end_softclip   = read.cigartuples[-1][1]
-                fetch_start = max(0, read.ref_start - start_softclip)
-                fetch_end   = min(read.ref_end + end_softclip, last_coords[1])
+                if raw_cigar[0][0]  == 4 and softclip_mode: start_softclip = raw_cigar[0][1]
+                if raw_cigar[-1][0] == 4 and softclip_mode: end_softclip   = raw_cigar[-1][1]
+                fetch_start = max(0, raw_read.reference_start - start_softclip)
+                fetch_end   = min(raw_read.reference_end + end_softclip, last_coords[1])
 
                 # --- flush completed loci ---
                 while self.cooper_loci_ends and fetch_start - DROP_DISTANCE > self.cooper_loci_ends[0]:
@@ -336,6 +337,24 @@ class Cooper:
                         self.progress_bar.update(1)
                     break
 
+                # --- candidate loci: same tabix query and boundary test as the locus loop below ---
+                locus_rows    = list(self.tbx.fetch(chrom, fetch_start, fetch_end))
+                has_candidate = False
+                for row in locus_rows:
+                    fields      = row.split('\t')
+                    locus_start = int(fields[1])
+                    if locus_start < first_coords[0]: continue
+                    if locus_start >= last_coords[1]: break
+                    if int(fields[2]) <= last_coords[1]:
+                        has_candidate = True
+                        break
+                # no assignable locus and no SA tag: the read would be dropped at `if not read.loci_coords`
+                # without touching any shared state, so skip building the ExtendedRead
+                if not has_candidate and not raw_read.has_tag('SA'):
+                    continue
+
+                read = ExtendedRead.from_read(raw_read)
+
                 # process the SA tag to store relevant supplementary alignments
                 if read.has_tag('SA'):
                     if read.query_name not in self.supp_reads:
@@ -347,7 +366,7 @@ class Cooper:
 
                 # --- assign loci to read ---
                 softclip_loci  = {'keys': [], 'loci': [], 'coords': [], 'flags': []}
-                for row in self.tbx.fetch(chrom, fetch_start, fetch_end):
+                for row in locus_rows:
                     fields      = row.split('\t')
                     locus_start = int(fields[1])
                     locus_end   = int(fields[2])
