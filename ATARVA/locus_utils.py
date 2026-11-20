@@ -234,7 +234,7 @@ def assign_hap_category(locus_data):
     :return: None (updates the locus_data.hap_category in place)
     """
 
-    if locus_data.is_genotyped and (list(locus_data.read_haplotags.values()).count(None) / locus_data.depth) <= 0.15:
+    if locus_data.is_phased and (list(locus_data.read_haplotags.values()).count(None) / locus_data.depth) <= 0.15:
         locus_data.hap_category = 3 # phased based on haplotag
         return
 
@@ -348,7 +348,7 @@ def process_locus(cooper, locus_key):
         locus_data.hap_alen_sets = ([locus_data.read_alens[ridx][0] for ridx in hap1], [locus_data.read_alens[ridx][0] for ridx in hap2])
         # haplotyped successfully if there are reads in both haplogroups
         locus_data.is_phased  = all(locus_data.hap_read_sets)
-        locus_data.phase_mode = 'haplotag' if locus_data.is_genotyped else None
+        locus_data.phase_mode = 'haplotag' if locus_data.is_phased else None
 
     assign_hap_category(locus_data)
 

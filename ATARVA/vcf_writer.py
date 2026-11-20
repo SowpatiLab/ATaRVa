@@ -233,7 +233,6 @@ def write_homozygous_call(cooper, locus_key):
     if locus_data.hap_category == 3 and locus_data.is_phased:
         PS = list(set(locus_data.read_haplotag_ps.values())) if locus_data.read_haplotag_ps is not None else '.'
         if PS != '.': PS = PS[0]
-        SAMPLE += f':{PS}'
     SAMPLE = (
             f'{GT}'
             f':{length_GT}'
@@ -373,7 +372,6 @@ def write_heterozygous_call(cooper, locus_key):
         PS = list(set(locus_data.read_haplotag_ps.values())) if locus_data.read_haplotag_ps is not None else '.'
         if PS != '.':
             PS = PS[0]
-        SAMPLE += f':{PS}'
     SAMPLE = (
             f'{GT}'
             f':{length_GT}'

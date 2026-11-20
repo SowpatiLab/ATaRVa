@@ -600,6 +600,7 @@ class Cooper:
                                 del ldata.read_alens[ldata.min_qual_read]
                                 del ldata.read_aseqs[ldata.min_qual_read]
                                 del ldata.read_haplotags[ldata.min_qual_read]
+                                ldata.read_haplotag_ps.pop(ldata.min_qual_read, None)
                                 ldata.depth -= 1
                             # update minimum quality read
                             ldata.min_read_qual = float('inf')
