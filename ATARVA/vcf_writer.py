@@ -109,6 +109,7 @@ def ordered_write(cooper, locus_key, record):
                     print(cooper.chrom, _start + 1, '.', cooper.ref.fetch(_chrom, _start, _end), '.', 0, 'FAIL',
                         f'AC=0;AN=0;MOTIF={_motif};START={_start};END={_end};ID=.;REFCN={(_end-_start)//len(_motif)}',
                         FORMAT, fail_format(), file=cooper.outhandle, sep='\t')
+                cooper.tick_progress()    # locus never reached locus_processor (no reads)
             cooper.next_locus_key = next(cooper.region_itr, None)
             _chrom, _start, _end, _motif = break_locuskey(cooper.next_locus_key)
         cooper.genotyped_loci[locus_key] = record

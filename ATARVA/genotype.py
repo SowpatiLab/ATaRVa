@@ -2,15 +2,16 @@ import sys
 import os
 import timeit as ti
 from pathlib import Path
+import multiprocessing as mp
 from multiprocessing import Pool
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, wait, FIRST_COMPLETED
 from concurrent.futures.process import BrokenProcessPool
 from tqdm import tqdm
 import pysam
 
 from ATARVA.readers       import fasta_check, bam_check, tabix_check
 from ATARVA.version       import __version__
-from ATARVA.baseline      import Cooper
+from ATARVA.baseline      import Cooper, init_shared_progress
 from ATARVA.readers       import check_alnfile
 from ATARVA.vcf_writer    import set_info_mp_cutoff
 
@@ -24,6 +25,7 @@ FORMAT_MAP = {
 DEFAULT_MAX_READS    = 100
 DEFAULT_AMPMAX_READS = 5000
 DEFAULT_FLANK        = 10
+PROGRESS_POLL        = 0.5   # seconds between progress-bar refreshes in multi-thread mode
 
 def genotype_parser(subparsers):
     """Argument parser for the genotype sub-command of ATaRVa"""
@@ -306,38 +308,48 @@ def genotype_run(args) -> None:
             all_success = True
             errors      = []
 
-            with tqdm(total=args.threads, desc='Processing', ascii='_>', ncols=75,
+            progress    = mp.Value('q', 0)               # loci finished across all workers (shared counter)
+
+            with tqdm(total=total_loci, desc='Processing', ascii='_>', ncols=75,
                       bar_format='{l_bar}{bar}{n_fmt}/{total_fmt}') as pbar:
 
-                def on_success(_): pbar.update()
+                def show_progress():
+                    pbar.n = progress.value
+                    pbar.refresh()
 
                 def on_error(e):
                     nonlocal all_success
                     all_success = False
                     errors.append(str(e))
-                    pbar.update()
                     print(f'Thread failed: {e}', file=sys.stderr)
 
-                with ProcessPoolExecutor(max_workers=args.threads) as ex:
+                with ProcessPoolExecutor(max_workers=args.threads, initializer=init_shared_progress,
+                                         initargs=(progress,)) as ex:
                     futures = {
                         ex.submit(worker_init, bam_file, fetcher[i], args, out_file, sample_idx, i): i
                         for i in range(args.threads)
                     }
+                    pending = set(futures)
 
-                    # ── verify threads as they finish; stop everything on the first failure ──
-                    for f in as_completed(futures):
-                        i = futures[f]
-                        try:
-                            on_success(f.result())           # raises if the worker failed
-                        except BrokenProcessPool:
-                            all_success = False
-                            errors.append(f'Thread {i}: worker was killed (likely out of memory)')
-                            break
-                        except BaseException as e:           # includes MemoryError and KeyboardInterrupt
-                            all_success = False
-                            errors.append(f'Thread {i}: {e!r}')
-                            on_error(e)
-                            break
+                    # ── refresh the bar from the shared counter; verify threads as they finish;
+                    #    stop everything on the first failure ──
+                    while pending and all_success:
+                        done, pending = wait(pending, timeout=PROGRESS_POLL, return_when=FIRST_COMPLETED)
+                        show_progress()
+                        for f in done:
+                            i = futures[f]
+                            try:
+                                f.result()                       # raises if the worker failed
+                            except BrokenProcessPool:
+                                all_success = False
+                                errors.append(f'Thread {i}: worker was killed (likely out of memory)')
+                                break
+                            except BaseException as e:           # includes MemoryError and KeyboardInterrupt
+                                all_success = False
+                                errors.append(f'Thread {i}: {e!r}')
+                                on_error(e)
+                                break
+                    show_progress()
 
                     if not all_success:                      # kill the surviving workers right away
                         for p in list((ex._processes or {}).values()):

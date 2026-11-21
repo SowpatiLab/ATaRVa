@@ -34,6 +34,19 @@ DROP_DISTANCE    = 30000     #  if softclip_mode else 0    # distance beyond whi
 SA_DROP_DISTANCE = 500000    # distance beyond which supplementary alignments are dropped from memory
 NONREP_FLANK     = 30        # Minimum non-repetitive flank considered for locus processing from softclip region
 SOFT_DISTANCE    = 10000
+PROGRESS_BATCH   = 25        # loci per update of the shared progress counter (multi-thread mode)
+
+_shared_progress = None      # multiprocessing.Value set in each worker by init_shared_progress
+
+
+def init_shared_progress(counter):
+    """
+    Worker-pool initializer: keep the parent's shared locus counter for progress reporting.
+
+    :param counter: multiprocessing.Value('q') created by the parent process
+    """
+    global _shared_progress
+    _shared_progress = counter
 
 
 def _hidden_path(out_file):
@@ -136,6 +149,7 @@ class Cooper:
 
         self.disable_progress = False
         if self.args.threads > 1: self.disable_progress = True
+        self.progress_pending = 0     # loci finished but not yet added to the shared counter
 
         # --- count loci per region ---
         self.cooper_nloci  = 0
@@ -175,12 +189,33 @@ class Cooper:
             bam_stem = Path(bam_file).stem
             self._reinitialise()
             self.cooper_readmode(region_range, cidx)
+        self._flush_progress()
 
         self.bam.close()
         self.ref.close()
         self.tbx.close()
         self._tbx.close()
         self.outhandle.close()
+
+    # --- progress reporting ---
+    def tick_progress(self, n=1):
+        """
+        Record n finished loci: on the local bar (single thread) or, batched,
+        on the parent's shared counter (multi-thread).
+        """
+        if _shared_progress is None:
+            self.progress_bar.update(n)
+            return
+        self.progress_pending += n
+        if self.progress_pending >= PROGRESS_BATCH:
+            self._flush_progress()
+
+    def _flush_progress(self):
+        """Add pending finished loci to the shared counter."""
+        if _shared_progress is not None and self.progress_pending:
+            with _shared_progress.get_lock():
+                _shared_progress.value += self.progress_pending
+            self.progress_pending = 0
 
     # --- state management ---
     def _reinitialise(self):
@@ -297,7 +332,7 @@ class Cooper:
                 # --- flush completed loci ---
                 while self.cooper_loci_ends and fetch_start - DROP_DISTANCE > self.cooper_loci_ends[0]:
                     genotyped_count  += self.locus_processor()
-                    self.progress_bar.update(1)
+                    self.tick_progress()
 
                 loci_rindices = set()
                 for lk in self.cooper_loci_data: loci_rindices |= set(self.cooper_loci_data[lk].reads)
@@ -334,7 +369,7 @@ class Cooper:
                 if fetch_start > region_end:
                     while self.cooper_loci_ends:
                         genotyped_count  += self.locus_processor()
-                        self.progress_bar.update(1)
+                        self.tick_progress()
                     break
 
                 # --- candidate loci: same tabix query and boundary test as the locus loop below ---
@@ -625,7 +660,7 @@ class Cooper:
         # --- flush remaining loci ---
         while self.cooper_loci_ends:
             genotyped_count  += self.locus_processor()
-            self.progress_bar.update(1)
+            self.tick_progress()
 
         while self.next_locus_key is not None:
             _chrom, _start, _end, _motif = break_locuskey(self.next_locus_key)
@@ -636,6 +671,7 @@ class Cooper:
                 print(self.chrom, _start + 1, '.', self.ref.fetch(_chrom, _start, _end), '.', 0,
                     'FAIL', f'AC=0;AN=0;MOTIF={_motif};START={_start};END={_end};ID=.;REFCN={(_end-_start)//len(_motif)}',
                     'GT:AL:CN:AR:SD:DP:SN:SQ:MA:MR:DS:MV:OL:FV:PS', f'.:.:.:.:.:0:.:.:.:.:.:.:.:.:.', file=self.outhandle, sep='\t')
+                self.tick_progress()    # locus never reached locus_processor (no reads)
             self.next_locus_key = next(self.region_itr, None)
 
 
