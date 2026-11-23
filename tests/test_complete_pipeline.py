@@ -105,7 +105,7 @@ def test_complete_pipeline(tmp_path):
     # Input BAM file
     input_bam = test_dir / "test_reads.bam"
     input_bed = test_dir / "test_region.bed.gz"
-    input_fasta = test_dir / "test_ref.fasta"
+    input_fasta = test_dir / "test_ref.fa"
 
     # Temporary output file
     output_vcf = test_dir / "tmp_test_output.vcf"
