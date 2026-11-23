@@ -8,3 +8,4 @@
 /notebooks/*
 /dist
 /tests/__pycache__
+/tests/test_data/*.vcf
