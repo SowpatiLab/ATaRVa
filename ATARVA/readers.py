@@ -11,11 +11,11 @@ def fasta_check(path):
         f = pysam.FastaFile(path)
         f.close()
     except (FileNotFoundError, ValueError, OSError) as e:
-        print(f"Error: {path} is not a valid FASTA file. {str(e)}")
-        sys.exit()
+        print(f"Error: {path} is not a valid FASTA file. {str(e)}", file=sys.stderr)
+        sys.exit(1)
     except Exception as e:
-        print("An unexpected error occurred:", str(e))
-        sys.exit()
+        print("An unexpected error occurred:", str(e), file=sys.stderr)
+        sys.exit(1)
 
 
 def bam_check(path, aln_format, fasta):
@@ -35,21 +35,21 @@ def bam_check(path, aln_format, fasta):
                 pass
                 # print(f"Alignment file sort order: {sort_order}")
             else:
-                print(f"Alignment file sort order: {sort_order}. It should be sorted by \'coordinate\'!!")
-                print(f"Use: samtools sort sorted_{path.split('/')[-1]} {path.split('/')[-1]}")
-                sys.exit()
+                print(f"Alignment file sort order: {sort_order}. It should be sorted by \'coordinate\'!!", file=sys.stderr)
+                print(f"Use: samtools sort sorted_{path.split('/')[-1]} {path.split('/')[-1]}", file=sys.stderr)
+                sys.exit(1)
         else:
-            print("No sort order specified in the header.")
-            print(f"Use: samtools sort sorted_{path.split('/')[-1]} {path.split('/')[-1]}")
-            sys.exit()
+            print("No sort order specified in the header.", file=sys.stderr)
+            print(f"Use: samtools sort sorted_{path.split('/')[-1]} {path.split('/')[-1]}", file=sys.stderr)
+            sys.exit(1)
 
         b.close()
     except (FileNotFoundError, ValueError, OSError) as e:
-        print(f"Error: {path} is not a valid alignment file. {str(e)}")
-        sys.exit()
+        print(f"Error: {path} is not a valid alignment file. {str(e)}", file=sys.stderr)
+        sys.exit(1)
     except Exception as e:
-        print("An unexpected error occurred:", str(e))
-        sys.exit()
+        print("An unexpected error occurred:", str(e), file=sys.stderr)
+        sys.exit(1)
 
 
 def tabix_check(path):
@@ -62,11 +62,11 @@ def tabix_check(path):
         t = pysam.TabixFile(path)
         t.close()
     except (FileNotFoundError, ValueError, OSError) as e:
-        print(f"Error: {path} is not a valid tabix file. {str(e)}")
-        sys.exit()
+        print(f"Error: {path} is not a valid tabix file. {str(e)}", file=sys.stderr)
+        sys.exit(1)
     except Exception as e:
-        print("An unexpected error occurred:", str(e))
-        sys.exit()
+        print("An unexpected error occurred:", str(e), file=sys.stderr)
+        sys.exit(1)
 
 
 def check_alnfile(bamfile, args):

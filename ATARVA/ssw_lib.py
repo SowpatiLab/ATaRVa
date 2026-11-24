@@ -111,8 +111,8 @@ class CSsw(object):
         if sLibPath:
 # user does give the path explicitly
             if not op.exists(op.join(sLibPath, sLibName)):
-                sys.stderr.write('libssw.so does not exist in the input path.')
-                sys.exit()
+                sys.stderr.write('libssw.so does not exist in the input path.\n')
+                sys.exit(1)
             self.ssw = ct.cdll.LoadLibrary(op.join(sLibPath,sLibName))
         else:
 # otherwise just search in PATH
@@ -122,8 +122,8 @@ class CSsw(object):
                     bFound = True
                     self.ssw = ct.cdll.LoadLibrary(op.join(s,sLibName))
             if bFound == False:
-                sys.stderr.write('libssw.so does not exist in PATH')
-                sys.exit()
+                sys.stderr.write('libssw.so does not exist in PATH\n')
+                sys.exit(1)
 
 # init ssw_init
         """
