@@ -40,7 +40,7 @@ Options:
 Overview of the ATaRVa workflow:
 1. ATaRVa processes the input BAM/CRAM file read-wise, assuming that most long reads span multiple TR loci.
 2. After identifying the flank alignments and adjustment of any flanking indels in each read, ATaRVa calculates allele length for a locus across all spanning reads.
-3. Next, ATaRVa phases reads into haplotypes using nearby informative *SNV*s, or applies an *edit-distance* based HDBscan clustering approach when no informative SNVs are present.
+3. Next, ATaRVa phases reads into haplotypes. ATaRVa attempts to group reads using nearby informative SNVs. If SNP-based genotyping is unsuccessful, it uses HDBSCAN clustering based on allele length and edit distance from the reference (KDE clustering for amplicon mode). If the input file is already phased the input haplotag can be specified with --haplotag.
 4. It derives consensus allele sequences for each haplotype using partial order alignment, decomposes each TR allele into motif-level representations, and outputs the results in VCF format.
 
 The help message and available options can be accessed using
@@ -290,13 +290,17 @@ Genotyping mode for BED files with sparse regions across chromosomes or for BED 
 
 ### `--decompose`
 **Default**: *False*<br>
-Performs motif-decomposition on ALT sequences.
+Decomposes called allele sequences into repeat blocks and intervening sequence.
+Each reported repeat block represents consecutive copies of a motif;
+interruptions can occur between blocks, rather than being counted as part of
+a perfect repeat. This helps describe the structure of an allele, not just
+its overall length.
 <div align=center>
   <img src="../lib/MD.png" alt="Motif decomposition" width="500"/>
   <p><i>Overview of TR motif decomposition </i></p>
 </div>
 <br>
-**NOTE: Only applicable for motif length <= 10**
+See [Output format](#output-format) for details.
 
 ### `--amplicon`
 **Default**: *False*<br>
@@ -382,53 +386,90 @@ In all the above examples, the output of ATaRVa is saved to input.vcf unless -o 
 ### `-o or --vcf`
 **Expects**: *STRING (to be used as filename)*<br>
 **Default**: *Input Alignment Filename + .vcf*<br>
-If this option is not provided, the default output filename will be the same as the input alignment filename, with its extension replaced with '.vcf'. For example, if the input filename is `input.bam`, the default output filename will be `input.vcf`. If the input filename does not have any extension, .vcf will be appended to the filename.
-Each entry includes the fields specified in the [Variant Calling Format (VCF)](https://samtools.github.io/hts-specs/VCFv4.3.pdf), as described in the table below.
-|     FIELD     |           DESCRIPTION           | 
-|---------------|---------------------------------|
-| CHROM | Chromosome that contains the repeat region |
-| POS | Start position of the repeat region |
-| ID |  Region identifier (set to '.') |
-| REF | Reference sequence of the repeat region |
-| ALT | Sequence of the repeat alleles in the sample |
-| QUAL | Quality score of the genotype (set to '0') |
-| FILTER | Filter status (PASS, LESS_READS) |
-| INFO | Information about the TR region |
-| FORMAT | Data type of the genotype information |
-| SAMPLE | Values of the genotype information for the TR region |
+Without `-o`, each input alignment produces a VCF named after the alignment's
+filename stem, such as `input.vcf` for `input.bam`. With multiple input
+alignments and an explicit output name, the sample stem is appended to that
+name for each output.
 
-#### INFO fields
-The `INFO` field describes the general structure of the repeat region and includes the following details:
-|     INFO      |           DESCRIPTION           | 
-|---------------|---------------------------------|
-| AC | Total number of respective ALT alleles in called genotypes |
-| AN | Total number of alleles in called genotypes |
-| MOTIF | Motif of the repeat region |
-| START | Start position of the repeat region |
-| END | End position of the repeat region |
-| ID  | Tag fetched form the extra column in BED file |
-| REFCN | Reference allele copy number |
+ATaRVa writes one sample per VCF and declares VCF version 4.5. The
+[VCF specification](https://github.com/samtools/hts-specs) describes the
+general format. ATaRVa-specific fields are described below.
 
-#### FORMAT fields
-The `FORMAT` fields and their values are provided in the last two columns of the VCF file, containing information about each genotype call. These columns include the following fields:  
-|     FORMAT      |           DESCRIPTION           | 
-|-----------------|---------------------------------|
-| GT | Genotype of the sample |
-| AL | Length of the alleles in base pairs |
-| CN | Motif copy number for each allele |
-| AR | Central 95% range of allele lengths in each cluster |
-| SD | Number of supporting reads for each alleles |
-| DP | Number of the supporting reads for the repeat locus |
-| SN | Number of SNPs used for phasing |
-| SQ | Phred-scale qualities of the SNPs used for phasing |  
-| MA | Mean methylation level for each allele | 
-| MR | Number of reads supporting methylation info for each allele | 
-| DS | Motif decomposed sequence of the alternate alleles |
-| MV | Visual methylation encodings for the alleles |
-| OL | The outlier lengths observed in the phased reads and unphased reads for the locus |
-| FV | Flag indicating presence of variants in the flank of the repeat locus|
-| PS | Phase Set assigned in the phasing process if available in alignment file |
-| LPM | Longest pure repeat motif & its copy number for each allele |
+### Record columns
+
+| Field | Description |
+|-------|-------------|
+| CHROM | Chromosome containing the repeat region. |
+| POS | One-based start position of the repeat region: catalog `START` + 1. |
+| ID | Always `.`. A catalog locus ID is instead recorded in INFO `ID`. |
+| REF | Reference sequence fetched for the catalog interval. |
+| ALT | Full sequence of each called alternate (non-reference) allele. `.` indicates a reference or missing call. `<DEL>` indicates a deletion of the entire repeat locus for that allele. |
+| QUAL | Set to `0`, not a calculated genotype quality. |
+| FILTER | `PASS` for a successful call; `LESS_READS` for insufficient read depth; or `FAIL` for an unencountered locus. |
+| INFO | Locus-level annotations. |
+| FORMAT | Colon-separated sample field names. |
+| SAMPLE | Colon-separated values corresponding to the FORMAT fields. |
+
+Failed records contain missing genotype values and a read depth when available.
+Use `--gvcf` to include ungenotyped catalog loci. Failed records can also
+appear without `--gvcf`.
+
+### INFO fields
+
+| INFO | Description |
+|------|-------------|
+| AC | How many times each ALT allele appears in the sample’s genotype, in the same order as the ALT alleles. |
+| AN | Total number of alleles called in the sample’s genotype. |
+| MOTIF | Repeat motif from the catalog. |
+| START | Zero-based catalog start position. |
+| END | Catalog end position, the exclusive end of the BED interval. |
+| ID | Optional locus ID from the catalog, or `.` if not provided. |
+| REFCN | Reference interval length divided by catalog motif length, rounded down to an integer. |
+
+### FORMAT fields
+
+`.` indicates a missing value. Multiple values are separated by commas.
+
+| FORMAT | Description |
+|--------|-------------|
+| GT | Called genotype. |
+| AL | Length in bases of each called allele. `<DEL>` is assigned length `0`. |
+| CN | Allele length divided by the catalog motif length, rounded down to the nearest integer. |
+| LPM | Motif of the longest pure repeat segment found in the decomposition. See [motif decomposition](#motif-decomposition-longest-pure-motif-lpm-and-longest-pure-segment-lps). |
+| LPS | Longest Pure Segment: number of consecutive, perfect copies of the LPM motif. See [motif decomposition](#motif-decomposition-longest-pure-motif-lpm-and-longest-pure-segment-lps). |
+| AR | Lower and upper allele-length bounds for each read cluster, formatted as `lower-upper`. Bounds are calculated from the 2.5th and 97.5th percentiles and rounded. |
+| SD | Number of reads supporting each haplogroup or cluster. |
+| DP | Number of supporting spanning reads at the locus. |
+| SN | Number of informative SNPs used for SNP-based phasing. |
+| SQ | SNP quality values used by the phasing implementation. |
+| MA | Mean of the per-read methylation averages for reads with methylation information in the haplogroup, rounded to two decimal places. |
+| MR | Number of haplogroup reads with methylation information used for MA. |
+| DS | Motif-decomposed representation of each allele sequence called in the sample. This can include the reference allele if called. See [motif decomposition](#motif-decomposition-longest-pure-motif-lpm-and-longest-pure-segment-lps). |
+| MV | Encoded per-CpG methylation information for visualization, when `--methviz` is enabled and information is available. |
+| OL | Hyphen-separated read allele lengths outside the cluster's AR bounds, followed where available by lengths of unphased reads. Groups are comma-separated. |
+| FV | `1` when a flanking variant was detected, otherwise `0`. |
+| PS | Phase set from input read tags for a phased call. |
 
 
-**NOTE: Loci missing in the VCF either have no reads mapped to them, contain reads that do not fully enclose the repeat region, or have reads with low mapping quality (mapQ).**
+
+### Motif decomposition, Longest Pure Motif (LPM) and Longest Pure Segment (LPS)
+
+With `--decompose`, ATaRVa decomposes called allele sequences into repeat
+segments and intervening sequence. A repeat segment is represented as
+`(motif)copy_count`, where the count is of consecutive, perfect copies.
+The allele as a whole can contain interruptions or different repeat motifs:
+these are represented as separate segments, separated by hyphens, rather
+than counted within one uninterrupted run. For example, the the sequence ACACACTACAC would be
+decomposed as `(AC)3-T-(AC)2` with the interruption `T` between two
+blocks of the same motif. Its longest pure segment is `(AC)3`, so `LPM=AC`
+and `LPS=3`, not 5. LPS does not combine repeat copies across the
+interruption.
+
+The implementation chooses the decomposed repeat segment with the greatest
+length in bases (motif length multiplied by copy count), not necessarily the
+largest copy count. If equally long segments tie, it prefers one whose motif
+is a cyclic rotation of the catalog motif; otherwise it takes the first
+longest segment. A selected motif that is a cyclic rotation of the catalog
+motif is reported as the catalog motif. If there are no decomposed repeat
+segments, the implementation reports the catalog motif and counts its longest
+exact contiguous run in the undecomposed sequence, which can be zero.

@@ -12,6 +12,14 @@ ATaRVa (pronounced uh-thur-va, IPA: /əθərvə/, Sanskrit: अथर्व) is 
 ## Motivation
 Long-read sequencing propelled comprehensive analysis of tandem repeats (TRs) in genomes. Current long-read TR genotypers are either platform specific or computationally inefficient. ATaRVa outperforms existing tools while running an order of magnitude faster. ATaRVa also supports multi-threading, haplotyping, motif decomposition and methylation profiling, making it an invaluable tool for population scale TR analyses.
 
+## Documentation
+
+* [`genotype` usage](docs/genotype_usage.md): Inputs, options, examples, and an overview of VCF output fields.
+* [`merge` usage](docs/merge_usage.md): Options and examples for merging ATaRVa VCF files.
+* [Visualization](docs/visualization.md): Visualizing motif structure and methylation using VisuaMiTRa.
+* [FAQs](docs/FAQs.md): Frequently asked questions about genotyping modes.
+* [Changelog](docs/changelog.md): Changes across ATaRVa releases.
+
 ## Installation
 
 ### PyPI installation
@@ -53,15 +61,6 @@ ATaRVa can also be installed using the provided **Docker** image with the follow
 $ cd ATaRVa
 $ docker build --network host -t atarva
 ```
-
-## Documentation
-
-* [`genotype` usage](/docs/genotype_usage.md)
-* [`merge` usage](/docs/merge_usage.md)
-* [Visualization](/docs/Visualization.md)
-* [FAQs](/docs/FAQs.md)
-* [Changelog](/docs/changelog.md)
-
 
 ## Usage
 The help message and available subcommands can be accessed using
