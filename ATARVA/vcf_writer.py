@@ -7,7 +7,6 @@ from ATARVA.locus_utils import break_locuskey
 
 SA_DROP_DISTANCE = 1000000    # distance beyond which supplementary alignments are dropped from memory
 FORMAT  = 'GT:AL:CN:LPM:LPS:AR:SD:DP:SN:SQ:MA:MR:DS:MV:OL:FV:PS'
-QUAL = '.'
 def fail_format(depth=0):
     return f'.:.:.:.:.:.:.:{depth}:.:.:.:.:.:.:.:.:.'
 
@@ -27,8 +26,9 @@ def vcf_writer(args, out, bam, bam_name):
     """
 
     vcf_header = pysam.VariantHeader()
+    vcf_header.add_line('##fileformat=VCFv4.5')
     vcf_header.add_line('##fileDate={}'.format(ti.strftime("%Y%m%d")))
-    vcf_header.add_line(f'##source=ATaRVa-v{__version__}')
+    vcf_header.add_line('##source=ATaRVa-v{__version__}')
     if args.fasta:
         vcf_header.add_line('##reference={}'.format(args.fasta))
     else:
@@ -55,6 +55,9 @@ def vcf_writer(args, out, bam, bam_name):
     vcf_header.info.add("END",   number=1,   type="Integer",  description="End position of the repeat region")
     vcf_header.info.add("ID",    number=1,   type="String",   description="Locus identifier tag")
     vcf_header.info.add("REFCN", number=1,   type="Integer",  description="Reference allele copy number")
+    vcf_header.info.add("CT",    number=1,   type="String",   description="Cluster type")
+    vcf_header.info.add("MPC",   number=1,   type="String",   description=f"{INFO_MP_CUTOFF}")
+    vcf_header.info.add("AFD",   number=1,   type="String",   description="Allele length frequency for the reads supporting the locus")
 
     # FORMAT
     vcf_header.formats.add("GT",   number=1,   type="String",   description="Genotype")
@@ -69,7 +72,7 @@ def vcf_writer(args, out, bam, bam_name):
     vcf_header.formats.add("SQ",   number='.', type="Float",    description="Average Phred-scale base call quality of each informative SNP across the supporting reads")
     vcf_header.formats.add("MA",   number='.', type="Float",    description="Average  methylation level for each allele")
     vcf_header.formats.add("MR",   number='.', type="Integer",  description="Number of informative reads for methylation scoring for each allele")
-    vcf_header.formats.add("DS",   number='G', type="String",   description="Motif decomposed sequence for each allele sequence")
+    vcf_header.formats.add("DS",   number='A', type="String",   description="Motif decomposed sequence for each allele sequence")
     vcf_header.formats.add("MV",   number='.', type="String",   description="Base methylation score encoded for visualization for each allele")
     vcf_header.formats.add("OL",   number='1', type="String",   description="The outlier lengths observed in the phased reads and unphased reads for the locus")
     vcf_header.formats.add("FV",   number='1', type="String",   description="Flag indicating presence of variants in the flank of the repeat locus")
@@ -103,7 +106,7 @@ def ordered_write(cooper, locus_key, record):
                 del cooper.genotyped_loci[cooper.next_locus_key]
             else:
                 if cooper.args.gvcf:
-                    print(cooper.chrom, _start + 1, '.', cooper.ref.fetch(_chrom, _start, _end), '.', QUAL, 'FAIL',
+                    print(cooper.chrom, _start + 1, '.', cooper.ref.fetch(_chrom, _start, _end), '.', 0, 'FAIL',
                         f'AC=0;AN=0;MOTIF={_motif};START={_start};END={_end};ID=.;REFCN={(_end-_start)//len(_motif)}',
                         FORMAT, fail_format(), file=cooper.outhandle, sep='\t')
                 cooper.tick_progress()    # locus never reached locus_processor (no reads)
@@ -139,7 +142,7 @@ def write_fail_call(cooper, locus_key):
     INFO   = 'AC=0;AN=0;MOTIF=' + str(locus.motif) + ';START=' + str(locus.start) + ';END=' + str(locus.end) + optional_tag + ';REFCN='+refcn
     SAMPLE = fail_format(depth)
 
-    record = [locus.chrom, locus.start + 1, '.',  cooper.ref.fetch(locus.chrom, locus.start, locus.end), '.', QUAL, FILTER, INFO, FORMAT, SAMPLE]
+    record = [locus.chrom, locus.start + 1, '.',  cooper.ref.fetch(locus.chrom, locus.start, locus.end), '.', 0, FILTER, INFO, FORMAT, SAMPLE]
     ordered_write(cooper, locus_key, record)
 
 
@@ -177,8 +180,6 @@ def write_homozygous_call(cooper, locus_key):
     is_seq_alt = is_alt and not allele.startswith('<')
 
     AC  = 2       if is_alt else 0
-    AC  = 1 if cooper.haploid and is_alt else AC
-    AN  = 1 if cooper.haploid else 2
     GT  = '1/1'   if is_alt else '0/0'
     ALT = allele  if is_alt else '.'
 
@@ -198,7 +199,7 @@ def write_homozygous_call(cooper, locus_key):
 
     # --- INFO field ---
     INFO = (
-        f'AC={AC};AN={AN}'
+        f'AC={AC};AN=2'
         f';MOTIF={locus.motif}'
         f';START={locus.start}'
         f';END={locus.end}'
@@ -208,6 +209,7 @@ def write_homozygous_call(cooper, locus_key):
 
     if cooper.args.debug_mode:
         alen_dist   = sorted(locus_data.halen_frequency.items(), key=lambda x: x[1], reverse=True)
+        INFO += f';CT=<TAG>'
 
     # --- SAMPLE field ---
 
@@ -252,7 +254,7 @@ def write_homozygous_call(cooper, locus_key):
         )
 
     # --- write VCF record ---
-    record = [cooper.chrom, locus.start + 1, '.', ref_seq, ALT, QUAL, 'PASS', INFO, FORMAT, SAMPLE]
+    record = [cooper.chrom, locus.start + 1, '.', ref_seq, ALT, 0, 'PASS', INFO, FORMAT, SAMPLE]
     ordered_write(cooper, locus_key, record)
 
 
@@ -273,11 +275,11 @@ def write_heterozygous_call(cooper, locus_key):
 
     length_GT = ''
     units_GT = ''
-    AC   = None
-    AN   = 2
-    GT   = 'GT'
-    SD   = 'SD'
-    ALT  = '.'
+    AC  = 'AC'
+    AN  = 2
+    GT  = 'GT'
+    SD  = 'SD'
+    ALT = '.'
 
     ref_alen   = locus.end - locus.start
     ref_allele = cooper.ref.fetch(cooper.chrom, locus.start, locus.end)
@@ -391,5 +393,5 @@ def write_heterozygous_call(cooper, locus_key):
             f':{PS}'
         )
 
-    record = [cooper.chrom, locus.start + 1, '.',  ref_allele, ALT, QUAL, 'PASS', INFO, FORMAT, SAMPLE]
+    record = [cooper.chrom, locus.start + 1, '.',  ref_allele, ALT, 0, 'PASS', INFO, FORMAT, SAMPLE]
     ordered_write(cooper, locus_key, record)
