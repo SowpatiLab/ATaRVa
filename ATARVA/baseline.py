@@ -104,10 +104,12 @@ class Cooper:
         if is_primary:
             self.outfile = f'{out_file}.vcf'
             if args.debug_mode: self.logfile = f'{out_file}_debug.log'
+            if args.read_level: self.readlevel_file = f'{out_file}_read_level.tsv'
         else:
             hidden = _hidden_path(out_file)
             self.outfile = f'{hidden}_thread_{thread_idx}.vcf'
             if args.debug_mode: self.logfile = f'{hidden}_debug_{thread_idx}.log'
+            if args.read_level: self.readlevel_file = f'{hidden}_read_level_{thread_idx}.tsv'
 
         with PysamWarningCapture(self.logfile):
             self.tbx  = pysam.Tabixfile(args.regions)
@@ -146,6 +148,12 @@ class Cooper:
                 format   = '%(levelname)s - %(message)s'
             )
             self.logger = logging.getLogger('ATaRVa_logger')
+
+        # --- read-level reporting ---
+        if args.read_level:
+            Path(self.readlevel_file).touch()
+            Path(self.readlevel_file).write_text('#LOCUS\tREAD_ID\tALLELE\tLENGTH\tDS\tMA\tMV\n') # clear read-level file if it already exists
+            self.readlevel_handle = open(self.readlevel_file, 'a')
 
         self.disable_progress = False
         if self.args.threads > 1: self.disable_progress = True

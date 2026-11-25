@@ -84,6 +84,7 @@ def genotype_parser(subparsers):
     # Misc
     opt.add_argument('-t',   '--threads',      metavar='<INT>', type=int, default=1, help='number of threads [default: 1]')
     opt.add_argument('-log', '--debug_mode',   action='store_true', default=False, help='write debug messages to log file')
+    opt.add_argument('-rl', '--read_level',   action='store_true', default=False, help='write read-level information to separate file')
     opt.add_argument('-v',   '--version',      action='version', version=f'ATaRVa version {__version__}')
 
     if len(sys.argv) == 2 and sys.argv[1] == 'genotype':
@@ -193,7 +194,7 @@ def sample_stem(bam_path: str) -> str:
     return Path(bam_path).stem
 
 
-def concat_thread_outputs(base_path, n_threads, debug=False):
+def concat_thread_outputs(base_path, n_threads, debug=False, read_level=False):
     """
     Concatenate per-thread VCF (and optionally log) outputs into a single file.
 
@@ -226,6 +227,15 @@ def concat_thread_outputs(base_path, n_threads, debug=False):
                         print(line.strip(), file=out_log)
                 os.remove(thread_log)
 
+    #--- read-level info concatenation ---
+    if read_level:
+        with open(f'{base_path}_read_level.tsv', 'a') as out_readlevel:
+            for tidx in range(1, n_threads):
+                thread_readlevel = f'{hidden}_read_level_{tidx}.tsv'
+                with open(thread_readlevel) as fh:
+                    for line in fh:
+                        print(line.strip(), file=out_readlevel)
+                os.remove(thread_readlevel)
 
 def genotype_run(args) -> None:
     """
@@ -363,7 +373,7 @@ def genotype_run(args) -> None:
 
             # ── only concat if all threads succeeded ─────────────────────────
             if all_success:
-                concat_thread_outputs(out_file, args.threads, debug=args.debug_mode)
+                concat_thread_outputs(out_file, args.threads, debug=args.debug_mode, read_level=args.read_level)
             else:
                 print(f'Skipping concat — {len(errors)} thread(s) failed:',
                     file=sys.stderr)
