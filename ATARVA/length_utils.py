@@ -11,8 +11,34 @@ from scipy.signal      import find_peaks
 from hdbscan           import HDBSCAN
 
 from ATARVA.vcf_writer import write_homozygous_call, write_heterozygous_call
-from ATARVA.sub_operation_utils import alt_sequence, calculate_methylation
+from ATARVA.sub_operation_utils import BASE64_CHARS, alt_sequence, calculate_methylation
 from ATARVA.decompose import motif_decomposition, longest_pure_repeat
+
+def write_readlevel_output(cooper, locus_key, locus_data, hap_reads, hap_label):
+    """
+    Write read-level output for a given locus.
+
+    :param cooper:     cooper object
+    :param locus_key:  key for the locus
+    :param locus_data: locus data object
+    """
+
+    locus = cooper.cooper_loci_info[locus_key]
+    chrom, start, end, motif = locus.chrom, locus.start, locus.end, locus.motif
+
+    for read_index in hap_reads:
+        current_allele = locus_data.read_aseqs[read_index][0]
+        current_meth_info = locus_data.read_methylation.get(read_index, None)
+        alen = len(current_allele)
+        dseq,_ = motif_decomposition(current_allele, locus.motif_length)
+        if current_meth_info is not None:
+            _, _, meth_scores, _ = current_meth_info
+            avg_read_meth = round(sum([(i+1) for i in meth_scores]) / len(meth_scores) / 256, 2)
+            base64_scaled = ''.join(BASE64_CHARS[round((i+1)/4)] for i in meth_scores)
+        else:
+            avg_read_meth = '.'
+            base64_scaled = '.'    
+        cooper.readlevel_handle.write(f"{chrom}\t{start}\t{end}\t{motif}\t{read_index}\t{hap_label}\t{current_allele}\t{alen}\t{dseq}\t{avg_read_meth}\t{base64_scaled}\n")
 
 
 def _assign_genotype(cooper, locus_key, locus_data, c1_idx, c2_idx, c1_lengths,
@@ -112,6 +138,9 @@ def homozygous_call(cooper, locus_key):
         locus_data.gt_lpm          = (lpm,  None)
         locus_data.gt_lpcn         = (lpcn, None)
 
+    if cooper.args.read_level:
+        write_readlevel_output(cooper, locus_key, locus_data, hap_reads, 'H1') # hap_label is 'H1' for homozygous loci
+    
     ucluster = [len(locus_data.read_aseqs[rid][0]) for rid in locus_data.reads if rid not in hap_reads]
     if ucluster:
         locus_data.gt_ucluster = (locus_data.gt_ucluster[0], locus_data.gt_ucluster[1], '-'.join([str(x) for x in sorted(ucluster)]))
@@ -159,12 +188,15 @@ def heterozygous_call(cooper, locus_key):
             locus_data.hap_meth_data    = (locus_data.hap_meth_data[0], calculate_methylation(cooper, hap_reads, locus_data.read_methylation, ALT))
             locus_data.gt_arange        = (locus_data.gt_arange[0], f'{lower}-{upper}')
             locus_data.gt_ucluster      = (locus_data.gt_ucluster[0], '-'.join(ucluster))
-            if cooper.args.decompose and ALT != 'DEL':
+            if cooper.args.decompose and ALT != '<DEL>':
                 decomp_seq, nonrep_fraction = motif_decomposition(ALT, locus.motif_length)
                 lpm, lpcn  = longest_pure_repeat(decomp_seq, locus.motif)
                 locus_data.gt_decomp_seqs   = (locus_data.gt_decomp_seqs[0], decomp_seq)
                 locus_data.gt_lpm           = (locus_data.gt_lpm[0],  lpm)
                 locus_data.gt_lpcn          = (locus_data.gt_lpcn[0], lpcn)
+
+        if cooper.args.read_level:
+            write_readlevel_output(cooper, locus_key, locus_data, hap_reads, f'H{i+1}') # hap_label is 'H1' or 'H2' for heterozygous loci
 
     ucluster = [len(locus_data.read_aseqs[rid][0]) for rid in locus_data.reads if rid not in phased_reads]
     if ucluster:

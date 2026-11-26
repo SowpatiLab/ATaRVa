@@ -152,7 +152,7 @@ class Cooper:
         # --- read-level reporting ---
         if args.read_level:
             Path(self.readlevel_file).touch()
-            Path(self.readlevel_file).write_text('#LOCUS\tREAD_ID\tALLELE\tLENGTH\tDS\tMA\tMV\n') # clear read-level file if it already exists
+            Path(self.readlevel_file).write_text('#CHROM\tSTART\tEND\tMOTIF\tREAD_ID\tHAPLOTAG\tALLELE\tLENGTH\tDS\tMA\tMV\n') # clear read-level file if it already exists
             self.readlevel_handle = open(self.readlevel_file, 'a')
 
         self.disable_progress = False

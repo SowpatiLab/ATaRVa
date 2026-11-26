@@ -1,12 +1,8 @@
 from bisect import bisect_left, bisect_right
-import string
 
 from ATARVA.realignment import stripSW, Inputs
 from ATARVA.process_softclips import cigar_stats
 from ATARVA.decompose         import motif_decomposition
-
-# base64 encodings
-BASE64_CHARS = string.ascii_uppercase + string.ascii_lowercase + string.digits + '+//'
 
 def break_locuskey(locus_key):
     """
@@ -297,8 +293,6 @@ def process_locus(cooper, locus_key):
     upper_bound = cooper.args.meth_prob
     lower_bound = 1 - upper_bound
 
-    read_level_bool = cooper.args.read_level
-
     # --- per read processing ---
     for read_index in read_indices:
         read = cooper.cooper_read_data[read_index]
@@ -326,10 +320,8 @@ def process_locus(cooper, locus_key):
         CI  += ci  + ci2
         pending_insertions |= pend_l | pend_r
 
-        current_allele                         = query[adj_qs:adj_qe]
-        alen                                   = adj_qe - adj_qs
-        locus_data.read_aseqs[read_index][0]   = current_allele
-        locus_data.read_alens[read_index][1]   = alen
+        locus_data.read_aseqs[read_index][0]   = query[adj_qs:adj_qe]
+        locus_data.read_alens[read_index][1]   = adj_qe - adj_qs
   
 
         # methylation
@@ -337,20 +329,8 @@ def process_locus(cooper, locus_key):
         adj_fqs        = fqs + adj_qs
         adj_fqe        = fqe - (subseq_len - adj_qe)
 
-        current_meth_info                           = read.process_methylation_info(adj_fqs, adj_fqe, lower_bound, upper_bound)
-        locus_data.read_methylation[read_index]     = current_meth_info
+        locus_data.read_methylation[read_index]     = read.process_methylation_info(adj_fqs, adj_fqe, lower_bound, upper_bound)
         cooper.cooper_insert_positions[read_index] |= pending_insertions
-
-        if read_level_bool:
-            dseq,_ = motif_decomposition(current_allele, locus.motif_length)
-            if current_meth_info is not None:
-                _, _, meth_scores, _ = current_meth_info
-                avg_read_meth = round(sum([(i+1) for i in meth_scores]) / len(meth_scores) / 256, 2)
-                base64_scaled = ''.join(BASE64_CHARS[round((i+1)/4)] for i in meth_scores)
-            else:
-                avg_read_meth = '.'
-                base64_scaled = '.'    
-            cooper.readlevel_handle.write(f"{locus_key}\t{read_index}\t{current_allele}\t{alen}\t{dseq}\t{avg_read_meth}\t{base64_scaled}\n")
 
     if cooper.args.debug_mode:
         cooper.logger.debug(f"{locus_key};Larger_ins={ILR};Partial_ins={PI};Complete_ins={CI}")
