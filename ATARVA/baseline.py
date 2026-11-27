@@ -11,6 +11,7 @@ from collections import defaultdict
 from ATARVA.decompose         import motif_decomposition, longest_pure_repeat
 from ATARVA.structures        import ReadLocusInfo, LocusInfo, ReadInfo, LocusVariation, ExtendedRead
 from ATARVA.vcf_writer        import vcf_writer, write_homozygous_call, write_heterozygous_call, write_fail_call
+from ATARVA.vcf_writer        import QUAL, FORMAT, fail_format
 from ATARVA.operation_utils   import clean_eqsign_readseq
 from ATARVA.cstag_utils       import parse_cstag
 from ATARVA.cigar_utils       import parse_cigar
@@ -447,7 +448,7 @@ class Cooper:
                                     if sa_update:
                                         del_softclip_idx = set()
                                         for idx in range(len(softclip_loci['keys'])):
-                                            upstream = softclip_loci['coords'][idx]['upstream']
+                                            upstream   = softclip_loci['coords'][idx]['upstream']
                                             downstream = softclip_loci['coords'][idx]['downstream']
                                             if upstream is not None:
                                                 if upstream[2] > start_softclip or upstream[3] > start_softclip:
@@ -557,7 +558,7 @@ class Cooper:
                     if locus_key not in self.cooper_loci_data:
                         locus = self.cooper_loci_info.get(locus_key)
                         self.cooper_loci_info[locus_key] = LocusInfo(chrom=self.chrom, start=locus.start, end=locus.end,
-                                                                        motif=locus.motif, name=locus.name)
+                                                                     motif=locus.motif, name=locus.name)
                         self.cooper_loci_data[locus_key] = LocusVariation()
                         self.cooper_loci_keys.append(locus_key)
                         self.cooper_loci_ends.append(locus.end)
@@ -676,10 +677,10 @@ class Cooper:
                 print(*self.genotyped_loci[self.next_locus_key], file=self.outhandle, sep='\t')
                 del self.genotyped_loci[self.next_locus_key]
             else:
-                print(self.chrom, _start + 1, '.', self.ref.fetch(_chrom, _start, _end), '.', 0,
-                    'FAIL', f'AC=0;AN=0;MOTIF={_motif};START={_start};END={_end};ID=.;REFCN={(_end-_start)//len(_motif)}',
-                    'GT:AL:CN:AR:SD:DP:SN:SQ:MA:MR:DS:MV:OL:FV:PS', f'.:.:.:.:.:0:.:.:.:.:.:.:.:.:.', file=self.outhandle, sep='\t')
-                self.tick_progress()    # locus never reached locus_processor (no reads)
+                if self.args.gvcf:
+                    print(self.chrom, _start + 1, '.', self.ref.fetch(_chrom, _start, _end), '.', QUAL,
+                          'FAIL', f'AC=0;AN=0;MOTIF={_motif};START={_start};END={_end};ID=.;REFCN={(_end-_start)//len(_motif)}',
+                          FORMAT, fail_format(), file=self.outhandle, sep='\t')
             self.next_locus_key = next(self.region_itr, None)
 
 
